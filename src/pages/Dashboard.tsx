@@ -1,16 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Computer, 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock, 
-  TrendingUp, 
-  Monitor, 
-  Printer, 
-  Server 
-} from "lucide-react";
-
+import { Computer, AlertTriangle, CheckCircle, Clock, TrendingUp, Monitor, Printer, Server } from "lucide-react";
 export default function Dashboard() {
   // Mock data
   const stats = {
@@ -20,30 +10,56 @@ export default function Dashboard() {
     maintenance: 8,
     expired: 27
   };
-
-  const recentEquipment = [
-    { id: "EQ001", name: "Dell OptiPlex 7090", type: "Desktop", status: "working", location: "ห้อง IT-101" },
-    { id: "EQ002", name: "HP LaserJet Pro", type: "Printer", status: "maintenance", location: "ห้องธุรการ" },
-    { id: "EQ003", name: "Lenovo ThinkPad", type: "Laptop", status: "broken", location: "ห้องผู้อำนวยการ" },
-    { id: "EQ004", name: "ASUS Monitor", type: "Monitor", status: "working", location: "ห้องประชุม" },
-  ];
-
+  const recentEquipment = [{
+    id: "EQ001",
+    name: "Dell OptiPlex 7090",
+    type: "Desktop",
+    status: "working",
+    location: "ห้อง IT-101"
+  }, {
+    id: "EQ002",
+    name: "HP LaserJet Pro",
+    type: "Printer",
+    status: "maintenance",
+    location: "ห้องธุรการ"
+  }, {
+    id: "EQ003",
+    name: "Lenovo ThinkPad",
+    type: "Laptop",
+    status: "broken",
+    location: "ห้องผู้อำนวยการ"
+  }, {
+    id: "EQ004",
+    name: "ASUS Monitor",
+    type: "Monitor",
+    status: "working",
+    location: "ห้องประชุม"
+  }];
   const getStatusBadge = (status: string) => {
     const variants = {
-      working: { variant: "default" as const, color: "bg-success text-success-foreground", label: "ใช้งานปกติ" },
-      broken: { variant: "destructive" as const, color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
-      maintenance: { variant: "secondary" as const, color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
+      working: {
+        variant: "default" as const,
+        color: "bg-success text-success-foreground",
+        label: "ใช้งานปกติ"
+      },
+      broken: {
+        variant: "destructive" as const,
+        color: "bg-destructive text-destructive-foreground",
+        label: "ชำรุด"
+      },
+      maintenance: {
+        variant: "secondary" as const,
+        color: "bg-warning text-warning-foreground",
+        label: "ซ่อมบำรุง"
+      }
     };
-    
     const config = variants[status as keyof typeof variants];
     return <Badge className={config.color}>{config.label}</Badge>;
   };
-
-  return (
-    <div className="space-y-8">
+  return <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-foreground mb-2">แดشบอร์ดระบบครุภัณฑ์</h1>
+        <h1 className="text-3xl font-bold text-foreground mb-2">แดชบอร์ดระบบครุภัณฑ์</h1>
         <p className="text-muted-foreground">ภาพรวมการจัดการครุภัณฑ์คอมพิวเตอร์</p>
       </div>
 
@@ -74,7 +90,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold text-success">{stats.working}</div>
             <p className="text-xs text-muted-foreground">
-              {((stats.working / stats.total) * 100).toFixed(1)}% ของทั้งหมด
+              {(stats.working / stats.total * 100).toFixed(1)}% ของทั้งหมด
             </p>
           </CardContent>
         </Card>
@@ -136,8 +152,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentEquipment.map((item) => (
-                <div key={item.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+              {recentEquipment.map(item => <div key={item.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                   <div className="flex items-center space-x-3">
                     <div className="p-2 bg-primary/10 rounded-lg">
                       {item.type === "Desktop" && <Computer className="h-4 w-4 text-primary" />}
@@ -151,8 +166,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   {getStatusBadge(item.status)}
-                </div>
-              ))}
+                </div>)}
             </div>
           </CardContent>
         </Card>
@@ -167,14 +181,32 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {[
-                { type: "คอมพิวเตอร์ตั้งโต๊ะ", count: 89, icon: Computer, color: "bg-primary" },
-                { type: "แล็ปท็อป", count: 45, icon: Computer, color: "bg-accent" },
-                { type: "จอภาพ", count: 67, icon: Monitor, color: "bg-warning" },
-                { type: "เครื่องพิมพ์", count: 23, icon: Printer, color: "bg-secondary" },
-                { type: "เซิร์ฟเวอร์", count: 21, icon: Server, color: "bg-muted-foreground" },
-              ].map((item) => (
-                <div key={item.type} className="flex items-center justify-between">
+              {[{
+              type: "คอมพิวเตอร์ตั้งโต๊ะ",
+              count: 89,
+              icon: Computer,
+              color: "bg-primary"
+            }, {
+              type: "แล็ปท็อป",
+              count: 45,
+              icon: Computer,
+              color: "bg-accent"
+            }, {
+              type: "จอภาพ",
+              count: 67,
+              icon: Monitor,
+              color: "bg-warning"
+            }, {
+              type: "เครื่องพิมพ์",
+              count: 23,
+              icon: Printer,
+              color: "bg-secondary"
+            }, {
+              type: "เซิร์ฟเวอร์",
+              count: 21,
+              icon: Server,
+              color: "bg-muted-foreground"
+            }].map(item => <div key={item.type} className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className={`p-2 ${item.color}/10 rounded-lg`}>
                       <item.icon className={`h-4 w-4 ${item.color === 'bg-muted-foreground' ? 'text-muted-foreground' : item.color.replace('bg-', 'text-')}`} />
@@ -184,18 +216,15 @@ export default function Dashboard() {
                   <div className="flex items-center space-x-2">
                     <span className="text-sm font-bold">{item.count}</span>
                     <div className="w-20 bg-muted rounded-full h-2">
-                      <div 
-                        className={`${item.color} h-2 rounded-full`}
-                        style={{ width: `${(item.count / 89) * 100}%` }}
-                      />
+                      <div className={`${item.color} h-2 rounded-full`} style={{
+                    width: `${item.count / 89 * 100}%`
+                  }} />
                     </div>
                   </div>
-                </div>
-              ))}
+                </div>)}
             </div>
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
+    </div>;
 }
