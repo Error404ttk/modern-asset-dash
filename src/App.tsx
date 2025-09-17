@@ -9,6 +9,10 @@ import { Navbar } from "@/components/Navbar";
 import Dashboard from "./pages/Dashboard";
 import Equipment from "./pages/Equipment";
 import AddEquipment from "./pages/AddEquipment";
+import BorrowReturn from "./pages/BorrowReturn";
+import History from "./pages/History";
+import Users from "./pages/Users";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,10 +34,10 @@ const App = () => (
                   <Route path="/equipment" element={<Equipment />} />
                   <Route path="/equipment/add" element={<AddEquipment />} />
                   <Route path="/reports" element={<Dashboard />} />
-                  <Route path="/borrow-return" element={<Dashboard />} />
-                  <Route path="/history" element={<Dashboard />} />
-                  <Route path="/users" element={<Dashboard />} />
-                  <Route path="/settings" element={<Dashboard />} />
+                  <Route path="/borrow-return" element={<BorrowReturn />} />
+                  <Route path="/history" element={<History />} />
+                  <Route path="/users" element={<Users />} />
+                  <Route path="/settings" element={<Settings />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
