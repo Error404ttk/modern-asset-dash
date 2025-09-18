@@ -10,6 +10,9 @@ import {
   Calendar,
   MapPin
 } from "lucide-react";
+import QRCodeDialog from "@/components/equipment/QRCodeDialog";
+import EquipmentViewDialog from "@/components/equipment/EquipmentViewDialog";
+import EquipmentEditDialog from "@/components/equipment/EquipmentEditDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,12 +34,8 @@ import {
 } from "@/components/ui/select";
 import { Link } from "react-router-dom";
 
-export default function Equipment() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-
-  // Mock data
-  const equipment = [
+// Mock data
+const equipment = [
     {
       id: "EQ001",
       name: "Dell OptiPlex 7090",
@@ -134,6 +133,38 @@ export default function Equipment() {
     }
   ];
 
+export default function Equipment() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedEquipment, setSelectedEquipment] = useState<any>(null);
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [equipmentList, setEquipmentList] = useState(equipment);
+
+  const handleQrCode = (item: any) => {
+    setSelectedEquipment(item);
+    setQrDialogOpen(true);
+  };
+
+  const handleView = (item: any) => {
+    setSelectedEquipment(item);
+    setViewDialogOpen(true);
+  };
+
+  const handleEdit = (item: any) => {
+    setSelectedEquipment(item);
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = (updatedEquipment: any) => {
+    setEquipmentList(prev => 
+      prev.map(item => 
+        item.id === updatedEquipment.id ? updatedEquipment : item
+      )
+    );
+  };
+
   const getStatusBadge = (status: string) => {
     const variants = {
       working: { color: "bg-success text-success-foreground", label: "ใช้งานปกติ" },
@@ -146,7 +177,7 @@ export default function Equipment() {
     return <Badge className={config.color}>{config.label}</Badge>;
   };
 
-  const filteredEquipment = equipment.filter(item => {
+  const filteredEquipment = equipmentList.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.assetNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.serialNumber.toLowerCase().includes(searchTerm.toLowerCase());
@@ -180,7 +211,7 @@ export default function Equipment() {
             <div className="flex items-center space-x-2">
               <Computer className="h-8 w-8 text-primary" />
               <div>
-                <p className="text-2xl font-bold text-primary">{equipment.length}</p>
+                <p className="text-2xl font-bold text-primary">{equipmentList.length}</p>
                 <p className="text-sm text-muted-foreground">รายการทั้งหมด</p>
               </div>
             </div>
@@ -195,7 +226,7 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-success">
-                  {equipment.filter(e => e.status === 'working').length}
+                  {equipmentList.filter(e => e.status === 'working').length}
                 </p>
                 <p className="text-sm text-muted-foreground">ใช้งานปกติ</p>
               </div>
@@ -211,7 +242,7 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-warning">
-                  {equipment.filter(e => e.status === 'maintenance').length}
+                  {equipmentList.filter(e => e.status === 'maintenance').length}
                 </p>
                 <p className="text-sm text-muted-foreground">ซ่อมบำรุง</p>
               </div>
@@ -227,7 +258,7 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-destructive">
-                  {equipment.filter(e => e.status === 'broken').length}
+                  {equipmentList.filter(e => e.status === 'broken').length}
                 </p>
                 <p className="text-sm text-muted-foreground">ชำรุด</p>
               </div>
@@ -321,13 +352,31 @@ export default function Equipment() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end space-x-2">
-                        <Button variant="ghost" size="sm" className="hover:bg-muted">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="hover:bg-muted"
+                          onClick={() => handleQrCode(item)}
+                          title="สร้าง QR Code"
+                        >
                           <QrCode className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" className="hover:bg-muted">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="hover:bg-muted"
+                          onClick={() => handleView(item)}
+                          title="ดูรายละเอียด"
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" className="hover:bg-muted">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="hover:bg-muted"
+                          onClick={() => handleEdit(item)}
+                          title="แก้ไขข้อมูล"
+                        >
                           <Edit className="h-4 w-4" />
                         </Button>
                       </div>
@@ -339,6 +388,28 @@ export default function Equipment() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Dialogs */}
+      {selectedEquipment && (
+        <>
+          <QRCodeDialog
+            open={qrDialogOpen}
+            onOpenChange={setQrDialogOpen}
+            equipment={selectedEquipment}
+          />
+          <EquipmentViewDialog
+            open={viewDialogOpen}
+            onOpenChange={setViewDialogOpen}
+            equipment={selectedEquipment}
+          />
+          <EquipmentEditDialog
+            open={editDialogOpen}
+            onOpenChange={setEditDialogOpen}
+            equipment={selectedEquipment}
+            onSave={handleSaveEdit}
+          />
+        </>
+      )}
     </div>
   );
 }
