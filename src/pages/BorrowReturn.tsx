@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,50 +7,237 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Plus, ArrowLeftRight, Calendar, User, Monitor, QrCode } from "lucide-react";
+import { Search, Plus, ArrowLeftRight, Calendar, User, Monitor, QrCode, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const BorrowReturn = () => {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [borrowedEquipment, setBorrowedEquipment] = useState<any[]>([]);
+  const [availableEquipment, setAvailableEquipment] = useState<any[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Mock data for borrowed equipment
-  const borrowedEquipment = [
-    {
-      id: "EQ001",
-      name: "Dell Laptop Inspiron 15",
-      serialNumber: "DL123456789",
-      borrower: "นาย สมชาย ใจดี",
-      department: "กองคลัง",
-      borrowDate: "2024-01-15",
-      returnDate: "2024-02-15",
-      status: "ยืมอยู่"
-    },
-    {
-      id: "EQ002", 
-      name: "HP Printer LaserJet",
-      serialNumber: "HP987654321",
-      borrower: "นาง สมหญิง รักษ์ดี",
-      department: "กองช่าง",
-      borrowDate: "2024-01-10",
-      returnDate: "2024-01-25",
-      status: "เกินกำหนด"
+  // Fetch available equipment for borrowing
+  const fetchAvailableEquipment = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('equipment')
+        .select('*')
+        .eq('status', 'working')
+        .is('current_user', null);
+
+      if (error) throw error;
+
+      setAvailableEquipment(data || []);
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถโหลดรายการครุภัณฑ์ได้: " + error.message,
+        variant: "destructive",
+      });
     }
-  ];
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    toast({
-      title: "บันทึกสำเร็จ",
-      description: "บันทึกการยืม-คืนครุภัณฑ์เรียบร้อยแล้ว",
-    });
   };
 
-  const handleReturn = (equipmentId: string) => {
-    toast({
-      title: "คืนครุภัณฑ์สำเร็จ", 
-      description: `คืนครุภัณฑ์ ${equipmentId} เรียบร้อยแล้ว`,
-    });
+  // Fetch borrowed equipment
+  const fetchBorrowedEquipment = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await (supabase as any)
+        .from('borrow_records')
+        .select(`
+          *,
+          equipment:equipment_id (
+            name,
+            asset_number,
+            serial_number
+          )
+        `)
+        .eq('status', 'borrowed')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const transformedData = data?.map((record: any) => ({
+        id: record.equipment?.asset_number || record.equipment_id,
+        name: record.equipment?.name || 'Unknown Equipment',
+        serialNumber: record.equipment?.serial_number || 'N/A',
+        borrower: record.borrower_name,
+        department: 'ไม่ระบุ', // We can add department field to borrow_records later
+        borrowDate: record.borrow_date ? new Date(record.borrow_date).toLocaleDateString('th-TH') : '',
+        returnDate: record.expected_return_date ? new Date(record.expected_return_date).toLocaleDateString('th-TH') : '',
+        status: isOverdue(record.expected_return_date) ? 'เกินกำหนด' : 'ยืมอยู่',
+        recordId: record.id
+      })) || [];
+
+      setBorrowedEquipment(transformedData);
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถโหลดรายการยืม-คืนได้: " + error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isOverdue = (expectedReturnDate: string) => {
+    if (!expectedReturnDate) return false;
+    return new Date(expectedReturnDate) < new Date();
+  };
+
+  useEffect(() => {
+    fetchAvailableEquipment();
+    fetchBorrowedEquipment();
+  }, []);
+
+  const handleBorrowSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    
+    const borrowData = {
+      equipment_id: formData.get('equipment') as string,
+      borrower_name: formData.get('borrower') as string,
+      borrower_contact: formData.get('contact') as string,
+      borrow_date: formData.get('borrowDate') as string,
+      expected_return_date: formData.get('returnDate') as string,
+      notes: formData.get('purpose') as string + (formData.get('notes') ? '\n' + formData.get('notes') : ''),
+      status: 'borrowed'
+    };
+
+    try {
+      const { error: borrowError } = await (supabase as any)
+        .from('borrow_records')
+        .insert([borrowData]);
+
+      if (borrowError) throw borrowError;
+
+      // Update equipment current_user
+      const { error: updateError } = await (supabase as any)
+        .from('equipment')
+        .update({ 
+          current_user: formData.get('borrower') as string,
+          status: 'working' 
+        })
+        .eq('id', formData.get('equipment') as string);
+
+      if (updateError) throw updateError;
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: "บันทึกการยืมครุภัณฑ์เรียบร้อยแล้ว",
+      });
+
+      // Reset form and refresh data
+      (e.target as HTMLFormElement).reset();
+      fetchAvailableEquipment();
+      fetchBorrowedEquipment();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถบันทึกการยืมได้: " + error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReturnSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    const equipmentId = formData.get('returnEquipment') as string;
+
+    try {
+      // Update borrow record
+      const { error: updateError } = await (supabase as any)
+        .from('borrow_records')
+        .update({ 
+          actual_return_date: formData.get('returnDate') as string,
+          status: 'returned',
+          notes: (formData.get('returnNotes') as string) || null
+        })
+        .eq('equipment_id', equipmentId)
+        .eq('status', 'borrowed');
+
+      if (updateError) throw updateError;
+
+      // Update equipment status and clear current_user
+      const newStatus = formData.get('condition') === 'damaged' ? 'broken' : 'working';
+      const { error: equipmentError } = await (supabase as any)
+        .from('equipment')
+        .update({ 
+          current_user: null,
+          status: newStatus
+        })
+        .eq('id', equipmentId);
+
+      if (equipmentError) throw equipmentError;
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: "บันทึกการคืนครุภัณฑ์เรียบร้อยแล้ว",
+      });
+
+      // Reset form and refresh data
+      (e.target as HTMLFormElement).reset();
+      fetchAvailableEquipment();
+      fetchBorrowedEquipment();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด", 
+        description: "ไม่สามารถบันทึกการคืนได้: " + error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleReturn = async (equipmentId: string) => {
+    try {
+      // Find the borrow record to update
+      const borrowRecord = borrowedEquipment.find(item => item.id === equipmentId);
+      if (!borrowRecord) return;
+
+      const { error: updateError } = await (supabase as any)
+        .from('borrow_records')
+        .update({ 
+          actual_return_date: new Date().toISOString(),
+          status: 'returned'
+        })
+        .eq('id', borrowRecord.recordId);
+
+      if (updateError) throw updateError;
+
+      // Update equipment to clear current_user
+      const { error: equipmentError } = await (supabase as any)
+        .from('equipment')
+        .update({ current_user: null })
+        .eq('asset_number', equipmentId);
+
+      if (equipmentError) throw equipmentError;
+
+      toast({
+        title: "คืนครุภัณฑ์สำเร็จ", 
+        description: `คืนครุภัณฑ์ ${equipmentId} เรียบร้อยแล้ว`,
+      });
+
+      fetchBorrowedEquipment();
+      fetchAvailableEquipment();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถคืนครุภัณฑ์ได้: " + error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -87,19 +274,21 @@ const BorrowReturn = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleBorrowSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="equipment">ครุภัณฑ์</Label>
                     <div className="flex space-x-2">
-                      <Select>
+                      <Select name="equipment" required>
                         <SelectTrigger>
                           <SelectValue placeholder="เลือกครุภัณฑ์" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="eq1">Dell Laptop Inspiron 15 (EQ001)</SelectItem>
-                          <SelectItem value="eq2">HP Desktop Pro (EQ003)</SelectItem>
-                          <SelectItem value="eq3">Canon Printer (EQ005)</SelectItem>
+                          {availableEquipment.map((eq) => (
+                            <SelectItem key={eq.id} value={eq.id}>
+                              {eq.name} ({eq.asset_number})
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <Button type="button" variant="outline" size="icon">
@@ -110,12 +299,12 @@ const BorrowReturn = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="borrower">ผู้ยืม</Label>
-                    <Input placeholder="ชื่อ-นามสกุล ผู้ยืม" />
+                    <Input name="borrower" placeholder="ชื่อ-นามสกุล ผู้ยืม" required />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="department">หน่วยงาน</Label>
-                    <Select>
+                    <Select name="department">
                       <SelectTrigger>
                         <SelectValue placeholder="เลือกหน่วยงาน" />
                       </SelectTrigger>
@@ -129,32 +318,43 @@ const BorrowReturn = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="contact">เบอร์ติดต่อ</Label>
-                    <Input placeholder="เบอร์โทรศัพท์" />
+                    <Input name="contact" placeholder="เบอร์โทรศัพท์" />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="borrowDate">วันที่ยืม</Label>
-                    <Input type="date" />
+                    <Input name="borrowDate" type="date" required />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="returnDate">วันที่กำหนดคืน</Label>
-                    <Input type="date" />
+                    <Input name="returnDate" type="date" required />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="purpose">วัตถุประสงค์การยืม</Label>
-                  <Textarea placeholder="ระบุวัตถุประสงค์ในการยืมครุภัณฑ์" />
+                  <Textarea name="purpose" placeholder="ระบุวัตถุประสงค์ในการยืมครุภัณฑ์" />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="notes">หมายเหตุ</Label>
-                  <Textarea placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)" />
+                  <Textarea name="notes" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)" />
                 </div>
 
-                <Button type="submit" className="w-full bg-primary hover:bg-primary/90">
-                  บันทึกการยืม
+                <Button 
+                  type="submit" 
+                  disabled={isSubmitting}
+                  className="w-full bg-primary hover:bg-primary/90"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      กำลังบันทึก...
+                    </>
+                  ) : (
+                    'บันทึกการยืม'
+                  )}
                 </Button>
               </form>
             </CardContent>
@@ -174,18 +374,21 @@ const BorrowReturn = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleReturnSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <Label htmlFor="returnEquipment">ครุภัณฑ์ที่คืน</Label>
                     <div className="flex space-x-2">
-                      <Select>
+                      <Select name="returnEquipment" required>
                         <SelectTrigger>
                           <SelectValue placeholder="เลือกครุภัณฑ์ที่ยืม" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="eq1">Dell Laptop Inspiron 15 (EQ001)</SelectItem>
-                          <SelectItem value="eq2">HP Printer LaserJet (EQ002)</SelectItem>
+                          {borrowedEquipment.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.name} ({item.id})
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <Button type="button" variant="outline" size="icon">
@@ -196,12 +399,12 @@ const BorrowReturn = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="returnDate">วันที่คืน</Label>
-                    <Input type="date" />
+                    <Input name="returnDate" type="date" required />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="condition">สภาพครุภัณฑ์</Label>
-                    <Select>
+                    <Select name="condition" required>
                       <SelectTrigger>
                         <SelectValue placeholder="เลือกสภาพครุภัณฑ์" />
                       </SelectTrigger>
@@ -215,17 +418,28 @@ const BorrowReturn = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="receiver">ผู้รับคืน</Label>
-                    <Input placeholder="ชื่อ-นามสกุล ผู้รับคืน" />
+                    <Input name="receiver" placeholder="ชื่อ-นามสกุล ผู้รับคืน" />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="returnNotes">หมายเหตุการคืน</Label>
-                  <Textarea placeholder="หมายเหตุเกี่ยวกับสภาพครุภัณฑ์หรือข้อมูลเพิ่มเติม" />
+                  <Textarea name="returnNotes" placeholder="หมายเหตุเกี่ยวกับสภาพครุภัณฑ์หรือข้อมูลเพิ่มเติม" />
                 </div>
 
-                <Button type="submit" className="w-full bg-primary hover:bg-primary/90">
-                  บันทึกการคืน
+                <Button 
+                  type="submit" 
+                  disabled={isSubmitting}
+                  className="w-full bg-primary hover:bg-primary/90"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      กำลังบันทึก...
+                    </>
+                  ) : (
+                    'บันทึกการคืน'
+                  )}
                 </Button>
               </form>
             </CardContent>
@@ -268,51 +482,67 @@ const BorrowReturn = () => {
               </div>
 
               <div className="space-y-4">
-                {borrowedEquipment.map((item) => (
-                  <div key={item.id} className="border rounded-lg p-4 bg-card">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
-                          <Monitor className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <h3 className="font-medium text-foreground">{item.name}</h3>
-                            <p className="text-sm text-muted-foreground">รหัส: {item.id} | S/N: {item.serialNumber}</p>
-                          </div>
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">ผู้ยืม:</span>
-                            <p className="font-medium">{item.borrower}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">หน่วยงาน:</span>
-                            <p className="font-medium">{item.department}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">วันที่ยืม:</span>
-                            <p className="font-medium">{item.borrowDate}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">กำหนดคืน:</span>
-                            <p className="font-medium">{item.returnDate}</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2 ml-4">
-                        <Badge variant={item.status === "เกินกำหนด" ? "destructive" : "default"}>
-                          {item.status}
-                        </Badge>
-                        <Button 
-                          size="sm" 
-                          onClick={() => handleReturn(item.id)}
-                          className="bg-primary hover:bg-primary/90"
-                        >
-                          บันทึกการคืน
-                        </Button>
-                      </div>
-                    </div>
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>กำลังโหลดข้อมูล...</span>
                   </div>
-                ))}
+                ) : borrowedEquipment.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">ไม่มีรายการยืม-คืน</p>
+                ) : (
+                  borrowedEquipment
+                    .filter(item => 
+                      searchTerm === "" || 
+                      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      item.borrower.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      item.id.toLowerCase().includes(searchTerm.toLowerCase())
+                    )
+                    .map((item) => (
+                      <div key={item.id} className="border rounded-lg p-4 bg-card">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3">
+                              <Monitor className="h-5 w-5 text-muted-foreground" />
+                              <div>
+                                <h3 className="font-medium text-foreground">{item.name}</h3>
+                                <p className="text-sm text-muted-foreground">รหัส: {item.id} | S/N: {item.serialNumber}</p>
+                              </div>
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">ผู้ยืม:</span>
+                                <p className="font-medium">{item.borrower}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">หน่วยงาน:</span>
+                                <p className="font-medium">{item.department}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">วันที่ยืม:</span>
+                                <p className="font-medium">{item.borrowDate}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">กำหนดคืน:</span>
+                                <p className="font-medium">{item.returnDate}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 ml-4">
+                            <Badge variant={item.status === "เกินกำหนด" ? "destructive" : "default"}>
+                              {item.status}
+                            </Badge>
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleReturn(item.id)}
+                              className="bg-primary hover:bg-primary/90"
+                            >
+                              บันทึกการคืน
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                )}
               </div>
             </CardContent>
           </Card>

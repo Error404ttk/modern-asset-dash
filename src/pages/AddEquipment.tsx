@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server } from "lucide-react";
+import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,19 +13,90 @@ import {
   SelectValue 
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function AddEquipment() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [equipmentType, setEquipmentType] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: "บันทึกสำเร็จ",
-      description: "ข้อมูลครุภัณฑ์ได้ถูกบันทึกเรียบร้อยแล้ว",
-    });
+    setIsSubmitting(true);
+
+    const formData = new FormData(e.currentTarget as HTMLFormElement);
+    
+    // Build specs object for computer types
+    const specs: any = {};
+    if (isComputerType) {
+      specs.cpu = formData.get('cpu') || null;
+      specs.ram = formData.get('ram') || null;
+      specs.storage = formData.get('storage') || null;
+      specs.gpu = formData.get('gpu') || null;
+      specs.os = formData.get('os') || null;
+      specs.productKey = formData.get('productKey') || null;
+      specs.ipAddress = formData.get('ipAddress') || null;
+      specs.macAddress = formData.get('macAddress') || null;
+      specs.hostname = formData.get('hostname') || null;
+    }
+
+    const equipmentData = {
+      name: formData.get('equipmentName') as string,
+      type: getEquipmentTypeLabel(equipmentType),
+      brand: formData.get('brand') as string,
+      model: formData.get('model') as string,
+      serial_number: formData.get('serialNumber') as string,
+      asset_number: formData.get('assetNumber') as string,
+      status: formData.get('status') as string || 'working',
+      location: getLocationLabel(formData.get('location') as string),
+      current_user: formData.get('currentUser') as string || null,
+      purchase_date: formData.get('purchaseDate') as string || null,
+      warranty_end: formData.get('warrantyEnd') as string || null,
+      specs: Object.keys(specs).length > 0 ? specs : null
+    };
+
+    try {
+      const { error } = await (supabase as any)
+        .from('equipment')
+        .insert([equipmentData]);
+
+      if (error) throw error;
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: "ข้อมูลครุภัณฑ์ได้ถูกบันทึกเรียบร้อยแล้ว",
+      });
+
+      // Navigate back to equipment list
+      navigate('/equipment');
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถบันทึกข้อมูลได้: " + error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getEquipmentTypeLabel = (value: string) => {
+    const type = equipmentTypes.find(t => t.value === value);
+    return type ? type.label : value;
+  };
+
+  const getLocationLabel = (value: string) => {
+    const locations = {
+      'it-101': 'ห้อง IT-101',
+      'admin-201': 'ห้องธุรการ 201',
+      'meeting-301': 'ห้องประชุม 301',
+      'director': 'ห้องผู้อำนวยการ',
+      'storage': 'ห้องจัดเก็บ'
+    };
+    return locations[value as keyof typeof locations] || value;
   };
 
   const equipmentTypes = [
@@ -71,6 +142,7 @@ export default function AddEquipment() {
                 <Label htmlFor="equipmentName">ชื่อครุภัณฑ์ *</Label>
                 <Input 
                   id="equipmentName" 
+                  name="equipmentName"
                   placeholder="เช่น Dell OptiPlex 7090"
                   required
                 />
@@ -99,6 +171,7 @@ export default function AddEquipment() {
                 <Label htmlFor="brand">ยี่ห้อ *</Label>
                 <Input 
                   id="brand" 
+                  name="brand"
                   placeholder="เช่น Dell, HP, Lenovo"
                   required
                 />
@@ -108,6 +181,7 @@ export default function AddEquipment() {
                 <Label htmlFor="model">รุ่น/โมเดล *</Label>
                 <Input 
                   id="model" 
+                  name="model"
                   placeholder="เช่น OptiPlex 7090, LaserJet Pro"
                   required
                 />
@@ -117,6 +191,7 @@ export default function AddEquipment() {
                 <Label htmlFor="serialNumber">Serial Number *</Label>
                 <Input 
                   id="serialNumber" 
+                  name="serialNumber"
                   placeholder="เช่น DELL7090001"
                   required
                 />
@@ -126,7 +201,8 @@ export default function AddEquipment() {
                 <Label htmlFor="assetNumber">เลขครุภัณฑ์ *</Label>
                 <Input 
                   id="assetNumber" 
-                  placeholder="เช่น AST001"
+                  name="assetNumber"
+                  placeholder="เช่น EQ001"
                   required
                 />
               </div>
@@ -135,6 +211,7 @@ export default function AddEquipment() {
                 <Label htmlFor="purchaseDate">วันที่ได้มา *</Label>
                 <Input 
                   id="purchaseDate" 
+                  name="purchaseDate"
                   type="date"
                   required
                 />
@@ -144,13 +221,14 @@ export default function AddEquipment() {
                 <Label htmlFor="warrantyEnd">วันที่หมดประกัน</Label>
                 <Input 
                   id="warrantyEnd" 
+                  name="warrantyEnd"
                   type="date"
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="status">สถานะ *</Label>
-                <Select defaultValue="working" required>
+                <Select name="status" defaultValue="working" required>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -205,6 +283,7 @@ export default function AddEquipment() {
                   <Label htmlFor="cpu">CPU (ประเภท, รุ่น)</Label>
                   <Input 
                     id="cpu" 
+                    name="cpu"
                     placeholder="เช่น Intel Core i5-11500, AMD Ryzen 5 5500U"
                   />
                 </div>
@@ -213,6 +292,7 @@ export default function AddEquipment() {
                   <Label htmlFor="ram">RAM (ขนาด, ประเภท)</Label>
                   <Input 
                     id="ram" 
+                    name="ram"
                     placeholder="เช่น 8GB DDR4, 16GB DDR4"
                   />
                 </div>
@@ -221,6 +301,7 @@ export default function AddEquipment() {
                   <Label htmlFor="storage">Storage (ประเภท, ขนาด)</Label>
                   <Input 
                     id="storage" 
+                    name="storage"
                     placeholder="เช่น 256GB SSD, 1TB HDD"
                   />
                 </div>
@@ -229,13 +310,14 @@ export default function AddEquipment() {
                   <Label htmlFor="gpu">Graphic Card (GPU)</Label>
                   <Input 
                     id="gpu" 
+                    name="gpu"
                     placeholder="เช่น Intel UHD Graphics, NVIDIA GTX 1650"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="os">Operating System</Label>
-                  <Select>
+                  <Select name="os">
                     <SelectTrigger>
                       <SelectValue placeholder="เลือก OS" />
                     </SelectTrigger>
@@ -253,6 +335,7 @@ export default function AddEquipment() {
                   <Label htmlFor="productKey">Product Key</Label>
                   <Input 
                     id="productKey" 
+                    name="productKey"
                     placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
                   />
                 </div>
@@ -261,6 +344,7 @@ export default function AddEquipment() {
                   <Label htmlFor="ipAddress">IP Address</Label>
                   <Input 
                     id="ipAddress" 
+                    name="ipAddress"
                     placeholder="เช่น 192.168.1.100"
                   />
                 </div>
@@ -269,6 +353,7 @@ export default function AddEquipment() {
                   <Label htmlFor="macAddress">MAC Address</Label>
                   <Input 
                     id="macAddress" 
+                    name="macAddress"
                     placeholder="เช่น 00:11:22:33:44:55"
                   />
                 </div>
@@ -277,6 +362,7 @@ export default function AddEquipment() {
                   <Label htmlFor="hostname">ชื่อ Hostname</Label>
                   <Input 
                     id="hostname" 
+                    name="hostname"
                     placeholder="เช่น PC-OFFICE-01"
                   />
                 </div>
@@ -297,7 +383,7 @@ export default function AddEquipment() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="department">หน่วยงานที่รับผิดชอบ *</Label>
-                <Select required>
+                <Select name="department" required>
                   <SelectTrigger>
                     <SelectValue placeholder="เลือกหน่วยงาน" />
                   </SelectTrigger>
@@ -313,7 +399,7 @@ export default function AddEquipment() {
 
               <div className="space-y-2">
                 <Label htmlFor="location">สถานที่ติดตั้ง/จัดเก็บ *</Label>
-                <Select required>
+                <Select name="location" required>
                   <SelectTrigger>
                     <SelectValue placeholder="เลือกสถานที่" />
                   </SelectTrigger>
@@ -331,6 +417,7 @@ export default function AddEquipment() {
                 <Label htmlFor="currentUser">ผู้ใช้งานปัจจุบัน</Label>
                 <Input 
                   id="currentUser" 
+                  name="currentUser"
                   placeholder="เช่น นายสมชาย ใจดี"
                 />
               </div>
@@ -339,6 +426,7 @@ export default function AddEquipment() {
                 <Label htmlFor="notes">หมายเหตุ</Label>
                 <Textarea 
                   id="notes" 
+                  name="notes"
                   placeholder="ข้อมูลเพิ่มเติมหรือหมายเหตุพิเศษ..."
                   rows={3}
                 />
@@ -356,10 +444,15 @@ export default function AddEquipment() {
           </Link>
           <Button 
             type="submit" 
+            disabled={isSubmitting}
             className="bg-gradient-primary hover:opacity-90 shadow-soft"
           >
-            <Save className="h-4 w-4 mr-2" />
-            บันทึกข้อมูล
+            {isSubmitting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-2" />
+            )}
+            {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
           </Button>
         </div>
       </form>

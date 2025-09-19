@@ -1,40 +1,110 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Computer, AlertTriangle, CheckCircle, Clock, TrendingUp, Monitor, Printer, Server } from "lucide-react";
+import { Computer, AlertTriangle, CheckCircle, Clock, TrendingUp, Monitor, Printer, Server, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 export default function Dashboard() {
-  // Mock data
-  const stats = {
-    total: 245,
-    working: 198,
-    broken: 12,
-    maintenance: 8,
-    expired: 27
+  const { toast } = useToast();
+  const [stats, setStats] = useState({
+    total: 0,
+    working: 0,
+    broken: 0,
+    maintenance: 0,
+    expired: 0
+  });
+  const [recentEquipment, setRecentEquipment] = useState<any[]>([]);
+  const [typeDistribution, setTypeDistribution] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch dashboard data
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch all equipment for stats
+      const { data: equipmentData, error: equipmentError } = await (supabase as any)
+        .from('equipment')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (equipmentError) throw equipmentError;
+
+      // Calculate stats
+      const total = equipmentData?.length || 0;
+      const working = equipmentData?.filter((e: any) => e.status === 'working').length || 0;
+      const broken = equipmentData?.filter((e: any) => e.status === 'broken').length || 0;
+      const maintenance = equipmentData?.filter((e: any) => e.status === 'maintenance').length || 0;
+      
+      // Calculate expired warranties (next 3 months)
+      const threeMonthsFromNow = new Date();
+      threeMonthsFromNow.setMonth(threeMonthsFromNow.getMonth() + 3);
+      const expired = equipmentData?.filter((e: any) => {
+        if (!e.warranty_end) return false;
+        const warrantyDate = new Date(e.warranty_end);
+        return warrantyDate <= threeMonthsFromNow;
+      }).length || 0;
+
+      setStats({ total, working, broken, maintenance, expired });
+
+      // Set recent equipment (latest 4)
+      const recent = equipmentData?.slice(0, 4).map((item: any) => ({
+        id: item.asset_number,
+        name: item.name,
+        type: item.type,
+        status: item.status,
+        location: item.location || 'ไม่ระบุ'
+      })) || [];
+      setRecentEquipment(recent);
+
+      // Calculate type distribution
+      const typeCount: { [key: string]: number } = {};
+      equipmentData?.forEach((item: any) => {
+        typeCount[item.type] = (typeCount[item.type] || 0) + 1;
+      });
+
+      const distribution = Object.entries(typeCount).map(([type, count]) => ({
+        type,
+        count: count as number,
+        icon: getTypeIcon(type),
+        color: getTypeColor(type)
+      }));
+
+      setTypeDistribution(distribution);
+
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถโหลดข้อมูล Dashboard ได้: " + error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
-  const recentEquipment = [{
-    id: "EQ001",
-    name: "Dell OptiPlex 7090",
-    type: "Desktop",
-    status: "working",
-    location: "ห้อง IT-101"
-  }, {
-    id: "EQ002",
-    name: "HP LaserJet Pro",
-    type: "Printer",
-    status: "maintenance",
-    location: "ห้องธุรการ"
-  }, {
-    id: "EQ003",
-    name: "Lenovo ThinkPad",
-    type: "Laptop",
-    status: "broken",
-    location: "ห้องผู้อำนวยการ"
-  }, {
-    id: "EQ004",
-    name: "ASUS Monitor",
-    type: "Monitor",
-    status: "working",
-    location: "ห้องประชุม"
-  }];
+
+  const getTypeIcon = (type: string) => {
+    const lowerType = type.toLowerCase();
+    if (lowerType.includes('คอมพิวเตอร์') || lowerType.includes('desktop') || lowerType.includes('laptop')) return Computer;
+    if (lowerType.includes('จอ') || lowerType.includes('monitor')) return Monitor;
+    if (lowerType.includes('เครื่องพิมพ์') || lowerType.includes('printer')) return Printer;
+    if (lowerType.includes('เซิร์ฟเวอร์') || lowerType.includes('server')) return Server;
+    return Computer;
+  };
+
+  const getTypeColor = (type: string) => {
+    const lowerType = type.toLowerCase();
+    if (lowerType.includes('คอมพิวเตอร์') || lowerType.includes('desktop')) return "bg-primary";
+    if (lowerType.includes('laptop')) return "bg-accent";
+    if (lowerType.includes('จอ') || lowerType.includes('monitor')) return "bg-warning";
+    if (lowerType.includes('เครื่องพิมพ์') || lowerType.includes('printer')) return "bg-secondary";
+    if (lowerType.includes('เซิร์ฟเวอร์') || lowerType.includes('server')) return "bg-muted-foreground";
+    return "bg-primary";
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
   const getStatusBadge = (status: string) => {
     const variants = {
       working: {
@@ -56,6 +126,19 @@ export default function Dashboard() {
     const config = variants[status as keyof typeof variants];
     return <Badge className={config.color}>{config.label}</Badge>;
   };
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>กำลังโหลดข้อมูล...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return <div className="space-y-8">
       {/* Header */}
       <div>
@@ -152,21 +235,28 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentEquipment.map(item => <div key={item.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      {item.type === "Desktop" && <Computer className="h-4 w-4 text-primary" />}
-                      {item.type === "Printer" && <Printer className="h-4 w-4 text-primary" />}
-                      {item.type === "Laptop" && <Computer className="h-4 w-4 text-primary" />}
-                      {item.type === "Monitor" && <Monitor className="h-4 w-4 text-primary" />}
+              {recentEquipment.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">ไม่มีข้อมูลครุภัณฑ์</p>
+              ) : (
+                recentEquipment.map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        {(item.type.includes("Desktop") || item.type.includes("คอมพิวเตอร์")) && <Computer className="h-4 w-4 text-primary" />}
+                        {(item.type.includes("Printer") || item.type.includes("เครื่องพิมพ์")) && <Printer className="h-4 w-4 text-primary" />}
+                        {(item.type.includes("Laptop") || item.type.includes("แล็ป")) && <Computer className="h-4 w-4 text-primary" />}
+                        {(item.type.includes("Monitor") || item.type.includes("จอ")) && <Monitor className="h-4 w-4 text-primary" />}
+                        {!(item.type.includes("Desktop") || item.type.includes("คอมพิวเตอร์") || item.type.includes("Printer") || item.type.includes("เครื่องพิมพ์") || item.type.includes("Laptop") || item.type.includes("แล็ป") || item.type.includes("Monitor") || item.type.includes("จอ")) && <Computer className="h-4 w-4 text-primary" />}
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{item.id} • {item.location}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-sm">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.id} • {item.location}</p>
-                    </div>
+                    {getStatusBadge(item.status)}
                   </div>
-                  {getStatusBadge(item.status)}
-                </div>)}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -181,47 +271,31 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {[{
-              type: "คอมพิวเตอร์ตั้งโต๊ะ",
-              count: 89,
-              icon: Computer,
-              color: "bg-primary"
-            }, {
-              type: "แล็ปท็อป",
-              count: 45,
-              icon: Computer,
-              color: "bg-accent"
-            }, {
-              type: "จอภาพ",
-              count: 67,
-              icon: Monitor,
-              color: "bg-warning"
-            }, {
-              type: "เครื่องพิมพ์",
-              count: 23,
-              icon: Printer,
-              color: "bg-secondary"
-            }, {
-              type: "เซิร์ฟเวอร์",
-              count: 21,
-              icon: Server,
-              color: "bg-muted-foreground"
-            }].map(item => <div key={item.type} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className={`p-2 ${item.color}/10 rounded-lg`}>
-                      <item.icon className={`h-4 w-4 ${item.color === 'bg-muted-foreground' ? 'text-muted-foreground' : item.color.replace('bg-', 'text-')}`} />
+              {typeDistribution.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">ไม่มีข้อมูล</p>
+              ) : (
+                typeDistribution.map(item => (
+                  <div key={item.type} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={`p-2 ${item.color}/10 rounded-lg`}>
+                        <item.icon className={`h-4 w-4 ${item.color === 'bg-muted-foreground' ? 'text-muted-foreground' : item.color.replace('bg-', 'text-')}`} />
+                      </div>
+                      <span className="text-sm font-medium">{item.type}</span>
                     </div>
-                    <span className="text-sm font-medium">{item.type}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-bold">{item.count}</span>
-                    <div className="w-20 bg-muted rounded-full h-2">
-                      <div className={`${item.color} h-2 rounded-full`} style={{
-                    width: `${item.count / 89 * 100}%`
-                  }} />
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-bold">{item.count}</span>
+                      <div className="w-20 bg-muted rounded-full h-2">
+                        <div 
+                          className={`${item.color} h-2 rounded-full`} 
+                          style={{
+                            width: `${Math.max((item.count / Math.max(...typeDistribution.map(d => d.count)) * 100), 10)}%`
+                          }} 
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>)}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
