@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Computer, 
   Plus, 
@@ -8,7 +8,8 @@ import {
   Edit, 
   QrCode,
   Calendar,
-  MapPin
+  MapPin,
+  Loader2
 } from "lucide-react";
 import QRCodeDialog from "@/components/equipment/QRCodeDialog";
 import EquipmentViewDialog from "@/components/equipment/EquipmentViewDialog";
@@ -33,105 +34,44 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
-// Mock data
-const equipment = [
-    {
-      id: "EQ001",
-      name: "Dell OptiPlex 7090",
-      type: "Desktop PC",
-      brand: "Dell",
-      model: "OptiPlex 7090",
-      serialNumber: "DELL7090001",
-      assetNumber: "AST001",
-      status: "working",
-      location: "ห้อง IT-101",
-      user: "นายสมชาย ใจดี",
-      purchaseDate: "2023-01-15",
-      warrantyEnd: "2026-01-14",
-      specs: {
-        cpu: "Intel Core i5-11500",
-        ram: "8GB DDR4",
-        storage: "256GB SSD"
-      }
-    },
-    {
-      id: "EQ002", 
-      name: "HP LaserJet Pro M404n",
-      type: "Printer",
-      brand: "HP",
-      model: "LaserJet Pro M404n",
-      serialNumber: "HP404001",
-      assetNumber: "AST002",
-      status: "maintenance",
-      location: "ห้องธุรการ",
-      user: "นางสาวสุดา จริงใจ",
-      purchaseDate: "2022-06-20",
-      warrantyEnd: "2025-06-19",
-      specs: {
-        type: "Laser Printer",
-        speed: "38 ppm",
-        resolution: "4800 x 600 dpi"
-      }
-    },
-    {
-      id: "EQ003",
-      name: "Lenovo ThinkPad E14",
-      type: "Laptop", 
-      brand: "Lenovo",
-      model: "ThinkPad E14",
-      serialNumber: "LEN14001",
-      assetNumber: "AST003",
-      status: "broken",
-      location: "ห้องผู้อำนวยการ",
-      user: "นายประเสริฐ ศิลป์สวย",
-      purchaseDate: "2023-03-10",
-      warrantyEnd: "2026-03-09",
-      specs: {
-        cpu: "AMD Ryzen 5 5500U",
-        ram: "16GB DDR4", 
-        storage: "512GB SSD"
-      }
-    },
-    {
-      id: "EQ004",
-      name: "ASUS ProArt Display PA248QV",
-      type: "Monitor",
-      brand: "ASUS", 
-      model: "ProArt Display PA248QV",
-      serialNumber: "ASUS248001",
-      assetNumber: "AST004", 
-      status: "working",
-      location: "ห้องออกแบบ",
-      user: "นางสาววิมล สีสวย",
-      purchaseDate: "2023-05-22",
-      warrantyEnd: "2026-05-21",
-      specs: {
-        size: "24.1 inch",
-        resolution: "1920x1200",
-        panel: "IPS"
-      }
-    },
-    {
-      id: "EQ005",
-      name: "Apple iMac 24-inch",
-      type: "Desktop PC",
-      brand: "Apple",
-      model: "iMac 24-inch",
-      serialNumber: "IMAC24001",
-      assetNumber: "AST005",
-      status: "working", 
-      location: "ห้องกราฟิก",
-      user: "นายอดิศร ออกแบบ",
-      purchaseDate: "2023-08-15",
-      warrantyEnd: "2026-08-14",
-      specs: {
-        cpu: "Apple M1",
-        ram: "16GB",
-        storage: "512GB SSD"
-      }
-    }
-  ];
+// Equipment interface matching database schema
+interface Equipment {
+  id: string;
+  name: string;
+  type: string;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  asset_number: string;
+  status: string;
+  location: string | null;
+  current_user: string | null;
+  purchase_date: string | null;
+  warranty_end: string | null;
+  specs: any;
+  created_at: string;
+  updated_at: string;
+}
+
+// Transform database equipment to component format
+const transformEquipment = (dbEquipment: Equipment) => ({
+  id: dbEquipment.id,
+  name: dbEquipment.name,
+  type: dbEquipment.type,
+  brand: dbEquipment.brand || "",
+  model: dbEquipment.model || "",
+  serialNumber: dbEquipment.serial_number || "",
+  assetNumber: dbEquipment.asset_number,
+  status: dbEquipment.status,
+  location: dbEquipment.location || "",
+  user: dbEquipment.current_user || "",
+  purchaseDate: dbEquipment.purchase_date || "",
+  warrantyEnd: dbEquipment.warranty_end || "",
+  specs: dbEquipment.specs || {}
+});
 
 export default function Equipment() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -140,7 +80,39 @@ export default function Equipment() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [equipmentList, setEquipmentList] = useState(equipment);
+  const [equipmentList, setEquipmentList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  // Fetch equipment data from Supabase
+  const fetchEquipment = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await (supabase as any)
+        .from('equipment')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform database data to component format
+      const transformedData = data?.map(transformEquipment) || [];
+      setEquipmentList(transformedData);
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถโหลดข้อมูลครุภัณฑ์ได้: " + error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load data on component mount
+  useEffect(() => {
+    fetchEquipment();
+  }, []);
 
   const handleQrCode = (item: any) => {
     setSelectedEquipment(item);
@@ -157,12 +129,49 @@ export default function Equipment() {
     setEditDialogOpen(true);
   };
 
-  const handleSaveEdit = (updatedEquipment: any) => {
-    setEquipmentList(prev => 
-      prev.map(item => 
-        item.id === updatedEquipment.id ? updatedEquipment : item
-      )
-    );
+  const handleSaveEdit = async (updatedEquipment: any) => {
+    try {
+      // Transform back to database format
+      const dbUpdate = {
+        name: updatedEquipment.name,
+        type: updatedEquipment.type,
+        brand: updatedEquipment.brand,
+        model: updatedEquipment.model,
+        serial_number: updatedEquipment.serialNumber,
+        asset_number: updatedEquipment.assetNumber,
+        status: updatedEquipment.status,
+        location: updatedEquipment.location,
+        current_user: updatedEquipment.user,
+        purchase_date: updatedEquipment.purchaseDate,
+        warranty_end: updatedEquipment.warrantyEnd,
+        specs: updatedEquipment.specs
+      };
+
+      const { error } = await (supabase as any)
+        .from('equipment')
+        .update(dbUpdate)
+        .eq('id', updatedEquipment.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setEquipmentList(prev => 
+        prev.map(item => 
+          item.id === updatedEquipment.id ? updatedEquipment : item
+        )
+      );
+
+      toast({
+        title: "สำเร็จ",
+        description: "อัพเดทข้อมูลครุภัณฑ์เรียบร้อยแล้ว",
+      });
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถอัพเดทข้อมูลได้: " + error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -324,65 +333,84 @@ export default function Equipment() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEquipment.map((item) => (
-                  <TableRow key={item.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium">{item.assetNumber}</TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{item.name}</p>
-                        <p className="text-sm text-muted-foreground">{item.brand} {item.model}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{item.type}</Badge>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(item.status)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-1">
-                        <MapPin className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm">{item.location}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">{item.user}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-1">
-                        <Calendar className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-sm">{item.warrantyEnd}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="hover:bg-muted"
-                          onClick={() => handleQrCode(item)}
-                          title="สร้าง QR Code"
-                        >
-                          <QrCode className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="hover:bg-muted"
-                          onClick={() => handleView(item)}
-                          title="ดูรายละเอียด"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="hover:bg-muted"
-                          onClick={() => handleEdit(item)}
-                          title="แก้ไขข้อมูล"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8">
+                      <div className="flex items-center justify-center space-x-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>กำลังโหลดข้อมูล...</span>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : filteredEquipment.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8">
+                      <div className="text-muted-foreground">
+                        {equipmentList.length === 0 ? "ไม่มีข้อมูลครุภัณฑ์" : "ไม่พบข้อมูลที่ค้นหา"}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredEquipment.map((item) => (
+                    <TableRow key={item.id} className="hover:bg-muted/50">
+                      <TableCell className="font-medium">{item.assetNumber}</TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-muted-foreground">{item.brand} {item.model}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{item.type}</Badge>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(item.status)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-1">
+                          <MapPin className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-sm">{item.location}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{item.user}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-sm">{item.warrantyEnd}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end space-x-2">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="hover:bg-muted"
+                            onClick={() => handleQrCode(item)}
+                            title="สร้าง QR Code"
+                          >
+                            <QrCode className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="hover:bg-muted"
+                            onClick={() => handleView(item)}
+                            title="ดูรายละเอียด"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="hover:bg-muted"
+                            onClick={() => handleEdit(item)}
+                            title="แก้ไขข้อมูล"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
