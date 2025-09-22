@@ -203,12 +203,11 @@ export const Footer = () => {
               ) : (
                 footerData.contact_email
               )}</p>
-              <p>เวลาทำการ:</p>
-              <p className="ml-4">{isEditing ? (
+              <p>เวลาทำการ: {isEditing ? (
                 <Input
                   value={footerData.working_hours}
                   onChange={(e) => setFooterData({ ...footerData, working_hours: e.target.value })}
-                  className="text-sm"
+                  className="inline-block w-40 text-sm"
                 />
               ) : (
                 footerData.working_hours
