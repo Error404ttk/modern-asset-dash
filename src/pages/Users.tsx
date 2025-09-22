@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,59 +8,74 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Search, Plus, Users as UsersIcon, Edit, Trash2, Shield, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ViewUserDialog } from "@/components/users/ViewUserDialog";
+import { EditUserDialog } from "@/components/users/EditUserDialog";
+import { DeleteUserDialog } from "@/components/users/DeleteUserDialog";
+import { supabase } from "@/integrations/supabase/client";
 
 const Users = () => {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data for users
-  const usersData = [
-    {
-      id: "1",
-      username: "admin",
-      fullName: "ผู้ดูแลระบบ",
-      email: "admin@department.go.th",
-      department: "ฝ่ายเทคโนโลยีสารสนเทศ",
-      role: "ผู้ดูแลระบบ",
-      status: "ใช้งาน",
-      lastLogin: "2024-01-20 14:30:25",
-      createdAt: "2024-01-01"
-    },
-    {
-      id: "2",
-      username: "somchai.j",
-      fullName: "นาย สมชาย ใจดี",
-      email: "somchai.j@department.go.th", 
-      department: "กองคลัง",
-      role: "ผู้ใช้งานทั่วไป",
-      status: "ใช้งาน",
-      lastLogin: "2024-01-19 16:45:10",
-      createdAt: "2024-01-05"
-    },
-    {
-      id: "3",
-      username: "somying.r",
-      fullName: "นาง สมหญิง รักษ์ดี",
-      email: "somying.r@department.go.th",
-      department: "กองช่าง", 
-      role: "ผู้จัดการ",
-      status: "ใช้งาน",
-      lastLogin: "2024-01-18 09:20:45",
-      createdAt: "2024-01-03"
-    },
-    {
-      id: "4",
-      username: "wichai.s",
-      fullName: "นาย วิชัย ซ่อมดี",
-      email: "wichai.s@department.go.th",
-      department: "กองช่าง",
-      role: "ช่างเทคนิค", 
-      status: "พักการใช้งาน",
-      lastLogin: "2024-01-10 11:30:20",
-      createdAt: "2024-01-02"
+  // Fetch users from Supabase
+  const fetchUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform data to match UI format
+      const transformedUsers = data.map(user => ({
+        id: user.user_id,
+        username: user.email.split('@')[0], // Extract username from email
+        fullName: user.full_name || 'ไม่ระบุชื่อ',
+        email: user.email,
+        department: 'ไม่ระบุหน่วยงาน', // Add department field to profiles table if needed
+        role: getRoleDisplayName(user.role),
+        status: 'ใช้งาน', // Add status field to profiles table if needed
+        lastLogin: 'ไม่ระบุ',
+        createdAt: new Date(user.created_at).toLocaleDateString('th-TH')
+      }));
+
+      setUsers(transformedUsers);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "ไม่สามารถโหลดข้อมูลผู้ใช้งานได้",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  const getRoleDisplayName = (role: string) => {
+    switch (role) {
+      case 'super_admin':
+        return 'ผู้ดูแลระบบสูงสุด';
+      case 'admin':
+        return 'ผู้ดูแลระบบ';
+      case 'user':
+        return 'ผู้ใช้งานทั่วไป';
+      default:
+        return 'ผู้ใช้งานทั่วไป';
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   const getRoleBadgeVariant = (role: string) => {
     switch (role) {
@@ -87,11 +102,19 @@ const Users = () => {
     setIsAddDialogOpen(false);
   };
 
-  const handleDeleteUser = (userId: string, userName: string) => {
-    toast({
-      title: "ลบผู้ใช้งานสำเร็จ",
-      description: `ลบผู้ใช้งาน ${userName} เรียบร้อยแล้ว`,
-    });
+  const handleViewUser = (user: any) => {
+    setSelectedUser(user);
+    setViewDialogOpen(true);
+  };
+
+  const handleEditUser = (user: any) => {
+    setSelectedUser(user);
+    setEditDialogOpen(true);
+  };
+
+  const handleDeleteUser = (user: any) => {
+    setSelectedUser(user);
+    setDeleteDialogOpen(true);
   };
 
   const handleToggleStatus = (userId: string, userName: string, currentStatus: string) => {
@@ -102,7 +125,15 @@ const Users = () => {
     });
   };
 
-  const filteredUsers = usersData.filter(user =>
+  const handleUserUpdated = () => {
+    fetchUsers();
+  };
+
+  const handleUserDeleted = () => {
+    fetchUsers();
+  };
+
+  const filteredUsers = users.filter(user =>
     user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -214,7 +245,7 @@ const Users = () => {
               <UsersIcon className="h-8 w-8 text-primary" />
               <div className="ml-3">
                 <p className="text-sm text-muted-foreground">ผู้ใช้งานทั้งหมด</p>
-                <p className="text-2xl font-bold">{usersData.length}</p>
+                <p className="text-2xl font-bold">{users.length}</p>
               </div>
             </div>
           </CardContent>
@@ -226,7 +257,7 @@ const Users = () => {
               <div className="ml-3">
                 <p className="text-sm text-muted-foreground">ใช้งานปกติ</p>
                 <p className="text-2xl font-bold">
-                  {usersData.filter(user => user.status === "ใช้งาน").length}
+                  {users.filter(user => user.status === "ใช้งาน").length}
                 </p>
               </div>
             </div>
@@ -242,7 +273,7 @@ const Users = () => {
             รายการผู้ใช้งาน
           </CardTitle>
           <CardDescription>
-            แสดง {filteredUsers.length} ผู้ใช้งานจากทั้งหมด {usersData.length} คน
+            แสดง {filteredUsers.length} ผู้ใช้งานจากทั้งหมด {users.length} คน
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -285,10 +316,10 @@ const Users = () => {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2 ml-4">
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" onClick={() => handleViewUser(user)}>
                       <Eye className="h-4 w-4" />
                     </Button>
-                    <Button size="sm" variant="outline">
+                    <Button size="sm" variant="outline" onClick={() => handleEditUser(user)}>
                       <Edit className="h-4 w-4" />
                     </Button>
                     <Button 
@@ -301,7 +332,7 @@ const Users = () => {
                     <Button 
                       size="sm" 
                       variant="outline"
-                      onClick={() => handleDeleteUser(user.id, user.fullName)}
+                      onClick={() => handleDeleteUser(user)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -320,6 +351,27 @@ const Users = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Dialogs */}
+      <ViewUserDialog
+        open={viewDialogOpen}
+        onOpenChange={setViewDialogOpen}
+        user={selectedUser}
+      />
+      
+      <EditUserDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        user={selectedUser}
+        onUserUpdated={handleUserUpdated}
+      />
+      
+      <DeleteUserDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        user={selectedUser}
+        onUserDeleted={handleUserDeleted}
+      />
     </div>
   );
 };
