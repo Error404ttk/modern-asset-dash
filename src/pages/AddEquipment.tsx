@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2, Shield, HardDrive, Wifi, Tablet, Battery, ScanLine, Archive, Router, Database, Lock } from "lucide-react";
+import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2, Shield, HardDrive, Wifi, Tablet, Battery, ScanLine, Archive, Router, Database, Lock, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ export default function AddEquipment() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [equipmentType, setEquipmentType] = useState("");
+  const [equipmentSubType, setEquipmentSubType] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,7 +50,7 @@ export default function AddEquipment() {
       brand: formData.get('brand') as string,
       model: formData.get('model') as string,
       serial_number: formData.get('serialNumber') as string,
-      asset_number: formData.get('assetNumber') as string,
+      asset_number: equipmentSubType || (formData.get('assetNumber') as string),
       status: formData.get('status') as string || 'available',
       location: getLocationLabel(formData.get('location') as string),
       assigned_to: formData.get('currentUser') as string || null,
@@ -100,30 +101,302 @@ export default function AddEquipment() {
   };
 
   const equipmentTypes = [
-    { value: "server", label: "เครื่องคอมพิวเตอร์แม่ข่าย", icon: Server },
-    { value: "desktop", label: "เครื่องคอมพิวเตอร์", icon: Computer },
-    { value: "monitor", label: "จอแสดงภาพ", icon: Monitor },
-    { value: "laptop", label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค", icon: Computer },
-    { value: "tablet", label: "คอมพิวเตอร์แท็บเล็ต", icon: Tablet },
-    { value: "ups", label: "เครื่องสำรองไฟฟ้า", icon: Battery },
-    { value: "scanner", label: "สแกนเนอร์", icon: ScanLine },
-    { value: "printer", label: "เครื่องพิมพ์", icon: Printer },
-    { value: "blade_enclosure", label: "ตู้สำหรับการติดตั้งเครื่องแม่ข่ายชนิด Blade (Enclosure/Chassis)", icon: Archive },
-    { value: "blade_server", label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis", icon: Server },
-    { value: "external_storage", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบภายนอก (External Storage)", icon: HardDrive },
-    { value: "log_storage", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย", icon: Database },
-    { value: "firewall", label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall)", icon: Shield },
-    { value: "ips", label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System)", icon: Lock },
-    { value: "equipment_rack", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์", icon: Archive },
-    { value: "signal_distributor", label: "อุปกรณ์กระจายสัญญาณ", icon: Wifi },
-    { value: "router", label: "อุปกรณ์ค้นหาเส้นทางเครือข่าย", icon: Router },
-    { value: "load_balancer", label: "อุปกรณ์กระจายการทำงาน", icon: Server },
-    { value: "card_reader", label: "เครื่องอ่านบัตรแบบอเนกประสงค์", icon: ScanLine },
-    { value: "software_os", label: "ชุดโปรแกรมระบบปฏิบัติการ", icon: Computer },
-    { value: "nas", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ NAS", icon: HardDrive },
-    { value: "san", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ SAN", icon: Database },
-    { value: "ip_camera", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย", icon: Monitor },
+    { 
+      value: "server", 
+      label: "เครื่องคอมพิวเตอร์แม่ข่าย", 
+      icon: Server,
+      code: "7440-001",
+      subTypes: [
+        { value: "7440-001-0001", label: "เครื่องคอมพิวเตอร์แม่ข่าย แบบที่ 1" },
+        { value: "7440-001-0002", label: "เครื่องคอมพิวเตอร์แม่ข่าย แบบที่ 2" }
+      ]
+    },
+    { 
+      value: "desktop", 
+      label: "เครื่องคอมพิวเตอร์", 
+      icon: Computer,
+      code: "7440-002",
+      subTypes: [
+        { value: "7440-002-0001", label: "เครื่องคอมพิวเตอร์ สำหรับสำนักงาน (จอแสดงภาพขนาดไม่น้อยกว่า 19 นิ้ว)" },
+        { value: "7440-002-0002", label: "เครื่องคอมพิวเตอร์ สำหรับประมวลผล แบบที่ 1 (จอแสดงภาพขนาดไม่น้อยกว่า 19 นิ้ว)" },
+        { value: "7440-002-0003", label: "เครื่องคอมพิวเตอร์ สำหรับประมวลผล แบบที่ 2 (จอแสดงภาพขนาดไม่น้อยกว่า 19 นิ้ว)" },
+        { value: "7440-002-0004", label: "เครื่องคอมพิวเตอร์ All in One สำหรับสำนักงาน" },
+        { value: "7440-002-0005", label: "เครื่องคอมพิวเตอร์ All in One สำหรับประมวลผล" }
+      ]
+    },
+    { 
+      value: "monitor", 
+      label: "จอแสดงภาพ", 
+      icon: Monitor,
+      code: "7440-003",
+      subTypes: [
+        { value: "7440-003-0001", label: "จอแสดงภาพ ขนาดไม่น้อยกว่า 19 นิ้ว" },
+        { value: "7440-003-0002", label: "จอแสดงภาพ ขนาดไม่น้อยกว่า 21.5 นิ้ว" }
+      ]
+    },
+    { 
+      value: "laptop", 
+      label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค", 
+      icon: Computer,
+      code: "7440-004",
+      subTypes: [
+        { value: "7440-004-0001", label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค สำหรับสำนักงาน" },
+        { value: "7440-004-0002", label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค สำหรับประมวลผล" }
+      ]
+    },
+    { 
+      value: "tablet", 
+      label: "คอมพิวเตอร์แท็บเล็ต", 
+      icon: Tablet,
+      code: "7440-005",
+      subTypes: [
+        { value: "7440-005-0001", label: "คอมพิวเตอร์แท็บเล็ต แบบที่ 1" },
+        { value: "7440-005-0002", label: "คอมพิวเตอร์แท็บเล็ต แบบที่ 2" }
+      ]
+    },
+    { 
+      value: "ups", 
+      label: "เครื่องสำรองไฟฟ้า", 
+      icon: Battery,
+      code: "7440-006",
+      subTypes: [
+        { value: "7440-006-0001", label: "เครื่องสำรองไฟฟ้า ขนาด 800 VA" },
+        { value: "7440-006-0002", label: "เครื่องสำรองไฟฟ้า ขนาด 1 kVA" },
+        { value: "7440-006-0003", label: "เครื่องสำรองไฟฟ้า ขนาด 2 kVA" },
+        { value: "7440-006-0004", label: "เครื่องสำรองไฟฟ้า ขนาด 3 kVA" },
+        { value: "7440-006-0005", label: "เครื่องสำรองไฟฟ้า ขนาด 10 kVA" }
+      ]
+    },
+    { 
+      value: "scanner", 
+      label: "สแกนเนอร์", 
+      icon: ScanLine,
+      code: "7440-007",
+      subTypes: [
+        { value: "7440-007-0001", label: "สแกนเนอร์ สำหรับเก็บเอกสารทั่วไป" },
+        { value: "7440-007-0002", label: "สแกนเนอร์เก็บเอกสารระดับศูนย์บริการ แบบที่ 1" },
+        { value: "7440-007-0003", label: "สแกนเนอร์เก็บเอกสารระดับศูนย์บริการ แบบที่ 2" },
+        { value: "7440-007-0004", label: "สแกนเนอร์เก็บเอกสารระดับศูนย์บริการ แบบที่ 3" }
+      ]
+    },
+    { 
+      value: "printer", 
+      label: "เครื่องพิมพ์", 
+      icon: Printer,
+      code: "7440-008",
+      subTypes: [
+        { value: "7440-008-0001", label: "เครื่องพิมพ์ชนิด Dot Matrix Printer แบบแคร่สั้น" },
+        { value: "7440-008-0002", label: "เครื่องพิมพ์ชนิด Dot Matrix Printer แบบแคร่ยาว" },
+        { value: "7440-008-0003", label: "เครื่องพิมพ์แบบฉีดหมึกพร้อมติดตั้งถังหมึกพิมพ์ (Ink Tank Printer)" },
+        { value: "7440-008-0004", label: "เครื่องพิมพ์แบบฉีดหมึก (Ink Printer) สำหรับกระดาษ A3" },
+        { value: "7440-008-0005", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ" },
+        { value: "7440-008-0006", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ ชนิด Network แบบที่ 1" },
+        { value: "7440-008-0007", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ ชนิด Network แบบที่ 2" },
+        { value: "7440-008-0008", label: "เครื่องพิมพ์เลเซอร์ หรือ LED สี ชนิด Network แบบที่ 1" },
+        { value: "7440-008-0009", label: "เครื่องพิมพ์เลเซอร์ หรือ LED สี ชนิด Network แบบที่ 2" },
+        { value: "7440-008-0010", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ ชนิด Network สำหรับกระดาษ A3" },
+        { value: "7440-008-0011", label: "เครื่องพิมพ์ Multifunction แบบฉีดหมึกพร้อมติดตั้งถังหมึก (Ink Tank Printer)" },
+        { value: "7440-008-0012", label: "เครื่องพิมพ์ Multifunction เลเซอร์ หรือ LED ขาวดำ" },
+        { value: "7440-008-0013", label: "เครื่องพิมพ์ Multifunction เลเซอร์ LED หรือ สี" },
+        { value: "7440-008-0014", label: "เครื่องพิมพ์วัตถุ 3 มิติ" },
+        { value: "7440-008-0015", label: "เครื่องพิมพ์แบบใช้ความร้อน (Thermal Printer)" }
+      ]
+    },
+    { 
+      value: "blade_enclosure", 
+      label: "ตู้สำหรับการติดตั้งเครื่องแม่ข่ายชนิด Blade (Enclosure/Chassis)", 
+      icon: Archive,
+      code: "7440-009",
+      subTypes: [
+        { value: "7440-009-0001", label: "ตู้สำหรับติดตั้งเครื่องแม่ข่ายชนิด Blade Enclosure/Chassis) แบบที่ 1" },
+        { value: "7440-009-0002", label: "ตู้สำหรับติดตั้งเครื่องแม่ข่ายชนิด Blade Enclosure/Chassis) แบบที่ 2" }
+      ]
+    },
+    { 
+      value: "blade_server", 
+      label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis", 
+      icon: Server,
+      code: "7440-010",
+      subTypes: [
+        { value: "7440-010-0001", label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis แบบที่ 1" },
+        { value: "7440-010-0002", label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis แบบที่ 2" }
+      ]
+    },
+    { 
+      value: "external_storage", 
+      label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบภายนอก (External Storage)", 
+      icon: HardDrive,
+      code: "7440-011",
+      subTypes: [
+        { value: "7440-011-0001", label: "External Harddisk (มีราคาตั้งแต่ 5,000 บาท ขึ้นไป)" }
+      ]
+    },
+    { 
+      value: "log_storage", 
+      label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย", 
+      icon: Database,
+      code: "7440-012",
+      subTypes: [
+        { value: "7440-012-0001", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย แบบที่ 1" },
+        { value: "7440-012-0002", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย แบบที่ 2" },
+        { value: "7440-012-0003", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย แบบที่ 3" }
+      ]
+    },
+    { 
+      value: "firewall", 
+      label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall)", 
+      icon: Shield,
+      code: "7440-013",
+      subTypes: [
+        { value: "7440-013-0001", label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall) แบบที่ 1" },
+        { value: "7440-013-0002", label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall) แบบที่ 2" }
+      ]
+    },
+    { 
+      value: "ips", 
+      label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System)", 
+      icon: Lock,
+      code: "7440-014",
+      subTypes: [
+        { value: "7440-014-0001", label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System) แบบที่ 1" },
+        { value: "7440-014-0002", label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System) แบบที่ 2" },
+        { value: "7440-014-0003", label: "อุปกรณ์ป้องกันการบุกรุกเว็บไซต์ (Web Application Firewall)" },
+        { value: "7440-014-0004", label: "อุปกรณ์ป้องกันการบุกรุกจดหมายอิเล็กทรอนิกส์ (e-Mail Security)" }
+      ]
+    },
+    { 
+      value: "equipment_rack", 
+      label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์", 
+      icon: Archive,
+      code: "7440-015",
+      subTypes: [
+        { value: "7440-015-0001", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์ แบบที่ 1 (ขนาด 36U)" },
+        { value: "7440-015-0002", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์ แบบที่ 2 (ขนาด 42U)" },
+        { value: "7440-015-0003", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์ แบบที่ 3 (ขนาด 42U)" }
+      ]
+    },
+    { 
+      value: "signal_distributor", 
+      label: "อุปกรณ์กระจายสัญญาณ", 
+      icon: Wifi,
+      code: "7440-016",
+      subTypes: [
+        { value: "7440-016-0001", label: "อุปกรณ์กระจายสัญญาณ (L2 Switch) ขนาด 16 ช่อง" },
+        { value: "7440-016-0002", label: "อุปกรณ์กระจายสัญญาณ (L2 Switch) ขนาด 24 ช่อง แบบที่ 1" },
+        { value: "7440-016-0003", label: "อุปกรณ์กระจายสัญญาณ (L2 Switch) ขนาด 24 ช่อง แบบที่ 2" },
+        { value: "7440-016-0004", label: "อุปกรณ์กระจายสัญญาณ (L3 Switch) ขนาด 24 ช่อง" },
+        { value: "7440-016-0005", label: "อุปกรณ์กระจายสัญญาณไร้สาย (Access Point) แบบที่ 1" },
+        { value: "7440-016-0006", label: "อุปกรณ์กระจายสัญญาณไร้สาย (Access Point) แบบที่ 2" },
+        { value: "7440-016-0007", label: "รีโมทพรีเซนไร้สาย" }
+      ]
+    },
+    { 
+      value: "router", 
+      label: "อุปกรณ์ค้นหาเส้นทางเครือข่าย", 
+      icon: Router,
+      code: "7440-017",
+      subTypes: [
+        { value: "7440-017-0001", label: "อุปกรณ์ค้นหาเส้นทางเครือข่าย (Router)" }
+      ]
+    },
+    { 
+      value: "load_balancer", 
+      label: "อุปกรณ์กระจายการทำงาน", 
+      icon: Server,
+      code: "7440-018",
+      subTypes: [
+        { value: "7440-018-0001", label: "อุปกรณ์กระจายการทำงานสำหรับเครือข่าย (Link Load Balancer)" },
+        { value: "7440-018-0002", label: "อุปกรณ์กระจายการทำงานสำหรับเครื่องคอมพิวเตอร์แม่ข่าย (Server Load Balancer)" }
+      ]
+    },
+    { 
+      value: "card_reader", 
+      label: "เครื่องอ่านบัตรแบบอเนกประสงค์", 
+      icon: ScanLine,
+      code: "7440-019",
+      subTypes: [
+        { value: "7440-019-0001", label: "เครื่องอ่านบัตรแบบอเนกประสงค์ (Smart Card Reader)" }
+      ]
+    },
+    { 
+      value: "software_os", 
+      label: "ชุดโปรแกรมระบบปฏิบัติการ", 
+      icon: Computer,
+      code: "7440-020",
+      subTypes: [
+        { value: "7440-020-0001", label: "สำหรับเครื่องคอมพิวเตอร์ และคอมพิวเตอร์โน้ตบุ๊ก" },
+        { value: "7440-020-0002", label: "สำหรับเครื่องคอมพิวเตอร์แม่ข่าย" },
+        { value: "7440-020-0003", label: "ชุดโปรแกรมจัดการสำนักงาน แบบที่ 1" },
+        { value: "7440-020-0004", label: "ชุดโปรแกรมจัดการสำนักงาน แบบที่ 2" },
+        { value: "7440-020-0005", label: "ชุดโปรแกรมจัดการสำนักงาน แบบที่ 3" },
+        { value: "7440-020-0006", label: "ชุดโปรแกรมป้องกันไวรัส สำหรับเครื่องคอมพิวเตอร์ 1 เครื่อง ต่อปี" }
+      ]
+    },
+    { 
+      value: "nas", 
+      label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ NAS", 
+      icon: HardDrive,
+      code: "7440-021",
+      subTypes: [
+        { value: "7440-021-0001", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ NAS" }
+      ]
+    },
+    { 
+      value: "san", 
+      label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ SAN", 
+      icon: Database,
+      code: "7440-022",
+      subTypes: [
+        { value: "7440-022-0001", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ SAN" }
+      ]
+    },
+    { 
+      value: "cctv", 
+      label: "กล้องโทรทัศน์วงจรปิด", 
+      icon: Eye,
+      code: "7440-023",
+      subTypes: [
+        { value: "7440-023-0001", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในสำนักงาน" },
+        { value: "7440-023-0002", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร" },
+        { value: "7440-023-0003", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" },
+        { value: "7440-023-0004", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
+        { value: "7440-023-0005", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
+        { value: "7440-023-0006", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
+        { value: "7440-023-0007", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
+        { value: "7440-023-0008", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกสำนักงาน" },
+        { value: "7440-023-0009", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร สำหรับใช้ในงานรักษาความปลอดภัยทั่วไปและงานอื่นๆ" },
+        { value: "7440-023-0010", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" },
+        { value: "7440-023-0011", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
+        { value: "7440-023-0012", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
+        { value: "7440-023-0013", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
+        { value: "7440-023-0014", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
+        { value: "7440-023-0015", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบปรับมุมมอง แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" },
+        { value: "7440-023-0016", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบปรับมุมมอง สำหรับใช้ในงานรักษาความปลอดภัยทั่วไปและงานอื่นๆ" },
+        { value: "7440-023-0017", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบปรับมุมมอง แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" }
+      ]
+    },
+    { 
+      value: "ip_camera", 
+      label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย", 
+      icon: Monitor,
+      code: "7440-024",
+      subTypes: [
+        { value: "7440-024-0001", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย (Network Video Recorder) แบบ 8 ช่อง" },
+        { value: "7440-024-0002", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย (Network Video Recorder) แบบ 16 ช่อง" },
+        { value: "7440-024-0003", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย (Network Video Recorder) แบบ 32ช่อง" }
+      ]
+    }
   ];
+
+  const getSubTypes = (equipmentType: string) => {
+    const type = equipmentTypes.find(t => t.value === equipmentType);
+    return type?.subTypes || [];
+  };
+
+  const handleEquipmentTypeChange = (value: string) => {
+    setEquipmentType(value);
+    setEquipmentSubType(""); // Reset sub type when main type changes
+  };
 
   const isComputerType = equipmentType === "desktop" || equipmentType === "laptop" || equipmentType === "server" || equipmentType === "tablet" || equipmentType === "blade_server";
 
@@ -168,22 +441,43 @@ export default function AddEquipment() {
               
               <div className="space-y-2">
                 <Label htmlFor="equipmentType">ประเภทครุภัณฑ์ *</Label>
-                <Select value={equipmentType} onValueChange={setEquipmentType} required>
+                <Select value={equipmentType} onValueChange={handleEquipmentTypeChange} required>
                   <SelectTrigger>
                     <SelectValue placeholder="เลือกประเภทครุภัณฑ์" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background border border-border shadow-lg z-50">
                     {equipmentTypes.map((type) => (
                       <SelectItem key={type.value} value={type.value}>
                         <div className="flex items-center space-x-2">
                           <type.icon className="h-4 w-4" />
-                          <span>{type.label}</span>
+                          <span>{type.code} - {type.label}</span>
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              {equipmentType && (
+                <div className="space-y-2">
+                  <Label htmlFor="equipmentSubType">รายละเอียดครุภัณฑ์ *</Label>
+                  <Select value={equipmentSubType} onValueChange={setEquipmentSubType} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกรายละเอียดครุภัณฑ์" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
+                      {getSubTypes(equipmentType).map((subType) => (
+                        <SelectItem key={subType.value} value={subType.value}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{subType.value}</span>
+                            <span className="text-sm text-muted-foreground">{subType.label}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="brand">ยี่ห้อ *</Label>
@@ -216,13 +510,17 @@ export default function AddEquipment() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="assetNumber">เลขครุภัณฑ์ *</Label>
+                <Label htmlFor="assetNumber">เลขครุภัณฑ์</Label>
                 <Input 
                   id="assetNumber" 
                   name="assetNumber"
-                  placeholder="เช่น EQ001"
-                  required
+                  placeholder={equipmentSubType ? `อัตโนมัติ: ${equipmentSubType}` : "เช่น EQ001"}
+                  value={equipmentSubType}
+                  disabled={!!equipmentSubType}
                 />
+                <p className="text-sm text-muted-foreground">
+                  {equipmentSubType ? "เลขครุภัณฑ์จะถูกกำหนดอัตโนมัติตามประเภทที่เลือก" : "หรือจะถูกกำหนดอัตโนมัติเมื่อเลือกประเภทครุภัณฑ์"}
+                </p>
               </div>
 
               <div className="space-y-2">
