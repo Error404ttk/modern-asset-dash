@@ -56,9 +56,9 @@ export default function DeleteEquipmentDialog({
     setError("");
 
     try {
-      // Verify password by attempting to re-authenticate
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      // Get user session for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         throw new Error("ไม่พบข้อมูลผู้ใช้");
       }
 
@@ -66,53 +66,29 @@ export default function DeleteEquipmentDialog({
       const { data: profile } = await supabase
         .from('profiles')
         .select('role, email')
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .single();
 
       if (!profile || profile.role !== 'super_admin') {
         throw new Error("คุณไม่มีสิทธิ์ในการลบข้อมูล");
       }
 
-      // Verify password by signing in again
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: profile.email,
-        password: password
+      // Call edge function to delete equipment with super admin password verification
+      const { data, error } = await supabase.functions.invoke('delete-equipment', {
+        body: {
+          equipmentId: equipment.id,
+          reason: reason,
+          superAdminPassword: password,
+          userAuthToken: session.access_token
+        }
       });
 
-      if (authError) {
-        throw new Error("รหัสผ่านไม่ถูกต้อง");
+      if (error) {
+        throw new Error(error.message || 'เกิดข้อผิดพลาดในการเรียกใช้ฟังก์ชัน');
       }
 
-      // Log the deletion in audit_logs before deleting
-      const { error: auditError } = await supabase
-        .from('audit_logs')
-        .insert([
-          {
-            table_name: 'equipment',
-            record_id: equipment.id,
-            action: 'DELETE',
-            field_name: 'entire_record',
-            old_value: JSON.stringify(equipment),
-            new_value: null,
-            reason: reason,
-            changed_by_user_id: user.id,
-            user_email: profile.email,
-            changed_by: profile.email
-          }
-        ]);
-
-      if (auditError) {
-        console.error('Audit log error:', auditError);
-      }
-
-      // Delete the equipment
-      const { error: deleteError } = await supabase
-        .from('equipment')
-        .delete()
-        .eq('id', equipment.id);
-
-      if (deleteError) {
-        throw deleteError;
+      if (data.error) {
+        throw new Error(data.error);
       }
 
       toast.success("ลบข้อมูลครุภัณฑ์สำเร็จ");
@@ -166,11 +142,11 @@ export default function DeleteEquipmentDialog({
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="password">รหัสผ่านยืนยัน *</Label>
+            <Label htmlFor="password">รหัสผ่าน Super Admin *</Label>
             <Input
               id="password"
               type="password"
-              placeholder="ใส่รหัสผ่านของคุณเพื่อยืนยัน"
+              placeholder="ใส่รหัสผ่าน Super Admin เพื่อยืนยัน"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />

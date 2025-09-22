@@ -1,1 +1,4 @@
 project_id = "dzleqfsaxlbkzwyxzypo"
+
+[functions.delete-equipment]
+verify_jwt = false
