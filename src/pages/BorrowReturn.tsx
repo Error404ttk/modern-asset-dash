@@ -25,8 +25,8 @@ const BorrowReturn = () => {
       const { data, error } = await (supabase as any)
         .from('equipment')
         .select('*')
-        .eq('status', 'working')
-        .is('current_user', null);
+        .eq('status', 'available')
+        .is('assigned_to', null);
 
       if (error) throw error;
 
@@ -45,7 +45,7 @@ const BorrowReturn = () => {
     try {
       setLoading(true);
       const { data, error } = await (supabase as any)
-        .from('borrow_records')
+        .from('borrow_transactions')
         .select(`
           *,
           equipment:equipment_id (
@@ -64,10 +64,10 @@ const BorrowReturn = () => {
         name: record.equipment?.name || 'Unknown Equipment',
         serialNumber: record.equipment?.serial_number || 'N/A',
         borrower: record.borrower_name,
-        department: 'ไม่ระบุ', // We can add department field to borrow_records later
-        borrowDate: record.borrow_date ? new Date(record.borrow_date).toLocaleDateString('th-TH') : '',
-        returnDate: record.expected_return_date ? new Date(record.expected_return_date).toLocaleDateString('th-TH') : '',
-        status: isOverdue(record.expected_return_date) ? 'เกินกำหนด' : 'ยืมอยู่',
+        department: 'ไม่ระบุ',
+        borrowDate: record.borrowed_at ? new Date(record.borrowed_at).toLocaleDateString('th-TH') : '',
+        returnDate: record.expected_return_at ? new Date(record.expected_return_at).toLocaleDateString('th-TH') : '',
+        status: isOverdue(record.expected_return_at) ? 'เกินกำหนด' : 'ยืมอยู่',
         recordId: record.id
       })) || [];
 
@@ -103,25 +103,26 @@ const BorrowReturn = () => {
       equipment_id: formData.get('equipment') as string,
       borrower_name: formData.get('borrower') as string,
       borrower_contact: formData.get('contact') as string,
-      borrow_date: formData.get('borrowDate') as string,
-      expected_return_date: formData.get('returnDate') as string,
+      borrowed_at: new Date(formData.get('borrowDate') as string).toISOString(),
+      expected_return_at: new Date(formData.get('returnDate') as string).toISOString(),
       notes: formData.get('purpose') as string + (formData.get('notes') ? '\n' + formData.get('notes') : ''),
-      status: 'borrowed'
+      status: 'borrowed',
+      user_id: '00000000-0000-0000-0000-000000000000' // Default user ID for now
     };
 
     try {
       const { error: borrowError } = await (supabase as any)
-        .from('borrow_records')
+        .from('borrow_transactions')
         .insert([borrowData]);
 
       if (borrowError) throw borrowError;
 
-      // Update equipment current_user
+      // Update equipment status and assigned_to
       const { error: updateError } = await (supabase as any)
         .from('equipment')
         .update({ 
-          current_user: formData.get('borrower') as string,
-          status: 'working' 
+          assigned_to: formData.get('borrower') as string,
+          status: 'borrowed'
         })
         .eq('id', formData.get('equipment') as string);
 
@@ -157,9 +158,9 @@ const BorrowReturn = () => {
     try {
       // Update borrow record
       const { error: updateError } = await (supabase as any)
-        .from('borrow_records')
+        .from('borrow_transactions')
         .update({ 
-          actual_return_date: formData.get('returnDate') as string,
+          returned_at: new Date(formData.get('returnDate') as string).toISOString(),
           status: 'returned',
           notes: (formData.get('returnNotes') as string) || null
         })
@@ -168,12 +169,12 @@ const BorrowReturn = () => {
 
       if (updateError) throw updateError;
 
-      // Update equipment status and clear current_user
-      const newStatus = formData.get('condition') === 'damaged' ? 'broken' : 'working';
+      // Update equipment status and clear assigned_to
+      const newStatus = formData.get('condition') === 'damaged' ? 'damaged' : 'available';
       const { error: equipmentError } = await (supabase as any)
         .from('equipment')
         .update({ 
-          current_user: null,
+          assigned_to: null,
           status: newStatus
         })
         .eq('id', equipmentId);
@@ -207,19 +208,22 @@ const BorrowReturn = () => {
       if (!borrowRecord) return;
 
       const { error: updateError } = await (supabase as any)
-        .from('borrow_records')
+        .from('borrow_transactions')
         .update({ 
-          actual_return_date: new Date().toISOString(),
+          returned_at: new Date().toISOString(),
           status: 'returned'
         })
         .eq('id', borrowRecord.recordId);
 
       if (updateError) throw updateError;
 
-      // Update equipment to clear current_user
+      // Update equipment to clear assigned_to
       const { error: equipmentError } = await (supabase as any)
         .from('equipment')
-        .update({ current_user: null })
+        .update({ 
+          assigned_to: null,
+          status: 'available'
+        })
         .eq('asset_number', equipmentId);
 
       if (equipmentError) throw equipmentError;
