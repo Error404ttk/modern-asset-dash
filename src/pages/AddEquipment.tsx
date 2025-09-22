@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2, Shield, HardDrive, Wifi, Tablet, Battery, ScanLine, Archive, Router, Database, Lock, Eye, Camera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,8 +26,46 @@ export default function AddEquipment() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [activeEquipmentTypes, setActiveEquipmentTypes] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Load active equipment types on component mount
+  useEffect(() => {
+    const loadActiveEquipmentTypes = async () => {
+      try {
+        const { data: equipmentTypesData } = await supabase
+          .from('equipment_types')
+          .select('*')
+          .eq('active', true)
+          .order('name');
+
+        if (equipmentTypesData) {
+          // Map database equipment types to the format expected by the UI
+          const mappedTypes = equipmentTypesData.map(dbType => {
+            // Find matching type from equipmentTypes array
+            const matchingType = equipmentTypes.find(t => 
+              t.code === dbType.code || t.label.includes(dbType.name)
+            );
+            
+            return {
+              value: dbType.code.toLowerCase(),
+              label: dbType.name,
+              icon: matchingType?.icon || Computer,
+              code: dbType.code,
+              subTypes: matchingType?.subTypes || []
+            };
+          });
+          
+          setActiveEquipmentTypes(mappedTypes);
+        }
+      } catch (error) {
+        console.error('Error loading equipment types:', error);
+      }
+    };
+
+    loadActiveEquipmentTypes();
+  }, []);
 
   const handleImageUpload = (files: FileList | null) => {
     if (!files) return;
@@ -175,7 +213,8 @@ export default function AddEquipment() {
   };
 
   const getEquipmentTypeLabel = (value: string) => {
-    const type = equipmentTypes.find(t => t.value === value);
+    const types = activeEquipmentTypes.length > 0 ? activeEquipmentTypes : equipmentTypes;
+    const type = types.find(t => t.value === value);
     return type ? type.label : value;
   };
 
@@ -479,7 +518,8 @@ export default function AddEquipment() {
   ];
 
   const getSubTypes = (equipmentType: string) => {
-    const type = equipmentTypes.find(t => t.value === equipmentType);
+    const types = activeEquipmentTypes.length > 0 ? activeEquipmentTypes : equipmentTypes;
+    const type = types.find(t => t.value === equipmentType);
     return type?.subTypes || [];
   };
 
@@ -536,7 +576,7 @@ export default function AddEquipment() {
                     <SelectValue placeholder="เลือกประเภทครุภัณฑ์" />
                   </SelectTrigger>
                   <SelectContent className="bg-background border border-border shadow-lg z-50">
-                    {equipmentTypes.map((type) => (
+                    {(activeEquipmentTypes.length > 0 ? activeEquipmentTypes : equipmentTypes).map((type) => (
                       <SelectItem key={type.value} value={type.value}>
                         <div className="flex items-center space-x-2">
                           <type.icon className="h-4 w-4" />

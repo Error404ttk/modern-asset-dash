@@ -184,6 +184,54 @@ const Settings = () => {
     setIsDeleteDialogOpen(true);
   };
 
+  const handleToggleDepartmentStatus = async (department: Department) => {
+    try {
+      const { error } = await supabase
+        .from('departments')
+        .update({ active: !department.active })
+        .eq('id', department.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "อัปเดตสำเร็จ",
+        description: `${department.active ? 'พักใช้งาน' : 'เปิดใช้งาน'}หน่วยงานเรียบร้อยแล้ว`,
+      });
+
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleEquipmentTypeStatus = async (equipmentType: EquipmentType) => {
+    try {
+      const { error } = await supabase
+        .from('equipment_types')
+        .update({ active: !equipmentType.active })
+        .eq('id', equipmentType.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "อัปเดตสำเร็จ",
+        description: `${equipmentType.active ? 'พักใช้งาน' : 'เปิดใช้งาน'}ประเภทครุภัณฑ์เรียบร้อยแล้ว`,
+      });
+
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleConfirmDelete = async (reason: string, password: string) => {
     if (!deletingItem) return;
 
@@ -373,6 +421,9 @@ const Settings = () => {
                         <Badge variant={dept.active ? "default" : "secondary"}>
                           {dept.active ? "ใช้งาน" : "ไม่ใช้งาน"}
                         </Badge>
+                        <Button size="sm" variant="outline" onClick={() => handleToggleDepartmentStatus(dept)}>
+                          {dept.active ? "พักใช้งาน" : "ใช้งาน"}
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => handleEditDepartment(dept)}>
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -429,6 +480,9 @@ const Settings = () => {
                         <Badge variant={type.active ? "default" : "secondary"}>
                           {type.active ? "ใช้งาน" : "ไม่ใช้งาน"}
                         </Badge>
+                        <Button size="sm" variant="outline" onClick={() => handleToggleEquipmentTypeStatus(type)}>
+                          {type.active ? "พักใช้งาน" : "ใช้งาน"}
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => handleEditEquipmentType(type)}>
                           <Edit className="h-4 w-4" />
                         </Button>

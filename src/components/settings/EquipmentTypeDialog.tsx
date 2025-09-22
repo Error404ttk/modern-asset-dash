@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,11 +27,30 @@ export const EquipmentTypeDialog = ({ open, onOpenChange, equipmentType, onSucce
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    name: equipmentType?.name || "",
-    code: equipmentType?.code || "",
-    description: equipmentType?.description || "",
-    active: equipmentType?.active ?? true,
+    name: "",
+    code: "",
+    description: "",
+    active: true,
   });
+
+  // Update form data when equipmentType changes
+  useEffect(() => {
+    if (equipmentType) {
+      setFormData({
+        name: equipmentType.name,
+        code: equipmentType.code,
+        description: equipmentType.description || "",
+        active: equipmentType.active,
+      });
+    } else {
+      setFormData({
+        name: "",
+        code: "",
+        description: "",
+        active: true,
+      });
+    }
+  }, [equipmentType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,7 +86,10 @@ export const EquipmentTypeDialog = ({ open, onOpenChange, equipmentType, onSucce
 
       onSuccess();
       onOpenChange(false);
-      setFormData({ name: "", code: "", description: "", active: true });
+      // Reset form when dialog closes
+      if (!equipmentType) {
+        setFormData({ name: "", code: "", description: "", active: true });
+      }
     } catch (error: any) {
       toast({
         title: "เกิดข้อผิดพลาด",
