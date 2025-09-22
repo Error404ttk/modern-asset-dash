@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Home, Computer, Plus, FileText, ArrowLeftRight, History, Users, Settings, Monitor, QrCode } from "lucide-react";
+import { Home, Computer, Plus, FileText, ArrowLeftRight, History, Users, Settings, Monitor, QrCode, LogOut } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
-import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar, SidebarFooter } from "@/components/ui/sidebar";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 const menuItems = [{
   title: "แดชบอร์ด",
   url: "/",
@@ -39,6 +41,7 @@ export function AppSidebar() {
   const {
     state
   } = useSidebar();
+  const { profile, signOut } = useAuth();
   const location = useLocation();
   const currentPath = location.pathname;
   const isActive = (path: string) => {
@@ -96,7 +99,30 @@ export function AppSidebar() {
                 สแกนเพื่อดูข้อมูลครุภัณฑ์
               </p>
             </div>
-          </div>}
+            </div>}
+        <SidebarFooter>
+          <div className="p-4 space-y-2">
+            {profile && (
+              <div className="text-sm">
+                <div className="font-medium">{profile.full_name}</div>
+                <div className="text-muted-foreground text-xs">{profile.email}</div>
+                <div className="text-xs bg-primary/10 text-primary px-2 py-1 rounded mt-1 inline-block">
+                  {profile.role === 'super_admin' ? 'ผู้ดูแลระบบสูงสุด' : 
+                   profile.role === 'admin' ? 'ผู้ดูแลระบบ' : 'ผู้ใช้'}
+                </div>
+              </div>
+            )}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={signOut}
+              className="w-full"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              ออกจากระบบ
+            </Button>
+          </div>
+        </SidebarFooter>
       </SidebarContent>
     </Sidebar>;
 }

@@ -9,11 +9,14 @@ import {
   QrCode,
   Calendar,
   MapPin,
-  Loader2
+  Loader2,
+  Trash2
 } from "lucide-react";
 import QRCodeDialog from "@/components/equipment/QRCodeDialog";
 import EquipmentViewDialog from "@/components/equipment/EquipmentViewDialog";
 import EquipmentEditDialog from "@/components/equipment/EquipmentEditDialog";
+import DeleteEquipmentDialog from "@/components/equipment/DeleteEquipmentDialog";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,9 +85,11 @@ export default function Equipment() {
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [equipmentList, setEquipmentList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { profile } = useAuth();
 
   // Fetch equipment data from Supabase
   const fetchEquipment = async () => {
@@ -131,6 +136,15 @@ export default function Equipment() {
   const handleEdit = (item: any) => {
     setSelectedEquipment(item);
     setEditDialogOpen(true);
+  };
+
+  const handleDelete = (item: any) => {
+    setSelectedEquipment(item);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleEquipmentDeleted = () => {
+    fetchEquipment();
   };
 
   const handleSaveEdit = async (updatedEquipment: any) => {
@@ -411,16 +425,33 @@ export default function Equipment() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="hover:bg-muted"
-                            onClick={() => handleEdit(item)}
-                            title="แก้ไขข้อมูล"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </div>
+                           <Button 
+                             variant="ghost" 
+                             size="sm" 
+                             className="hover:bg-muted"
+                             onClick={() => handleEdit(item)}
+                             title="แก้ไขข้อมูล"
+                           >
+                             <Edit className="h-4 w-4" />
+                           </Button>
+                           
+                           {/* Delete button - only for super admin */}
+                           {profile?.role === 'super_admin' && (
+                             <Button 
+                               variant="ghost" 
+                               size="sm" 
+                               className="hover:bg-destructive/10 hover:text-destructive"
+                               onClick={(e) => {
+                                 e.preventDefault();
+                                 e.stopPropagation();
+                                 handleDelete(item);
+                               }}
+                               title="ลบครุภัณฑ์"
+                             >
+                               <Trash2 className="h-4 w-4" />
+                             </Button>
+                           )}
+                         </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -456,6 +487,12 @@ export default function Equipment() {
             onOpenChange={setEditDialogOpen}
             equipment={selectedEquipment}
             onSave={handleSaveEdit}
+          />
+          <DeleteEquipmentDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            equipment={selectedEquipment}
+            onDeleted={handleEquipmentDeleted}
           />
         </>
       )}
