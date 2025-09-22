@@ -122,8 +122,7 @@ export const Footer = () => {
   return (
     <footer className="bg-card border-t mt-auto">
       <div className="container mx-auto px-6 py-4">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-medium">Footer</h3>
+        <div className="flex justify-end items-center mb-4">
           <div className="flex gap-2">
             {isEditing ? (
               <>
