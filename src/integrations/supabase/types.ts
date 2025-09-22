@@ -66,37 +66,55 @@ export type Database = {
       }
       equipment: {
         Row: {
+          asset_number: string
+          assigned_to: string | null
           brand: string | null
           created_at: string
           id: string
           location: string | null
           model: string | null
           name: string
+          purchase_date: string | null
+          serial_number: string | null
+          specs: Json | null
           status: string
           type: string
           updated_at: string
+          warranty_end: string | null
         }
         Insert: {
+          asset_number?: string
+          assigned_to?: string | null
           brand?: string | null
           created_at?: string
           id?: string
           location?: string | null
           model?: string | null
           name: string
+          purchase_date?: string | null
+          serial_number?: string | null
+          specs?: Json | null
           status?: string
           type: string
           updated_at?: string
+          warranty_end?: string | null
         }
         Update: {
+          asset_number?: string
+          assigned_to?: string | null
           brand?: string | null
           created_at?: string
           id?: string
           location?: string | null
           model?: string | null
           name?: string
+          purchase_date?: string | null
+          serial_number?: string | null
+          specs?: Json | null
           status?: string
           type?: string
           updated_at?: string
+          warranty_end?: string | null
         }
         Relationships: []
       }

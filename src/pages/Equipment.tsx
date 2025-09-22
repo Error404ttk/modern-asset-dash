@@ -48,7 +48,7 @@ interface Equipment {
   asset_number: string;
   status: string;
   location: string | null;
-  current_user: string | null;
+  assigned_to: string | null;
   purchase_date: string | null;
   warranty_end: string | null;
   specs: any;
@@ -67,7 +67,7 @@ const transformEquipment = (dbEquipment: Equipment) => ({
   assetNumber: dbEquipment.asset_number,
   status: dbEquipment.status,
   location: dbEquipment.location || "",
-  user: dbEquipment.current_user || "",
+  user: dbEquipment.assigned_to || "",
   purchaseDate: dbEquipment.purchase_date || "",
   warrantyEnd: dbEquipment.warranty_end || "",
   specs: dbEquipment.specs || {}
@@ -141,7 +141,7 @@ export default function Equipment() {
         asset_number: updatedEquipment.assetNumber,
         status: updatedEquipment.status,
         location: updatedEquipment.location,
-        current_user: updatedEquipment.user,
+        assigned_to: updatedEquipment.user,
         purchase_date: updatedEquipment.purchaseDate,
         warranty_end: updatedEquipment.warrantyEnd,
         specs: updatedEquipment.specs
@@ -238,9 +238,9 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-success">
-                  {equipmentList.filter(e => e.status === 'working').length}
+                  {equipmentList.filter(e => e.status === 'available').length}
                 </p>
-                <p className="text-sm text-muted-foreground">ใช้งานปกติ</p>
+                <p className="text-sm text-muted-foreground">พร้อมใช้งาน</p>
               </div>
             </div>
           </CardContent>
@@ -270,7 +270,7 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-2xl font-bold text-destructive">
-                  {equipmentList.filter(e => e.status === 'broken').length}
+                  {equipmentList.filter(e => e.status === 'damaged').length}
                 </p>
                 <p className="text-sm text-muted-foreground">ชำรุด</p>
               </div>
@@ -305,10 +305,10 @@ export default function Equipment() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">ทุกสถานะ</SelectItem>
-                <SelectItem value="working">ใช้งานปกติ</SelectItem>
+                <SelectItem value="available">พร้อมใช้งาน</SelectItem>
+                <SelectItem value="borrowed">ถูกยืม</SelectItem>
                 <SelectItem value="maintenance">ซ่อมบำรุง</SelectItem>
-                <SelectItem value="broken">ชำรุด</SelectItem>
-                <SelectItem value="retired">จำหน่ายแล้ว</SelectItem>
+                <SelectItem value="damaged">ชำรุด</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -186,10 +186,10 @@ export default function EquipmentEditDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="working">ใช้งานปกติ</SelectItem>
+                      <SelectItem value="available">พร้อมใช้งาน</SelectItem>
+                      <SelectItem value="borrowed">ถูกยืม</SelectItem>
                       <SelectItem value="maintenance">ซ่อมบำรุง</SelectItem>
-                      <SelectItem value="broken">ชำรุด</SelectItem>
-                      <SelectItem value="retired">จำหน่ายแล้ว</SelectItem>
+                      <SelectItem value="damaged">ชำรุด</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

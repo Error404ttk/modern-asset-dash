@@ -50,9 +50,9 @@ export default function AddEquipment() {
       model: formData.get('model') as string,
       serial_number: formData.get('serialNumber') as string,
       asset_number: formData.get('assetNumber') as string,
-      status: formData.get('status') as string || 'working',
+      status: formData.get('status') as string || 'available',
       location: getLocationLabel(formData.get('location') as string),
-      current_user: formData.get('currentUser') as string || null,
+      assigned_to: formData.get('currentUser') as string || null,
       purchase_date: formData.get('purchaseDate') as string || null,
       warranty_end: formData.get('warrantyEnd') as string || null,
       specs: Object.keys(specs).length > 0 ? specs : null
@@ -228,15 +228,15 @@ export default function AddEquipment() {
 
               <div className="space-y-2">
                 <Label htmlFor="status">สถานะ *</Label>
-                <Select name="status" defaultValue="working" required>
+                <Select name="status" defaultValue="available" required>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="working">ใช้งานปกติ</SelectItem>
+                    <SelectItem value="available">พร้อมใช้งาน</SelectItem>
+                    <SelectItem value="borrowed">ถูกยืม</SelectItem>
                     <SelectItem value="maintenance">ซ่อมบำรุง</SelectItem>
-                    <SelectItem value="broken">ชำรุด</SelectItem>
-                    <SelectItem value="retired">จำหน่ายแล้ว</SelectItem>
+                    <SelectItem value="damaged">ชำรุด</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
