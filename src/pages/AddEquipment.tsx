@@ -51,13 +51,13 @@ export default function AddEquipment() {
       brand: formData.get('brand') as string,
       model: formData.get('model') as string,
       serial_number: formData.get('serialNumber') as string,
-      asset_number: equipmentSubType ? `${equipmentSubType}/${quantity}` : `${formData.get('assetNumber') as string}/${quantity}`,
+      asset_number: equipmentSubType || (formData.get('assetNumber') as string),
+      quantity: parseInt(quantity) || 1,
       status: formData.get('status') as string || 'available',
       location: getLocationLabel(formData.get('location') as string),
       assigned_to: formData.get('currentUser') as string || null,
       purchase_date: formData.get('purchaseDate') as string || null,
       warranty_end: formData.get('warrantyEnd') as string || null,
-      quantity: formData.get('quantity') as string || '1',
       specs: Object.keys(specs).length > 0 ? specs : null
     };
 

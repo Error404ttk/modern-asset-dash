@@ -117,6 +117,7 @@ export type Database = {
           model: string | null
           name: string
           purchase_date: string | null
+          quantity: number
           serial_number: string | null
           specs: Json | null
           status: string
@@ -134,6 +135,7 @@ export type Database = {
           model?: string | null
           name: string
           purchase_date?: string | null
+          quantity?: number
           serial_number?: string | null
           specs?: Json | null
           status?: string
@@ -151,6 +153,7 @@ export type Database = {
           model?: string | null
           name?: string
           purchase_date?: string | null
+          quantity?: number
           serial_number?: string | null
           specs?: Json | null
           status?: string
