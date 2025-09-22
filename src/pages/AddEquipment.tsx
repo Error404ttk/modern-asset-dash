@@ -926,44 +926,12 @@ export default function AddEquipment() {
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Monitor className="h-5 w-5 text-primary" />
-              <span>ข้อมูลการใช้งาน/จัดเก็บ</span>
+              <span>ข้อมูลการใช้งาน</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               <div className="space-y-2">
-                <Label htmlFor="department">หน่วยงานที่รับผิดชอบ *</Label>
-                <Select name="department" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกหน่วยงาน" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="it">กองเทคโนโลยีสารสนเทศ</SelectItem>
-                    <SelectItem value="admin">กองธุรการ</SelectItem>
-                    <SelectItem value="finance">กองคลัง</SelectItem>
-                    <SelectItem value="hr">กองบุคคล</SelectItem>
-                    <SelectItem value="planning">กองแผนงาน</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="location">สถานที่ติดตั้ง/จัดเก็บ *</Label>
-                <Select name="location" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกสถานที่" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="it-101">ห้อง IT-101</SelectItem>
-                    <SelectItem value="admin-201">ห้องธุรการ 201</SelectItem>
-                    <SelectItem value="meeting-301">ห้องประชุม 301</SelectItem>
-                    <SelectItem value="director">ห้องผู้อำนวยการ</SelectItem>
-                    <SelectItem value="storage">ห้องจัดเก็บ</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="currentUser">ผู้ใช้งานปัจจุบัน</Label>
                 <Input 
                   id="currentUser" 
@@ -972,7 +940,7 @@ export default function AddEquipment() {
                 />
               </div>
 
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <Label htmlFor="notes">หมายเหตุ</Label>
                 <Textarea 
                   id="notes" 
