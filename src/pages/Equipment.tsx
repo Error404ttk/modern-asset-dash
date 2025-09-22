@@ -176,13 +176,16 @@ export default function Equipment() {
 
   const getStatusBadge = (status: string) => {
     const variants = {
-      working: { color: "bg-success text-success-foreground", label: "ใช้งานปกติ" },
-      broken: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
+      available: { color: "bg-success text-success-foreground", label: "พร้อมใช้งาน" },
+      borrowed: { color: "bg-primary text-primary-foreground", label: "ถูกยืม" },
       maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
-      retired: { color: "bg-muted text-muted-foreground", label: "จำหน่ายแล้ว" }
+      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" }
     };
     
-    const config = variants[status as keyof typeof variants];
+    const config = variants[status as keyof typeof variants] || {
+      color: "bg-muted text-muted-foreground", 
+      label: status
+    };
     return <Badge className={config.color}>{config.label}</Badge>;
   };
 
