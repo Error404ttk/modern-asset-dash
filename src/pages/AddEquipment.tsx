@@ -652,8 +652,8 @@ export default function AddEquipment() {
                       id="assetNumber" 
                       name="assetNumber"
                       placeholder={equipmentSubType ? `อัตโนมัติ: ${equipmentSubType}` : "เช่น EQ001"}
-                      value={equipmentSubType}
-                      disabled={!!equipmentSubType}
+                      defaultValue={equipmentSubType || ""}
+                      readOnly={!!equipmentSubType}
                     />
                   </div>
                   <div className="flex items-center">
