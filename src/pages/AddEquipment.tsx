@@ -27,13 +27,15 @@ export default function AddEquipment() {
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [activeEquipmentTypes, setActiveEquipmentTypes] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Load active equipment types on component mount
+  // Load active equipment types and departments on component mount
   useEffect(() => {
-    const loadActiveEquipmentTypes = async () => {
+    const loadData = async () => {
       try {
+        // Load equipment types
         const { data: equipmentTypesData } = await supabase
           .from('equipment_types')
           .select('*')
@@ -59,12 +61,23 @@ export default function AddEquipment() {
           
           setActiveEquipmentTypes(mappedTypes);
         }
+
+        // Load departments
+        const { data: departmentsData } = await supabase
+          .from('departments')
+          .select('*')
+          .eq('active', true)
+          .order('name');
+
+        if (departmentsData) {
+          setDepartments(departmentsData);
+        }
       } catch (error) {
-        console.error('Error loading equipment types:', error);
+        console.error('Error loading data:', error);
       }
     };
 
-    loadActiveEquipmentTypes();
+    loadData();
   }, []);
 
   const handleImageUpload = (files: FileList | null) => {
@@ -172,7 +185,8 @@ export default function AddEquipment() {
         ...specs,
         price: parseFloat(formData.get('price') as string) || null,
         budgetType: formData.get('budgetType') as string || null,
-        acquisitionMethod: formData.get('acquisitionMethod') as string || null
+        acquisitionMethod: formData.get('acquisitionMethod') as string || null,
+        department: formData.get('department') as string || null
       }
     };
 
@@ -760,6 +774,22 @@ export default function AddEquipment() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="department">หน่วยงานที่รับผิดชอบ *</Label>
+              <Select name="department" required>
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกหน่วยงาน" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
+                  {departments.map((dept) => (
+                    <SelectItem key={dept.id} value={dept.name}>
+                      {dept.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
