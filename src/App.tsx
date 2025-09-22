@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { Footer } from "@/components/Footer";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import Dashboard from "./pages/Dashboard";
 import Equipment from "./pages/Equipment";
@@ -48,6 +49,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           <main className="flex-1 p-6 bg-background">
             {children}
           </main>
+          <Footer />
         </div>
       </div>
     </SidebarProvider>
