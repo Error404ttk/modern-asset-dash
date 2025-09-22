@@ -87,7 +87,7 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
                 </div>
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">ประเภท</label>
-                  <p><Badge variant="outline">{equipment.type}</Badge></p>
+                  <div><Badge variant="outline">{equipment.type}</Badge></div>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">ยี่ห้อ</label>
