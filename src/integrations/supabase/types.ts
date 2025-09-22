@@ -207,6 +207,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_super_admin_user: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       get_user_role: {
         Args: { user_uuid: string }
         Returns: Database["public"]["Enums"]["app_role"]
