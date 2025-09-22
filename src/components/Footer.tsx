@@ -16,7 +16,7 @@ interface FooterSettings {
   copyright_text: string;
   developer: string;
   support_items: string[];
-  additional_info_items: string[];
+  additional_info_items: { text: string; link: string }[];
 }
 
 export const Footer = () => {
@@ -33,7 +33,12 @@ export const Footer = () => {
     copyright_text: "ระบบจัดการครุภัณฑ์. สงวนลิขสิทธิ์.",
     developer: "IT Department",
     support_items: ["คู่มือการใช้งาน", "ฝ่ายเทคนิค", "การอบรม", "อัปเดตระบบ"],
-    additional_info_items: ["นโยบายความเป็นส่วนตัว", "เงื่อนไขการใช้งาน", "ความปลอดภัย", "ข่าวสาร"]
+    additional_info_items: [
+      { text: "นโยบายความเป็นส่วนตัว (PDPA)", link: "/privacy-policy" },
+      { text: "เงื่อนไขการใช้งาน", link: "/terms-of-service" },
+      { text: "ความปลอดภัยข้อมูล", link: "/data-security" },
+      { text: "ข่าวสารและประกาศ", link: "/news" }
+    ]
   });
 
   useEffect(() => {
@@ -259,28 +264,41 @@ export const Footer = () => {
             <h4 className="font-medium text-foreground mb-3">ข้อมูลเพิ่มเติม</h4>
             <div className="space-y-1 text-muted-foreground">
               {isEditing ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {footerData.additional_info_items.map((item, index) => (
-                    <div key={index} className="flex gap-2">
+                    <div key={index} className="space-y-2">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="ข้อความ"
+                          value={item.text}
+                          onChange={(e) => {
+                            const newItems = [...footerData.additional_info_items];
+                            newItems[index] = { ...newItems[index], text: e.target.value };
+                            setFooterData({ ...footerData, additional_info_items: newItems });
+                          }}
+                          className="text-sm"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const newItems = footerData.additional_info_items.filter((_, i) => i !== index);
+                            setFooterData({ ...footerData, additional_info_items: newItems });
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
                       <Input
-                        value={item}
+                        placeholder="ลิงก์ (เช่น /privacy-policy หรือ https://example.com)"
+                        value={item.link}
                         onChange={(e) => {
                           const newItems = [...footerData.additional_info_items];
-                          newItems[index] = e.target.value;
+                          newItems[index] = { ...newItems[index], link: e.target.value };
                           setFooterData({ ...footerData, additional_info_items: newItems });
                         }}
                         className="text-sm"
                       />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const newItems = footerData.additional_info_items.filter((_, i) => i !== index);
-                          setFooterData({ ...footerData, additional_info_items: newItems });
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
                     </div>
                   ))}
                   <Button
@@ -289,7 +307,7 @@ export const Footer = () => {
                     onClick={() => {
                       setFooterData({
                         ...footerData,
-                        additional_info_items: [...footerData.additional_info_items, "รายการใหม่"]
+                        additional_info_items: [...footerData.additional_info_items, { text: "รายการใหม่", link: "#" }]
                       });
                     }}
                   >
@@ -298,7 +316,16 @@ export const Footer = () => {
                 </div>
               ) : (
                 footerData.additional_info_items.map((item, index) => (
-                  <p key={index}>{item}</p>
+                  <p key={index}>
+                    <a 
+                      href={item.link} 
+                      target={item.link.startsWith('http') ? '_blank' : '_self'}
+                      rel={item.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+                      className="hover:text-primary hover:underline transition-colors"
+                    >
+                      {item.text}
+                    </a>
+                  </p>
                 ))
               )}
             </div>
