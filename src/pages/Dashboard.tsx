@@ -107,23 +107,32 @@ export default function Dashboard() {
   }, []);
   const getStatusBadge = (status: string) => {
     const variants = {
-      working: {
+      available: {
         variant: "default" as const,
         color: "bg-success text-success-foreground",
-        label: "ใช้งานปกติ"
+        label: "พร้อมใช้งาน"
       },
-      broken: {
-        variant: "destructive" as const,
-        color: "bg-destructive text-destructive-foreground",
-        label: "ชำรุด"
+      borrowed: {
+        variant: "secondary" as const,
+        color: "bg-primary text-primary-foreground", 
+        label: "ถูกยืม"
       },
       maintenance: {
         variant: "secondary" as const,
         color: "bg-warning text-warning-foreground",
         label: "ซ่อมบำรุง"
+      },
+      damaged: {
+        variant: "destructive" as const,
+        color: "bg-destructive text-destructive-foreground",
+        label: "ชำรุด"
       }
     };
-    const config = variants[status as keyof typeof variants];
+    const config = variants[status as keyof typeof variants] || {
+      variant: "outline" as const,
+      color: "bg-muted text-muted-foreground",
+      label: status
+    };
     return <Badge className={config.color}>{config.label}</Badge>;
   };
   if (loading) {
