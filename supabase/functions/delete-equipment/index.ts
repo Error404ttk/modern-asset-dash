@@ -36,24 +36,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verify super admin password
-    const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
-      email: 'srpadmin@system.local',
-      password: superAdminPassword
-    });
-
-    if (authError || !authData.user) {
-      console.log('Super admin password verification failed:', authError);
-      return new Response(
-        JSON.stringify({ error: 'รหัสผ่าน Super Admin ไม่ถูกต้อง' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
-
-    // Verify the current user token and get user info
+    // Verify super admin password using current user's credentials
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser(userAuthToken);
     
     if (userError || !user) {
@@ -84,6 +67,24 @@ Deno.serve(async (req) => {
         }
       );
     }
+
+    // Verify super admin password using their actual email
+    const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+      email: profile.email,
+      password: superAdminPassword,
+    });
+
+    if (signInError) {
+      console.log('Super admin password verification failed:', signInError);
+      return new Response(
+        JSON.stringify({ error: 'รหัสผ่าน Super Admin ไม่ถูกต้อง' }),
+        { 
+          status: 401, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
 
     // Get equipment data before deletion for audit log
     const { data: equipment, error: equipmentError } = await supabaseAdmin

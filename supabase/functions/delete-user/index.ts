@@ -41,24 +41,13 @@ serve(async (req) => {
       )
     }
 
-    // Verify super admin password by attempting to sign in
-    // This creates a separate auth session that won't affect the current user's session
-    const tempClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    )
-
-    const { data: authData, error: authError } = await tempClient.auth.signInWithPassword({
-      email: 'srpadmin@system.local',
-      password: superAdminPassword,
-    })
-
-    if (authError || !authData.user) {
-      console.error('Super admin authentication failed:', authError);
+    // Get current user from Authorization header (secure approach)
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: 'รหัสผ่านผู้ดูแลระบบไม่ถูกต้อง' 
+          error: 'ไม่พบข้อมูลการยืนยันตัวตน' 
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
@@ -67,14 +56,30 @@ serve(async (req) => {
       )
     }
 
-    // Verify that the authenticated user is indeed a super admin
-    const { data: profileData, error: profileError } = await supabaseClient
-      .from('profiles')
-      .select('role')
-      .eq('user_id', authData.user.id)
-      .single()
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
 
-    if (profileError || profileData?.role !== 'super_admin') {
+    if (userError || !user) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'ไม่สามารถยืนยันตัวตนได้' 
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
+          status: 401 
+        }
+      )
+    }
+
+    // Check if user is super admin
+    const { data: profile, error: profileError } = await supabaseClient
+      .from('profiles')
+      .select('role, email, full_name')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileError || !profile || profile.role !== 'super_admin') {
       console.error('User is not super admin:', profileError);
       return new Response(
         JSON.stringify({ 
@@ -84,6 +89,31 @@ serve(async (req) => {
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
           status: 403 
+        }
+      )
+    }
+
+    // Verify super admin password using their actual email
+    const tempClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    )
+
+    const { error: signInError } = await tempClient.auth.signInWithPassword({
+      email: profile.email,
+      password: superAdminPassword,
+    });
+
+    if (signInError) {
+      console.error('Super admin authentication failed:', signInError);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'รหัสผ่านผู้ดูแลระบบไม่ถูกต้อง' 
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
+          status: 401 
         }
       )
     }
@@ -119,9 +149,9 @@ serve(async (req) => {
         field_name: 'user_deletion',
         old_value: JSON.stringify(userToDelete),
         new_value: null,
-        changed_by_user_id: authData.user.id,
-        changed_by: 'super_admin',
-        user_email: 'srpadmin@system.local',
+        changed_by_user_id: user.id,
+        changed_by: profile.full_name || profile.email,
+        user_email: profile.email,
         reason: reason,
         metadata: {
           deleted_user_email: userToDelete.email,
