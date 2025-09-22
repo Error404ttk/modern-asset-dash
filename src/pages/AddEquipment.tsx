@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2, Shield, HardDrive, Wifi, Tablet, Battery, ScanLine, Archive, Router, Database, Lock, Eye } from "lucide-react";
+import { useState, useRef } from "react";
+import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2, Shield, HardDrive, Wifi, Tablet, Battery, ScanLine, Archive, Router, Database, Lock, Eye, Camera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,78 @@ export default function AddEquipment() {
   const [equipmentSubType, setEquipmentSubType] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = (files: FileList | null) => {
+    if (!files) return;
+    
+    const newFiles = Array.from(files).slice(0, 3 - selectedImages.length);
+    const updatedImages = [...selectedImages, ...newFiles];
+    
+    if (updatedImages.length > 3) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "สามารถอัปโหลดรูปภาพได้สูงสุด 3 รูป",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setSelectedImages(updatedImages);
+    
+    // Create previews
+    const newPreviews = [...imagePreviews];
+    newFiles.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        newPreviews.push(e.target?.result as string);
+        if (newPreviews.length === selectedImages.length + newFiles.length) {
+          setImagePreviews(newPreviews);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (index: number) => {
+    const updatedImages = selectedImages.filter((_, i) => i !== index);
+    const updatedPreviews = imagePreviews.filter((_, i) => i !== index);
+    setSelectedImages(updatedImages);
+    setImagePreviews(updatedPreviews);
+  };
+
+  const uploadImages = async (equipmentId: string): Promise<string[]> => {
+    const imageUrls: string[] = [];
+    
+    for (let i = 0; i < selectedImages.length; i++) {
+      const file = selectedImages[i];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${equipmentId}-${Date.now()}-${i + 1}.${fileExt}`;
+      
+      const { error } = await supabase.storage
+        .from('equipment-images')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        console.error('Error uploading image:', error);
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('equipment-images')
+        .getPublicUrl(fileName);
+        
+      imageUrls.push(publicUrl);
+    }
+    
+    return imageUrls;
+  };
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,11 +134,27 @@ export default function AddEquipment() {
     };
 
     try {
-      const { error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('equipment')
-        .insert([equipmentData]);
+        .insert([equipmentData])
+        .select()
+        .single();
 
       if (error) throw error;
+
+      // Upload images if any
+      let imageUrls: string[] = [];
+      if (selectedImages.length > 0) {
+        imageUrls = await uploadImages(data.id);
+        
+        // Update equipment with image URLs
+        const { error: updateError } = await supabase
+          .from('equipment')
+          .update({ images: imageUrls })
+          .eq('id', data.id);
+          
+        if (updateError) throw updateError;
+      }
 
       toast({
         title: "บันทึกสำเร็จ",
@@ -769,6 +857,88 @@ export default function AddEquipment() {
                 />
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Image Upload Section */}
+        <Card className="shadow-soft">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Camera className="h-5 w-5 text-primary" />
+              <span>รูปภาพครุภัณฑ์</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={selectedImages.length >= 3}
+                className="flex items-center space-x-2"
+              >
+                <Upload className="h-4 w-4" />
+                <span>เลือกรูปภาพ</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={selectedImages.length >= 3}
+                className="flex items-center space-x-2"
+              >
+                <Camera className="h-4 w-4" />
+                <span>ถ่ายรูป</span>
+              </Button>
+            </div>
+            
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => handleImageUpload(e.target.files)}
+            />
+            
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => handleImageUpload(e.target.files)}
+            />
+
+            <p className="text-sm text-muted-foreground">
+              อัปโหลดรูปภาพได้สูงสุด 3 รูป (สนับสนุนไฟล์ JPG, PNG, WEBP ขนาดไม่เกิน 5MB ต่อรูป)
+            </p>
+
+            {/* Image Previews */}
+            {imagePreviews.length > 0 && (
+              <div className="grid grid-cols-3 gap-4">
+                {imagePreviews.map((preview, index) => (
+                  <div key={index} className="relative">
+                    <div className="aspect-square bg-muted rounded-lg overflow-hidden border">
+                      <img
+                        src={preview}
+                        alt={`Preview ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0 shadow-md"
+                      onClick={() => removeImage(index)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 

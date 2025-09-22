@@ -113,6 +113,7 @@ export type Database = {
           brand: string | null
           created_at: string
           id: string
+          images: string[] | null
           location: string | null
           model: string | null
           name: string
@@ -131,6 +132,7 @@ export type Database = {
           brand?: string | null
           created_at?: string
           id?: string
+          images?: string[] | null
           location?: string | null
           model?: string | null
           name: string
@@ -149,6 +151,7 @@ export type Database = {
           brand?: string | null
           created_at?: string
           id?: string
+          images?: string[] | null
           location?: string | null
           model?: string | null
           name?: string
