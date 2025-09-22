@@ -168,7 +168,12 @@ export default function AddEquipment() {
       assigned_to: formData.get('currentUser') as string || null,
       purchase_date: formData.get('purchaseDate') as string || null,
       warranty_end: formData.get('warrantyEnd') as string || null,
-      specs: Object.keys(specs).length > 0 ? specs : null
+      specs: {
+        ...specs,
+        price: parseFloat(formData.get('price') as string) || null,
+        budgetType: formData.get('budgetType') as string || null,
+        acquisitionMethod: formData.get('acquisitionMethod') as string || null
+      }
     };
 
     try {
@@ -702,6 +707,56 @@ export default function AddEquipment() {
                     <SelectItem value="borrowed">ถูกยืม</SelectItem>
                     <SelectItem value="maintenance">ซ่อมบำรุง</SelectItem>
                     <SelectItem value="damaged">ชำรุด</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="price">ราคาครุภัณฑ์ (บาท) *</Label>
+                <Input 
+                  id="price" 
+                  name="price"
+                  type="number"
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="budgetType">ประเภทของเงิน *</Label>
+                <Select name="budgetType" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกประเภทของเงิน" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border border-border shadow-lg z-50">
+                    <SelectItem value="budget">เงินงบประมาณ</SelectItem>
+                    <SelectItem value="non-budget">เงินนอกงบประมาณ</SelectItem>
+                    <SelectItem value="donation">เงินบริจาค</SelectItem>
+                    <SelectItem value="other">อื่น ๆ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="acquisitionMethod">วิธีการได้มา *</Label>
+                <Select name="acquisitionMethod" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกวิธีการได้มา" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border border-border shadow-lg z-50">
+                    <SelectItem value="price-agreement">ตกลงราคา</SelectItem>
+                    <SelectItem value="price-auction">ประกวดราคา</SelectItem>
+                    <SelectItem value="special-method">วิธีพิเศษ</SelectItem>
+                    <SelectItem value="donation-received">รับบริจาค</SelectItem>
+                    <SelectItem value="price-inquiry">สอบราคา</SelectItem>
+                    <SelectItem value="e-bidding">e-bidding</SelectItem>
+                    <SelectItem value="e-market">e-market</SelectItem>
+                    <SelectItem value="selection">คัดเลือก</SelectItem>
+                    <SelectItem value="specific">เฉพาะเจาะจง</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
