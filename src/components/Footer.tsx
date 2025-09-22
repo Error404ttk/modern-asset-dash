@@ -15,6 +15,8 @@ interface FooterSettings {
   working_hours: string;
   copyright_text: string;
   developer: string;
+  support_items: string[];
+  additional_info_items: string[];
 }
 
 export const Footer = () => {
@@ -29,7 +31,9 @@ export const Footer = () => {
     contact_email: "support@hospital.go.th",
     working_hours: "จันทร์-ศุกร์ 8:00-17:00 น.",
     copyright_text: "ระบบจัดการครุภัณฑ์. สงวนลิขสิทธิ์.",
-    developer: "IT Department"
+    developer: "IT Department",
+    support_items: ["คู่มือการใช้งาน", "ฝ่ายเทคนิค", "การอบรม", "อัปเดตระบบ"],
+    additional_info_items: ["นโยบายความเป็นส่วนตัว", "เงื่อนไขการใช้งาน", "ความปลอดภัย", "ข่าวสาร"]
   });
 
   useEffect(() => {
@@ -205,20 +209,98 @@ export const Footer = () => {
           <div>
             <h4 className="font-medium text-foreground mb-3">การสนับสนุน</h4>
             <div className="space-y-1 text-muted-foreground">
-              <p>คู่มือการใช้งาน</p>
-              <p>ฝ่ายเทคนิค</p>
-              <p>การอบรม</p>
-              <p>อัปเดตระบบ</p>
+              {isEditing ? (
+                <div className="space-y-2">
+                  {footerData.support_items.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={item}
+                        onChange={(e) => {
+                          const newItems = [...footerData.support_items];
+                          newItems[index] = e.target.value;
+                          setFooterData({ ...footerData, support_items: newItems });
+                        }}
+                        className="text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const newItems = footerData.support_items.filter((_, i) => i !== index);
+                          setFooterData({ ...footerData, support_items: newItems });
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFooterData({
+                        ...footerData,
+                        support_items: [...footerData.support_items, "รายการใหม่"]
+                      });
+                    }}
+                  >
+                    เพิ่มรายการ
+                  </Button>
+                </div>
+              ) : (
+                footerData.support_items.map((item, index) => (
+                  <p key={index}>{item}</p>
+                ))
+              )}
             </div>
           </div>
           
           <div>
             <h4 className="font-medium text-foreground mb-3">ข้อมูลเพิ่มเติม</h4>
             <div className="space-y-1 text-muted-foreground">
-              <p>นโยบายความเป็นส่วนตัว</p>
-              <p>เงื่อนไขการใช้งาน</p>
-              <p>ความปลอดภัย</p>
-              <p>ข่าวสาร</p>
+              {isEditing ? (
+                <div className="space-y-2">
+                  {footerData.additional_info_items.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={item}
+                        onChange={(e) => {
+                          const newItems = [...footerData.additional_info_items];
+                          newItems[index] = e.target.value;
+                          setFooterData({ ...footerData, additional_info_items: newItems });
+                        }}
+                        className="text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const newItems = footerData.additional_info_items.filter((_, i) => i !== index);
+                          setFooterData({ ...footerData, additional_info_items: newItems });
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFooterData({
+                        ...footerData,
+                        additional_info_items: [...footerData.additional_info_items, "รายการใหม่"]
+                      });
+                    }}
+                  >
+                    เพิ่มรายการ
+                  </Button>
+                </div>
+              ) : (
+                footerData.additional_info_items.map((item, index) => (
+                  <p key={index}>{item}</p>
+                ))
+              )}
             </div>
           </div>
         </div>
