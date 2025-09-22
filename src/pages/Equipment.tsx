@@ -358,7 +358,9 @@ export default function Equipment() {
                 ) : (
                   filteredEquipment.map((item) => (
                     <TableRow key={item.id} className="hover:bg-muted/50">
-                      <TableCell className="font-medium">{item.assetNumber}</TableCell>
+                      <TableCell className="font-medium min-w-0">
+                        <div className="whitespace-nowrap">{item.assetNumber}</div>
+                      </TableCell>
                       <TableCell>
                         <div>
                           <p className="font-medium">{item.name}</p>
