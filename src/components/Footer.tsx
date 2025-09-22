@@ -15,7 +15,7 @@ interface FooterSettings {
   working_hours: string;
   copyright_text: string;
   developer: string;
-  support_items: string[];
+  support_items: { text: string; link: string }[];
   additional_info_items: { text: string; link: string }[];
 }
 
@@ -32,7 +32,12 @@ export const Footer = () => {
     working_hours: "จันทร์-ศุกร์ 8:00-17:00 น.",
     copyright_text: "ระบบจัดการครุภัณฑ์. สงวนลิขสิทธิ์.",
     developer: "IT Department",
-    support_items: ["คู่มือการใช้งาน", "ฝ่ายเทคนิค", "การอบรม", "อัปเดตระบบ"],
+    support_items: [
+      { text: "คู่มือการใช้งาน", link: "/user-manual" },
+      { text: "ฝ่ายเทคนิค", link: "/technical-support" },
+      { text: "การอบรม", link: "/training" },
+      { text: "อัปเดตระบบ", link: "/system-updates" }
+    ],
     additional_info_items: [
       { text: "นโยบายความเป็นส่วนตัว (PDPA)", link: "/privacy-policy" },
       { text: "เงื่อนไขการใช้งาน", link: "/terms-of-service" },
@@ -215,28 +220,41 @@ export const Footer = () => {
             <h4 className="font-medium text-foreground mb-3">การสนับสนุน</h4>
             <div className="space-y-1 text-muted-foreground">
               {isEditing ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {footerData.support_items.map((item, index) => (
-                    <div key={index} className="flex gap-2">
+                    <div key={index} className="space-y-2">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="ข้อความ"
+                          value={item.text}
+                          onChange={(e) => {
+                            const newItems = [...footerData.support_items];
+                            newItems[index] = { ...newItems[index], text: e.target.value };
+                            setFooterData({ ...footerData, support_items: newItems });
+                          }}
+                          className="text-sm"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const newItems = footerData.support_items.filter((_, i) => i !== index);
+                            setFooterData({ ...footerData, support_items: newItems });
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
                       <Input
-                        value={item}
+                        placeholder="ลิงก์ (เช่น /user-manual หรือ https://example.com)"
+                        value={item.link}
                         onChange={(e) => {
                           const newItems = [...footerData.support_items];
-                          newItems[index] = e.target.value;
+                          newItems[index] = { ...newItems[index], link: e.target.value };
                           setFooterData({ ...footerData, support_items: newItems });
                         }}
                         className="text-sm"
                       />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const newItems = footerData.support_items.filter((_, i) => i !== index);
-                          setFooterData({ ...footerData, support_items: newItems });
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
                     </div>
                   ))}
                   <Button
@@ -245,7 +263,7 @@ export const Footer = () => {
                     onClick={() => {
                       setFooterData({
                         ...footerData,
-                        support_items: [...footerData.support_items, "รายการใหม่"]
+                        support_items: [...footerData.support_items, { text: "รายการใหม่", link: "#" }]
                       });
                     }}
                   >
@@ -254,7 +272,16 @@ export const Footer = () => {
                 </div>
               ) : (
                 footerData.support_items.map((item, index) => (
-                  <p key={index}>{item}</p>
+                  <p key={index}>
+                    <a 
+                      href={item.link} 
+                      target={item.link.startsWith('http') ? '_blank' : '_self'}
+                      rel={item.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+                      className="hover:text-primary hover:underline transition-colors"
+                    >
+                      {item.text}
+                    </a>
+                  </p>
                 ))
               )}
             </div>
