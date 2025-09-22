@@ -117,8 +117,10 @@ export default function Equipment() {
   }, []);
 
   const handleQrCode = (item: any) => {
+    console.log('QR Code button clicked for item:', item);
     setSelectedEquipment(item);
     setQrDialogOpen(true);
+    console.log('QR Dialog should be opening...');
   };
 
   const handleView = (item: any) => {
@@ -390,7 +392,12 @@ export default function Equipment() {
                             variant="ghost" 
                             size="sm" 
                             className="hover:bg-muted"
-                            onClick={() => handleQrCode(item)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              console.log('QR button clicked!', item);
+                              handleQrCode(item);
+                            }}
                             title="สร้าง QR Code"
                           >
                             <QrCode className="h-4 w-4" />
@@ -425,11 +432,18 @@ export default function Equipment() {
       </Card>
 
       {/* Dialogs */}
+      {(() => {
+        console.log('Rendering dialogs. selectedEquipment:', !!selectedEquipment, 'qrDialogOpen:', qrDialogOpen);
+        return null;
+      })()}
       {selectedEquipment && (
         <>
           <QRCodeDialog
             open={qrDialogOpen}
-            onOpenChange={setQrDialogOpen}
+            onOpenChange={(open) => {
+              console.log('QR Dialog onOpenChange:', open);
+              setQrDialogOpen(open);
+            }}
             equipment={selectedEquipment}
           />
           <EquipmentViewDialog

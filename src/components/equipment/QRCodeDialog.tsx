@@ -27,30 +27,32 @@ interface QRCodeDialogProps {
 }
 
 export default function QRCodeDialog({ open, onOpenChange, equipment }: QRCodeDialogProps) {
+  console.log('QRCodeDialog rendered with:', { open, equipment: !!equipment });
+  
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    console.log('QR Dialog useEffect triggered:', { open, equipment: !!equipment });
     if (open && equipment) {
+      console.log('Calling generateQRCode...');
       generateQRCode();
     }
   }, [open, equipment]);
 
   const generateQRCode = async () => {
     try {
-      const qrData = JSON.stringify({
-        id: equipment.id,
-        assetNumber: equipment.assetNumber,
-        serialNumber: equipment.serialNumber,
-        name: equipment.name,
-        brand: equipment.brand,
-        model: equipment.model,
-        url: `${window.location.origin}/equipment/${equipment.id}`
-      });
+      console.log('Generating QR Code for equipment:', equipment);
+      
+      // Create a simple URL that points to the equipment detail page
+      const qrUrl = `${window.location.origin}/equipment/${equipment.id}`;
+      console.log('QR Code URL:', qrUrl);
 
       const canvas = canvasRef.current;
+      console.log('Canvas element:', canvas);
+      
       if (canvas) {
-        await QRCode.toCanvas(canvas, qrData, {
+        await QRCode.toCanvas(canvas, qrUrl, {
           width: 256,
           margin: 2,
           color: {
@@ -61,6 +63,9 @@ export default function QRCodeDialog({ open, onOpenChange, equipment }: QRCodeDi
 
         const dataUrl = canvas.toDataURL('image/png');
         setQrDataUrl(dataUrl);
+        console.log('QR Code generated successfully');
+      } else {
+        console.error('Canvas element not found');
       }
     } catch (error) {
       console.error('Error generating QR code:', error);
