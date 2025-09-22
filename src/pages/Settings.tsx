@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,54 +7,233 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Settings as SettingsIcon, Building, Tag, Plus, Edit, Trash2, Save } from "lucide-react";
+import { Settings as SettingsIcon, Building, Tag, Plus, Edit, Trash2, Save, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { DepartmentDialog } from "@/components/settings/DepartmentDialog";
+import { EquipmentTypeDialog } from "@/components/settings/EquipmentTypeDialog";
+import { DeleteConfirmDialog } from "@/components/settings/DeleteConfirmDialog";
+
+interface Department {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  active: boolean;
+}
+
+interface EquipmentType {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  active: boolean;
+}
+
+interface OrganizationSettings {
+  id: string;
+  name: string;
+  code: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  logo_url: string | null;
+  email_notifications: boolean;
+  auto_backup: boolean;
+  session_timeout: number;
+}
 
 const Settings = () => {
   const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
+  const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null);
+  
+  // Dialog states
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isEquipmentTypeDialogOpen, setIsEquipmentTypeDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  
+  // Edit states
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [editingEquipmentType, setEditingEquipmentType] = useState<EquipmentType | null>(null);
+  const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'equipmentType', item: any } | null>(null);
 
-  // Mock data for departments
-  const departments = [
-    { id: "1", name: "กองคลัง", code: "FIN", description: "หน่วยงานด้านการเงินและบัญชี", active: true },
-    { id: "2", name: "กองช่าง", code: "ENG", description: "หน่วยงานด้านวิศวกรรมและซ่อมบำรุง", active: true },
-    { id: "3", name: "กองแผน", code: "PLN", description: "หน่วยงานด้านการวางแผนและนโยบาย", active: true },
-    { id: "4", name: "ฝ่ายเทคโนโลยีสารสนเทศ", code: "IT", description: "หน่วยงานด้านเทคโนโลยีสารสนเทศ", active: true }
-  ];
+  // Organization form state
+  const [orgForm, setOrgForm] = useState({
+    name: "",
+    code: "",
+    address: "",
+    phone: "",
+    email: "",
+    email_notifications: true,
+    auto_backup: true,
+    session_timeout: 30,
+  });
 
-  // Mock data for equipment types
-  const equipmentTypes = [
-    { id: "1", name: "คอมพิวเตอร์ตั้งโต๊ะ", code: "DESKTOP", description: "เครื่องคอมพิวเตอร์ประจำโต๊ะ", active: true },
-    { id: "2", name: "คอมพิวเตอร์แบบพกพา", code: "LAPTOP", description: "เครื่องคอมพิวเตอร์โน้ตบุ๊ก", active: true },
-    { id: "3", name: "จอภาพ", code: "MONITOR", description: "จอแสดงผลคอมพิวเตอร์", active: true },
-    { id: "4", name: "เครื่องพิมพ์", code: "PRINTER", description: "เครื่องพิมพ์เอกสาร", active: true },
-    { id: "5", name: "เซิร์ฟเวอร์", code: "SERVER", description: "เครื่องแม่ข่าย", active: true }
-  ];
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const handleSaveOrganization = () => {
-    toast({
-      title: "บันทึกสำเร็จ",
-      description: "บันทึกข้อมูลองค์กรเรียบร้อยแล้ว",
-    });
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // Load departments
+      const { data: deptData, error: deptError } = await supabase
+        .from('departments')
+        .select('*')
+        .order('name');
+
+      if (deptError) throw deptError;
+      setDepartments(deptData || []);
+
+      // Load equipment types
+      const { data: typeData, error: typeError } = await supabase
+        .from('equipment_types')
+        .select('*')
+        .order('name');
+
+      if (typeError) throw typeError;
+      setEquipmentTypes(typeData || []);
+
+      // Load organization settings
+      const { data: orgData, error: orgError } = await supabase
+        .from('organization_settings')
+        .select('*')
+        .limit(1)
+        .single();
+
+      if (orgError && orgError.code !== 'PGRST116') throw orgError;
+      
+      if (orgData) {
+        setOrgSettings(orgData);
+        setOrgForm({
+          name: orgData.name,
+          code: orgData.code,
+          address: orgData.address || "",
+          phone: orgData.phone || "",
+          email: orgData.email || "",
+          email_notifications: orgData.email_notifications,
+          auto_backup: orgData.auto_backup,
+          session_timeout: orgData.session_timeout,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleAddDepartment = () => {
-    toast({
-      title: "เพิ่มหน่วยงานสำเร็จ",
-      description: "เพิ่มหน่วยงานใหม่เรียบร้อยแล้ว",
-    });
-    setIsDepartmentDialogOpen(false);
+  const handleSaveOrganization = async () => {
+    try {
+      if (orgSettings) {
+        // Update existing
+        const { error } = await supabase
+          .from('organization_settings')
+          .update(orgForm)
+          .eq('id', orgSettings.id);
+
+        if (error) throw error;
+      } else {
+        // Create new
+        const { error } = await supabase
+          .from('organization_settings')
+          .insert(orgForm);
+
+        if (error) throw error;
+      }
+
+      toast({
+        title: "บันทึกสำเร็จ",
+        description: "บันทึกข้อมูลองค์กรเรียบร้อยแล้ว",
+      });
+      
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleAddEquipmentType = () => {
-    toast({
-      title: "เพิ่มประเภทครุภัณฑ์สำเร็จ",
-      description: "เพิ่มประเภทครุภัณฑ์ใหม่เรียบร้อยแล้ว",
-    });
-    setIsEquipmentTypeDialogOpen(false);
+  const handleEditDepartment = (department: Department) => {
+    setEditingDepartment(department);
+    setIsDepartmentDialogOpen(true);
   };
+
+  const handleEditEquipmentType = (equipmentType: EquipmentType) => {
+    setEditingEquipmentType(equipmentType);
+    setIsEquipmentTypeDialogOpen(true);
+  };
+
+  const handleDeleteDepartment = (department: Department) => {
+    setDeletingItem({ type: 'department', item: department });
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteEquipmentType = (equipmentType: EquipmentType) => {
+    setDeletingItem({ type: 'equipmentType', item: equipmentType });
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async (reason: string, password: string) => {
+    if (!deletingItem) return;
+
+    try {
+      // Call delete edge function based on type
+      const functionName = deletingItem.type === 'department' ? 'delete-department' : 'delete-equipment-type';
+      
+      const { data, error } = await supabase.functions.invoke(functionName, {
+        body: {
+          id: deletingItem.item.id,
+          reason,
+          password,
+        },
+      });
+
+      if (error) throw error;
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'การลบไม่สำเร็จ');
+      }
+
+      toast({
+        title: "ลบสำเร็จ",
+        description: `ลบ${deletingItem.type === 'department' ? 'หน่วยงาน' : 'ประเภทครุภัณฑ์'}เรียบร้อยแล้ว`,
+      });
+
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+      throw error;
+    }
+  };
+
+  const handleDialogClose = () => {
+    setEditingDepartment(null);
+    setEditingEquipmentType(null);
+    setDeletingItem(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -90,18 +269,30 @@ const Settings = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="orgName">ชื่อองค์กร</Label>
-                  <Input defaultValue="หน่วยงานราชการ" placeholder="ชื่อองค์กร" />
+                  <Input 
+                    id="orgName"
+                    value={orgForm.name}
+                    onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                    placeholder="ชื่อองค์กร" 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="orgCode">รหัสองค์กร</Label>
-                  <Input defaultValue="GOV001" placeholder="รหัสองค์กร" />
+                  <Input 
+                    id="orgCode"
+                    value={orgForm.code}
+                    onChange={(e) => setOrgForm({ ...orgForm, code: e.target.value })}
+                    placeholder="รหัสองค์กร" 
+                  />
                 </div>
               </div>
               
               <div className="space-y-2">
                 <Label htmlFor="orgAddress">ที่อยู่</Label>
                 <Textarea 
-                  defaultValue="123 ถนนราชดำเนิน เขตพระนคร กรุงเทพมหานคร 10200"
+                  id="orgAddress"
+                  value={orgForm.address}
+                  onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
                   placeholder="ที่อยู่องค์กร" 
                 />
               </div>
@@ -109,11 +300,21 @@ const Settings = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="phone">โทรศัพท์</Label>
-                  <Input defaultValue="02-123-4567" placeholder="หมายเลขโทรศัพท์" />
+                  <Input 
+                    id="phone"
+                    value={orgForm.phone}
+                    onChange={(e) => setOrgForm({ ...orgForm, phone: e.target.value })}
+                    placeholder="หมายเลขโทรศัพท์" 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">อีเมล</Label>
-                  <Input defaultValue="contact@department.go.th" placeholder="อีเมลองค์กร" />
+                  <Input 
+                    id="email"
+                    value={orgForm.email}
+                    onChange={(e) => setOrgForm({ ...orgForm, email: e.target.value })}
+                    placeholder="อีเมลองค์กร" 
+                  />
                 </div>
               </div>
 
@@ -123,7 +324,7 @@ const Settings = () => {
                 <p className="text-sm text-muted-foreground">รองรับไฟล์ JPG, PNG ขนาดไม่เกิน 2MB</p>
               </div>
 
-              <Button onClick={handleSaveOrganization} className="bg-primary hover:bg-primary/90">
+              <Button onClick={handleSaveOrganization}>
                 <Save className="mr-2 h-4 w-4" />
                 บันทึกข้อมูล
               </Button>
@@ -145,44 +346,12 @@ const Settings = () => {
                     เพิ่ม แก้ไข หรือลบหน่วยงานในระบบ
                   </CardDescription>
                 </div>
-                <Dialog open={isDepartmentDialogOpen} onOpenChange={setIsDepartmentDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button className="bg-primary hover:bg-primary/90">
-                      <Plus className="mr-2 h-4 w-4" />
-                      เพิ่มหน่วยงาน
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>เพิ่มหน่วยงานใหม่</DialogTitle>
-                      <DialogDescription>
-                        กรอกข้อมูลหน่วยงานใหม่
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="deptName">ชื่อหน่วยงาน</Label>
-                        <Input placeholder="ชื่อหน่วยงาน" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="deptCode">รหัสหน่วยงาน</Label>
-                        <Input placeholder="รหัสหน่วยงาน" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="deptDesc">คำอธิบาย</Label>
-                        <Textarea placeholder="คำอธิบายเกี่ยวกับหน่วยงาน" />
-                      </div>
-                      <div className="flex justify-end space-x-2">
-                        <Button variant="outline" onClick={() => setIsDepartmentDialogOpen(false)}>
-                          ยกเลิก
-                        </Button>
-                        <Button onClick={handleAddDepartment} className="bg-primary hover:bg-primary/90">
-                          เพิ่มหน่วยงาน
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <Button 
+                  onClick={() => setIsDepartmentDialogOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  เพิ่มหน่วยงาน
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -204,10 +373,10 @@ const Settings = () => {
                         <Badge variant={dept.active ? "default" : "secondary"}>
                           {dept.active ? "ใช้งาน" : "ไม่ใช้งาน"}
                         </Badge>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => handleEditDepartment(dept)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => handleDeleteDepartment(dept)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -233,44 +402,12 @@ const Settings = () => {
                     เพิ่ม แก้ไข หรือลบประเภทครุภัณฑ์ในระบบ
                   </CardDescription>
                 </div>
-                <Dialog open={isEquipmentTypeDialogOpen} onOpenChange={setIsEquipmentTypeDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button className="bg-primary hover:bg-primary/90">
-                      <Plus className="mr-2 h-4 w-4" />
-                      เพิ่มประเภท
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>เพิ่มประเภทครุภัณฑ์ใหม่</DialogTitle>
-                      <DialogDescription>
-                        กรอกข้อมูลประเภทครุภัณฑ์ใหม่
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="typeName">ชื่อประเภท</Label>
-                        <Input placeholder="ชื่อประเภทครุภัณฑ์" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="typeCode">รหัสประเภท</Label>
-                        <Input placeholder="รหัสประเภท" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="typeDesc">คำอธิบาย</Label>
-                        <Textarea placeholder="คำอธิบายเกี่ยวกับประเภทครุภัณฑ์" />
-                      </div>
-                      <div className="flex justify-end space-x-2">
-                        <Button variant="outline" onClick={() => setIsEquipmentTypeDialogOpen(false)}>
-                          ยกเลิก
-                        </Button>
-                        <Button onClick={handleAddEquipmentType} className="bg-primary hover:bg-primary/90">
-                          เพิ่มประเภท
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <Button 
+                  onClick={() => setIsEquipmentTypeDialogOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  เพิ่มประเภท
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -292,10 +429,10 @@ const Settings = () => {
                         <Badge variant={type.active ? "default" : "secondary"}>
                           {type.active ? "ใช้งาน" : "ไม่ใช้งาน"}
                         </Badge>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => handleEditEquipmentType(type)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => handleDeleteEquipmentType(type)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -328,7 +465,10 @@ const Settings = () => {
                       ส่งการแจ้งเตือนต่างๆ ทางอีเมล
                     </p>
                   </div>
-                  <Switch />
+                  <Switch 
+                    checked={orgForm.email_notifications}
+                    onCheckedChange={(checked) => setOrgForm({ ...orgForm, email_notifications: checked })}
+                  />
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -338,30 +478,28 @@ const Settings = () => {
                       สำรองข้อมูลระบบอัตโนมัติทุกวัน
                     </p>
                   </div>
-                  <Switch />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>การบันทึกประวัติการใช้งาน</Label>
-                    <p className="text-sm text-muted-foreground">
-                      บันทึกประวัติการเข้าใช้งานระบบ
-                    </p>
-                  </div>
-                  <Switch />
+                  <Switch 
+                    checked={orgForm.auto_backup}
+                    onCheckedChange={(checked) => setOrgForm({ ...orgForm, auto_backup: checked })}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="sessionTimeout">หมดเวลาเซสชัน (นาที)</Label>
-                  <Input defaultValue="60" type="number" />
+                  <Input
+                    id="sessionTimeout"
+                    type="number"
+                    min="5"
+                    max="480"
+                    value={orgForm.session_timeout}
+                    onChange={(e) => setOrgForm({ ...orgForm, session_timeout: parseInt(e.target.value) || 30 })}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    ระยะเวลาที่ผู้ใช้จะถูกออกจากระบบอัตโนมัติ (5-480 นาที)
+                  </p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="maxLoginAttempts">จำนวนครั้งสูงสุดในการเข้าสู่ระบบ</Label>
-                  <Input defaultValue="3" type="number" />
-                </div>
-
-                <Button className="bg-primary hover:bg-primary/90">
+                <Button onClick={handleSaveOrganization}>
                   <Save className="mr-2 h-4 w-4" />
                   บันทึกการตั้งค่า
                 </Button>
@@ -372,29 +510,26 @@ const Settings = () => {
               <CardHeader>
                 <CardTitle>ข้อมูลระบบ</CardTitle>
                 <CardDescription>
-                  ข้อมูลเกี่ยวกับเวอร์ชันและสถานะระบบ
+                  ข้อมูลสถานะและเวอร์ชันของระบบ
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label>เวอร์ชันระบบ</Label>
-                    <p className="text-sm font-mono bg-muted p-2 rounded">v1.0.0</p>
+                    <Label className="text-sm text-muted-foreground">เวอร์ชันระบบ</Label>
+                    <p className="font-medium">1.0.0</p>
                   </div>
                   <div>
-                    <Label>อัปเดตล่าสุด</Label>
-                    <p className="text-sm font-mono bg-muted p-2 rounded">2024-01-20 10:30:00</p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>สถานะฐานข้อมูล</Label>
-                    <Badge variant="default" className="ml-2">เชื่อมต่อปกติ</Badge>
+                    <Label className="text-sm text-muted-foreground">อัปเดตล่าสุด</Label>
+                    <p className="font-medium">{new Date().toLocaleDateString('th-TH')}</p>
                   </div>
                   <div>
-                    <Label>พื้นที่ใช้งาน</Label>
-                    <p className="text-sm font-mono bg-muted p-2 rounded">2.3 GB / 10 GB</p>
+                    <Label className="text-sm text-muted-foreground">สถานะฐานข้อมูล</Label>
+                    <Badge variant="default" className="bg-green-500">ออนไลน์</Badge>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">จำนวนครุภัณฑ์</Label>
+                    <p className="font-medium">-</p>
                   </div>
                 </div>
               </CardContent>
@@ -402,6 +537,39 @@ const Settings = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Dialogs */}
+      <DepartmentDialog
+        open={isDepartmentDialogOpen}
+        onOpenChange={(open) => {
+          setIsDepartmentDialogOpen(open);
+          if (!open) handleDialogClose();
+        }}
+        department={editingDepartment}
+        onSuccess={loadData}
+      />
+
+      <EquipmentTypeDialog
+        open={isEquipmentTypeDialogOpen}
+        onOpenChange={(open) => {
+          setIsEquipmentTypeDialogOpen(open);
+          if (!open) handleDialogClose();
+        }}
+        equipmentType={editingEquipmentType}
+        onSuccess={loadData}
+      />
+
+      <DeleteConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open);
+          if (!open) handleDialogClose();
+        }}
+        title={`ยืนยันการลบ${deletingItem?.type === 'department' ? 'หน่วยงาน' : 'ประเภทครุภัณฑ์'}`}
+        description={`คุณต้องการลบ${deletingItem?.type === 'department' ? 'หน่วยงาน' : 'ประเภทครุภัณฑ์'}นี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้`}
+        itemName={deletingItem?.item?.name || ''}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 };

@@ -47,3 +47,11 @@ verify_jwt = true
 [[edge_functions.functions]]
 name = "delete-user"
 verify_jwt = true
+
+[[edge_functions.functions]]
+name = "delete-department"
+verify_jwt = true
+
+[[edge_functions.functions]]
+name = "delete-equipment-type"
+verify_jwt = true

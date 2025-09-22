@@ -112,6 +112,36 @@ export type Database = {
           },
         ]
       }
+      departments: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       equipment: {
         Row: {
           asset_number: string
@@ -169,6 +199,81 @@ export type Database = {
           type?: string
           updated_at?: string
           warranty_end?: string | null
+        }
+        Relationships: []
+      }
+      equipment_types: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      organization_settings: {
+        Row: {
+          address: string | null
+          auto_backup: boolean | null
+          code: string
+          created_at: string
+          email: string | null
+          email_notifications: boolean | null
+          id: string
+          logo_url: string | null
+          name: string
+          phone: string | null
+          session_timeout: number | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          auto_backup?: boolean | null
+          code: string
+          created_at?: string
+          email?: string | null
+          email_notifications?: boolean | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          phone?: string | null
+          session_timeout?: number | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          auto_backup?: boolean | null
+          code?: string
+          created_at?: string
+          email?: string | null
+          email_notifications?: boolean | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          phone?: string | null
+          session_timeout?: number | null
+          updated_at?: string
         }
         Relationships: []
       }
