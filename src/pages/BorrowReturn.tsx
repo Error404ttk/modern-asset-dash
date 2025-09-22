@@ -68,7 +68,8 @@ const BorrowReturn = () => {
         borrowDate: record.borrowed_at ? new Date(record.borrowed_at).toLocaleDateString('th-TH') : '',
         returnDate: record.expected_return_at ? new Date(record.expected_return_at).toLocaleDateString('th-TH') : '',
         status: isOverdue(record.expected_return_at) ? 'เกินกำหนด' : 'ยืมอยู่',
-        recordId: record.id
+        recordId: record.id,
+        equipmentId: record.equipment_id
       })) || [];
 
       setBorrowedEquipment(transformedData);
@@ -153,31 +154,67 @@ const BorrowReturn = () => {
     setIsSubmitting(true);
 
     const formData = new FormData(e.currentTarget as HTMLFormElement);
-    const equipmentId = formData.get('returnEquipment') as string;
+    const borrowRecordId = formData.get('returnEquipment') as string;
+    const condition = formData.get('condition') as string;
+    const returnNotes = formData.get('returnNotes') as string;
 
     try {
+      // Find the borrow record to get equipment details
+      const borrowRecord = borrowedEquipment.find(item => item.recordId === borrowRecordId);
+      if (!borrowRecord) {
+        throw new Error('ไม่พบข้อมูลการยืม');
+      }
+
+      // Get equipment UUID by asset number
+      const { data: equipmentData, error: equipmentFindError } = await (supabase as any)
+        .from('equipment')
+        .select('id, name, asset_number')
+        .eq('asset_number', borrowRecord.id)
+        .single();
+
+      if (equipmentFindError || !equipmentData) {
+        throw new Error('ไม่พบข้อมูลครุภัณฑ์');
+      }
+
+      // Prepare return notes with damage information
+      let finalNotes = returnNotes || '';
+      if (condition === 'damaged' || condition === 'lost') {
+        const damageInfo = `สถานะ: ${condition === 'damaged' ? 'ชำรุด' : 'สูญหาย'} | ผู้ยืม: ${borrowRecord.borrower} | วันที่คืน: ${new Date().toLocaleDateString('th-TH')}`;
+        finalNotes = finalNotes ? `${damageInfo}\n${finalNotes}` : damageInfo;
+      }
+
       // Update borrow record
       const { error: updateError } = await (supabase as any)
         .from('borrow_transactions')
         .update({ 
           returned_at: new Date(formData.get('returnDate') as string).toISOString(),
           status: 'returned',
-          notes: (formData.get('returnNotes') as string) || null
+          notes: finalNotes
         })
-        .eq('equipment_id', equipmentId)
-        .eq('status', 'borrowed');
+        .eq('id', borrowRecordId);
 
       if (updateError) throw updateError;
 
-      // Update equipment status and clear assigned_to
-      const newStatus = formData.get('condition') === 'damaged' ? 'damaged' : 'available';
+      // Determine equipment status
+      let newStatus = 'available';
+      let assignedTo = null;
+      
+      if (condition === 'damaged') {
+        newStatus = 'damaged';
+        assignedTo = `ชำรุดโดย: ${borrowRecord.borrower} (${new Date().toLocaleDateString('th-TH')})`; 
+      } else if (condition === 'lost') {
+        newStatus = 'damaged'; // Use 'damaged' status for lost items too
+        assignedTo = `สูญหายโดย: ${borrowRecord.borrower} (${new Date().toLocaleDateString('th-TH')})`;
+      }
+
+      // Update equipment status
       const { error: equipmentError } = await (supabase as any)
         .from('equipment')
         .update({ 
-          assigned_to: null,
+          assigned_to: assignedTo,
           status: newStatus
         })
-        .eq('id', equipmentId);
+        .eq('id', equipmentData.id);
 
       if (equipmentError) throw equipmentError;
 
@@ -203,9 +240,20 @@ const BorrowReturn = () => {
 
   const handleReturn = async (equipmentId: string) => {
     try {
-      // Find the borrow record to update
-      const borrowRecord = borrowedEquipment.find(item => item.id === equipmentId);
+      // Find the borrow record to update using recordId
+      const borrowRecord = borrowedEquipment.find(item => item.recordId === equipmentId);
       if (!borrowRecord) return;
+
+      // Get equipment UUID by asset number
+      const { data: equipmentData, error: equipmentFindError } = await (supabase as any)
+        .from('equipment')
+        .select('id')
+        .eq('asset_number', borrowRecord.id)
+        .single();
+
+      if (equipmentFindError || !equipmentData) {
+        throw new Error('ไม่พบข้อมูลครุภัณฑ์');
+      }
 
       const { error: updateError } = await (supabase as any)
         .from('borrow_transactions')
@@ -224,7 +272,7 @@ const BorrowReturn = () => {
           assigned_to: null,
           status: 'available'
         })
-        .eq('asset_number', equipmentId);
+        .eq('id', equipmentData.id);
 
       if (equipmentError) throw equipmentError;
 
@@ -389,8 +437,8 @@ const BorrowReturn = () => {
                         </SelectTrigger>
                         <SelectContent>
                           {borrowedEquipment.map((item) => (
-                            <SelectItem key={item.id} value={item.id}>
-                              {item.name} ({item.id})
+                            <SelectItem key={item.recordId} value={item.recordId}>
+                              {item.name} ({item.id}) - ยืมโดย: {item.borrower}
                             </SelectItem>
                           ))}
                         </SelectContent>
