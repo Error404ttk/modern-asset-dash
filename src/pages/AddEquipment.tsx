@@ -22,6 +22,7 @@ export default function AddEquipment() {
   const navigate = useNavigate();
   const [equipmentType, setEquipmentType] = useState("");
   const [equipmentSubType, setEquipmentSubType] = useState("");
+  const [quantity, setQuantity] = useState("1");
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,7 +51,7 @@ export default function AddEquipment() {
       brand: formData.get('brand') as string,
       model: formData.get('model') as string,
       serial_number: formData.get('serialNumber') as string,
-      asset_number: equipmentSubType || (formData.get('assetNumber') as string),
+      asset_number: equipmentSubType ? `${equipmentSubType}/${quantity}` : `${formData.get('assetNumber') as string}/${quantity}`,
       status: formData.get('status') as string || 'available',
       location: getLocationLabel(formData.get('location') as string),
       assigned_to: formData.get('currentUser') as string || null,
@@ -512,15 +513,34 @@ export default function AddEquipment() {
 
               <div className="space-y-2">
                 <Label htmlFor="assetNumber">เลขครุภัณฑ์</Label>
-                <Input 
-                  id="assetNumber" 
-                  name="assetNumber"
-                  placeholder={equipmentSubType ? `อัตโนมัติ: ${equipmentSubType}` : "เช่น EQ001"}
-                  value={equipmentSubType}
-                  disabled={!!equipmentSubType}
-                />
+                <div className="flex space-x-2">
+                  <div className="flex-1">
+                    <Input 
+                      id="assetNumber" 
+                      name="assetNumber"
+                      placeholder={equipmentSubType ? `อัตโนมัติ: ${equipmentSubType}` : "เช่น EQ001"}
+                      value={equipmentSubType}
+                      disabled={!!equipmentSubType}
+                    />
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-muted-foreground mx-2">/</span>
+                  </div>
+                  <div className="w-20">
+                    <Input 
+                      id="quantity" 
+                      name="quantity"
+                      type="number"
+                      placeholder="1"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      min="1"
+                      required
+                    />
+                  </div>
+                </div>
                 <p className="text-sm text-muted-foreground">
-                  {equipmentSubType ? "เลขครุภัณฑ์จะถูกกำหนดอัตโนมัติตามประเภทที่เลือก" : "หรือจะถูกกำหนดอัตโนมัติเมื่อเลือกประเภทครุภัณฑ์"}
+                  {equipmentSubType ? `แสดงเป็น: ${equipmentSubType}/${quantity}` : "รูปแบบ: เลขครุภัณฑ์/จำนวน"}
                 </p>
               </div>
 
@@ -556,19 +576,6 @@ export default function AddEquipment() {
                     <SelectItem value="damaged">ชำรุด</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="quantity">จำนวน *</Label>
-                <Input 
-                  id="quantity" 
-                  name="quantity"
-                  type="number"
-                  placeholder="เช่น 1, 5, 10"
-                  defaultValue="1"
-                  min="1"
-                  required
-                />
               </div>
             </div>
 
