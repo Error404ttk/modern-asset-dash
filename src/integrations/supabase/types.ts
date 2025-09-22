@@ -14,7 +14,92 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      borrow_transactions: {
+        Row: {
+          borrowed_at: string
+          borrower_contact: string | null
+          borrower_name: string
+          created_at: string
+          equipment_id: string
+          expected_return_at: string | null
+          id: string
+          notes: string | null
+          returned_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          borrowed_at?: string
+          borrower_contact?: string | null
+          borrower_name: string
+          created_at?: string
+          equipment_id: string
+          expected_return_at?: string | null
+          id?: string
+          notes?: string | null
+          returned_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          borrowed_at?: string
+          borrower_contact?: string | null
+          borrower_name?: string
+          created_at?: string
+          equipment_id?: string
+          expected_return_at?: string | null
+          id?: string
+          notes?: string | null
+          returned_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "borrow_transactions_equipment_id_fkey"
+            columns: ["equipment_id"]
+            isOneToOne: false
+            referencedRelation: "equipment"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      equipment: {
+        Row: {
+          brand: string | null
+          created_at: string
+          id: string
+          location: string | null
+          model: string | null
+          name: string
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          brand?: string | null
+          created_at?: string
+          id?: string
+          location?: string | null
+          model?: string | null
+          name: string
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          brand?: string | null
+          created_at?: string
+          id?: string
+          location?: string | null
+          model?: string | null
+          name?: string
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
