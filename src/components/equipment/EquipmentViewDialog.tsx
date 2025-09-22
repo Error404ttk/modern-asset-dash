@@ -8,7 +8,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Calendar, MapPin, User, HardDrive, Cpu, Monitor, Zap } from "lucide-react";
+import { Calendar, MapPin, User, HardDrive, Cpu, Monitor, Zap, Image, ZoomIn } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useState } from "react";
 
 interface Equipment {
   id: string;
@@ -24,6 +26,7 @@ interface Equipment {
   purchaseDate: string;
   warrantyEnd: string;
   quantity: string;
+  images?: string[];
   specs: {
     [key: string]: string;
   };
@@ -36,6 +39,8 @@ interface EquipmentViewDialogProps {
 }
 
 export default function EquipmentViewDialog({ open, onOpenChange, equipment }: EquipmentViewDialogProps) {
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  
   const getStatusBadge = (status: string) => {
     const variants = {
       available: { color: "bg-success text-success-foreground", label: "พร้อมใช้งาน" },
@@ -191,7 +196,78 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
               </CardContent>
             </Card>
           )}
+
+          {/* รูปภาพครุภัณฑ์ */}
+          {equipment.images && equipment.images.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Image className="h-5 w-5 text-primary" />
+                  <span>รูปภาพครุภัณฑ์</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {equipment.images.map((imageUrl, index) => (
+                    <div key={index} className="relative group">
+                      <div className="aspect-square bg-muted rounded-lg overflow-hidden border cursor-pointer">
+                        <img
+                          src={imageUrl}
+                          alt={`${equipment.name} - รูปที่ ${index + 1}`}
+                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                          onClick={() => setSelectedImageIndex(index)}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                          <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
+
+        {/* Image Modal */}
+        {selectedImageIndex !== null && equipment.images && (
+          <Dialog open={selectedImageIndex !== null} onOpenChange={() => setSelectedImageIndex(null)}>
+            <DialogContent className="sm:max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>รูปภาพครุภัณฑ์ - {equipment.name}</DialogTitle>
+                <DialogDescription>
+                  รูปที่ {selectedImageIndex + 1} จาก {equipment.images.length} รูป
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center justify-center p-4">
+                <img
+                  src={equipment.images[selectedImageIndex]}
+                  alt={`${equipment.name} - รูปที่ ${selectedImageIndex + 1}`}
+                  className="max-w-full max-h-[70vh] object-contain rounded-lg"
+                />
+              </div>
+              <div className="flex justify-between items-center">
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedImageIndex(Math.max(0, selectedImageIndex - 1))}
+                  disabled={selectedImageIndex === 0}
+                >
+                  รูปก่อนหน้า
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {selectedImageIndex + 1} / {equipment.images.length}
+                </span>
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedImageIndex(Math.min(equipment.images!.length - 1, selectedImageIndex + 1))}
+                  disabled={selectedImageIndex === equipment.images.length - 1}
+                >
+                  รูปถัดไป
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </DialogContent>
     </Dialog>
   );
