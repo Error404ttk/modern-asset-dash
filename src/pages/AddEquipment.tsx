@@ -56,6 +56,7 @@ export default function AddEquipment() {
       assigned_to: formData.get('currentUser') as string || null,
       purchase_date: formData.get('purchaseDate') as string || null,
       warranty_end: formData.get('warrantyEnd') as string || null,
+      quantity: formData.get('quantity') as string || '1',
       specs: Object.keys(specs).length > 0 ? specs : null
     };
 
@@ -555,6 +556,19 @@ export default function AddEquipment() {
                     <SelectItem value="damaged">ชำรุด</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="quantity">จำนวน *</Label>
+                <Input 
+                  id="quantity" 
+                  name="quantity"
+                  type="number"
+                  placeholder="เช่น 1, 5, 10"
+                  defaultValue="1"
+                  min="1"
+                  required
+                />
               </div>
             </div>
 

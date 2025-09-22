@@ -23,6 +23,7 @@ interface Equipment {
   user: string;
   purchaseDate: string;
   warrantyEnd: string;
+  quantity: string;
   specs: {
     [key: string]: string;
   };
@@ -104,6 +105,10 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">เลขครุภัณฑ์</label>
                   <p className="font-mono text-sm font-semibold text-primary">{equipment.assetNumber}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">จำนวน</label>
+                  <p className="font-semibold">{equipment.quantity} ชิ้น</p>
                 </div>
               </div>
               

@@ -34,6 +34,7 @@ interface Equipment {
   user: string;
   purchaseDate: string;
   warrantyEnd: string;
+  quantity: string;
   specs: {
     [key: string]: string;
   };
@@ -66,6 +67,7 @@ export default function EquipmentEditDialog({
       user: equipment.user || "",
       purchaseDate: equipment.purchaseDate || "",
       warrantyEnd: equipment.warrantyEnd || "",
+      quantity: equipment.quantity || "1",
       specs: equipment.specs || {}
     });
   }, [equipment, open]);
@@ -173,6 +175,17 @@ export default function EquipmentEditDialog({
                     id="assetNumber"
                     value={formData.assetNumber}
                     onChange={(e) => handleInputChange('assetNumber', e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="quantity">จำนวน</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    value={formData.quantity}
+                    onChange={(e) => handleInputChange('quantity', e.target.value)}
+                    min="1"
                     required
                   />
                 </div>

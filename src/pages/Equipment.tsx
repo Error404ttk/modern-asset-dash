@@ -51,6 +51,7 @@ interface Equipment {
   assigned_to: string | null;
   purchase_date: string | null;
   warranty_end: string | null;
+  quantity: string | null;
   specs: any;
   created_at: string;
   updated_at: string;
@@ -70,6 +71,7 @@ const transformEquipment = (dbEquipment: Equipment) => ({
   user: dbEquipment.assigned_to || "",
   purchaseDate: dbEquipment.purchase_date || "",
   warrantyEnd: dbEquipment.warranty_end || "",
+  quantity: dbEquipment.quantity || "1",
   specs: dbEquipment.specs || {}
 });
 

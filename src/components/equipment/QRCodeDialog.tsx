@@ -13,6 +13,7 @@ import { Download, Printer } from "lucide-react";
 interface Equipment {
   id: string;
   name: string;
+  quantity?: string;
   assetNumber: string;
   serialNumber: string;
   brand: string;
