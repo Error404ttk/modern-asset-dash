@@ -527,10 +527,6 @@ const Settings = () => {
                     <Label className="text-sm text-muted-foreground">สถานะฐานข้อมูล</Label>
                     <Badge variant="default" className="bg-green-500">ออนไลน์</Badge>
                   </div>
-                  <div>
-                    <Label className="text-sm text-muted-foreground">จำนวนครุภัณฑ์</Label>
-                    <p className="font-medium">-</p>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -538,7 +534,7 @@ const Settings = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Dialogs */}
+      {/* Custom Dialog Components */}
       <DepartmentDialog
         open={isDepartmentDialogOpen}
         onOpenChange={(open) => {
