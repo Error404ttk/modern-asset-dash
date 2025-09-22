@@ -56,7 +56,18 @@ export default function EquipmentEditDialog({
   const [formData, setFormData] = useState<Equipment>(equipment);
 
   useEffect(() => {
-    setFormData(equipment);
+    // Ensure all string fields are never null to avoid React warnings
+    setFormData({
+      ...equipment,
+      brand: equipment.brand || "",
+      model: equipment.model || "",
+      serialNumber: equipment.serialNumber || "",
+      location: equipment.location || "",
+      user: equipment.user || "",
+      purchaseDate: equipment.purchaseDate || "",
+      warrantyEnd: equipment.warrantyEnd || "",
+      specs: equipment.specs || {}
+    });
   }, [equipment, open]);
 
   const handleSubmit = (e: React.FormEvent) => {
