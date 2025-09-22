@@ -9,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Plus, ArrowLeftRight, Calendar, User, Monitor, QrCode, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 
 const BorrowReturn = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
   const [borrowedEquipment, setBorrowedEquipment] = useState<any[]>([]);
@@ -90,9 +92,11 @@ const BorrowReturn = () => {
   };
 
   useEffect(() => {
-    fetchAvailableEquipment();
-    fetchBorrowedEquipment();
-  }, []);
+    if (user) {
+      fetchAvailableEquipment();
+      fetchBorrowedEquipment();
+    }
+  }, [user]);
 
   const handleBorrowSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +112,7 @@ const BorrowReturn = () => {
       expected_return_at: new Date(formData.get('returnDate') as string).toISOString(),
       notes: formData.get('purpose') as string + (formData.get('notes') ? '\n' + formData.get('notes') : ''),
       status: 'borrowed',
-      user_id: '00000000-0000-0000-0000-000000000000' // Default user ID for now
+      user_id: user?.id || '00000000-0000-0000-0000-000000000000'
     };
 
     try {
