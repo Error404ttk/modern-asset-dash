@@ -46,6 +46,7 @@ interface OrganizationSettings {
 const Settings = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("organization");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
   const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null);
@@ -293,7 +294,7 @@ const Settings = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="organization" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="organization">ข้อมูลองค์กร</TabsTrigger>
           <TabsTrigger value="departments">หน่วยงาน</TabsTrigger>
