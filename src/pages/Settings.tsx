@@ -621,6 +621,34 @@ const Settings = () => {
         itemName={deletingItem?.item?.name || ''}
         onConfirm={handleConfirmDelete}
       />
+
+      {/* Footer */}
+      <div className="mt-8 border-t pt-6">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm text-muted-foreground">
+              <div>
+                <h4 className="font-medium text-foreground mb-2">ข้อมูลระบบ</h4>
+                <p>เวอร์ชัน: 1.0.0</p>
+                <p>วันที่อัปเดตล่าสุด: {new Date().toLocaleDateString('th-TH')}</p>
+                <p>สถานะระบบ: <span className="text-green-600">ใช้งานได้</span></p>
+              </div>
+              <div>
+                <h4 className="font-medium text-foreground mb-2">การสนับสนุน</h4>
+                <p>ฝ่ายเทคนิค: 02-xxx-xxxx</p>
+                <p>อีเมลสนับสนุน: support@hospital.go.th</p>
+                <p>เวลาทำการ: จันทร์-ศุกร์ 8:00-17:00 น.</p>
+              </div>
+              <div>
+                <h4 className="font-medium text-foreground mb-2">ข้อมูลเพิ่มเติม</h4>
+                <p>© 2024 ระบบจัดการครุภัณฑ์</p>
+                <p>ผู้พัฒนา: IT Department</p>
+                <p>ลิขสิทธิ์: โรงพยาบาล</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
