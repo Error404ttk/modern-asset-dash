@@ -9,6 +9,7 @@ import { Navbar } from "@/components/Navbar";
 import Dashboard from "./pages/Dashboard";
 import Equipment from "./pages/Equipment";
 import AddEquipment from "./pages/AddEquipment";
+import EquipmentDetail from "./pages/EquipmentDetail";
 import BorrowReturn from "./pages/BorrowReturn";
 import History from "./pages/History";
 import Users from "./pages/Users";
@@ -33,6 +34,7 @@ const App = () => (
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/equipment" element={<Equipment />} />
                   <Route path="/equipment/add" element={<AddEquipment />} />
+                  <Route path="/equipment/:id" element={<EquipmentDetail />} />
                   <Route path="/reports" element={<Dashboard />} />
                   <Route path="/borrow-return" element={<BorrowReturn />} />
                   <Route path="/history" element={<History />} />
