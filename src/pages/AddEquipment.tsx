@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2 } from "lucide-react";
+import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2, Shield, HardDrive, Wifi, Tablet, Battery, ScanLine, Archive, Router, Database, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -100,14 +100,32 @@ export default function AddEquipment() {
   };
 
   const equipmentTypes = [
-    { value: "desktop", label: "คอมพิวเตอร์ตั้งโต๊ะ", icon: Computer },
-    { value: "laptop", label: "แล็ปท็อป", icon: Computer },
-    { value: "monitor", label: "จอภาพ", icon: Monitor },
+    { value: "server", label: "เครื่องคอมพิวเตอร์แม่ข่าย", icon: Server },
+    { value: "desktop", label: "เครื่องคอมพิวเตอร์", icon: Computer },
+    { value: "monitor", label: "จอแสดงภาพ", icon: Monitor },
+    { value: "laptop", label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค", icon: Computer },
+    { value: "tablet", label: "คอมพิวเตอร์แท็บเล็ต", icon: Tablet },
+    { value: "ups", label: "เครื่องสำรองไฟฟ้า", icon: Battery },
+    { value: "scanner", label: "สแกนเนอร์", icon: ScanLine },
     { value: "printer", label: "เครื่องพิมพ์", icon: Printer },
-    { value: "server", label: "เซิร์ฟเวอร์", icon: Server },
+    { value: "blade_enclosure", label: "ตู้สำหรับการติดตั้งเครื่องแม่ข่ายชนิด Blade (Enclosure/Chassis)", icon: Archive },
+    { value: "blade_server", label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis", icon: Server },
+    { value: "external_storage", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบภายนอก (External Storage)", icon: HardDrive },
+    { value: "log_storage", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย", icon: Database },
+    { value: "firewall", label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall)", icon: Shield },
+    { value: "ips", label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System)", icon: Lock },
+    { value: "equipment_rack", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์", icon: Archive },
+    { value: "signal_distributor", label: "อุปกรณ์กระจายสัญญาณ", icon: Wifi },
+    { value: "router", label: "อุปกรณ์ค้นหาเส้นทางเครือข่าย", icon: Router },
+    { value: "load_balancer", label: "อุปกรณ์กระจายการทำงาน", icon: Server },
+    { value: "card_reader", label: "เครื่องอ่านบัตรแบบอเนกประสงค์", icon: ScanLine },
+    { value: "software_os", label: "ชุดโปรแกรมระบบปฏิบัติการ", icon: Computer },
+    { value: "nas", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ NAS", icon: HardDrive },
+    { value: "san", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ SAN", icon: Database },
+    { value: "ip_camera", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย", icon: Monitor },
   ];
 
-  const isComputerType = equipmentType === "desktop" || equipmentType === "laptop" || equipmentType === "server";
+  const isComputerType = equipmentType === "desktop" || equipmentType === "laptop" || equipmentType === "server" || equipmentType === "tablet" || equipmentType === "blade_server";
 
   return (
     <div className="space-y-6">
