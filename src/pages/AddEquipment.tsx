@@ -665,7 +665,7 @@ export default function AddEquipment() {
                       name="quantity"
                       type="number"
                       placeholder="1"
-                      value={quantity}
+                      defaultValue={quantity}
                       onChange={(e) => setQuantity(e.target.value)}
                       min="1"
                       required
