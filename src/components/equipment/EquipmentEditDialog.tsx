@@ -275,6 +275,12 @@ export default function EquipmentEditDialog({
                       <SelectItem value="Monitor">Monitor</SelectItem>
                       <SelectItem value="Server">Server</SelectItem>
                       <SelectItem value="Network Device">Network Device</SelectItem>
+                      <SelectItem value="คอมพิวเตอร์ตั้งโต๊ะ">คอมพิวเตอร์ตั้งโต๊ะ</SelectItem>
+                      <SelectItem value="คอมพิวเตอร์พกพา">คอมพิวเตอร์พกพา</SelectItem>
+                      <SelectItem value="จอแสดงผล">จอแสดงผล</SelectItem>
+                      <SelectItem value="เครื่องพิมพ์">เครื่องพิมพ์</SelectItem>
+                      <SelectItem value="เซิร์ฟเวอร์">เซิร์ฟเวอร์</SelectItem>
+                      <SelectItem value="อุปกรณ์เครือข่าย">อุปกรณ์เครือข่าย</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

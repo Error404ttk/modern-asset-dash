@@ -111,16 +111,26 @@ export default function Dashboard() {
       // Calculate department distribution
       const deptCount: { [key: string]: number } = {};
       equipmentData?.forEach((item: any) => {
-        if (item.assigned_to) {
-          // Find department by matching with departments data
-          const dept = departmentsData?.find((d: any) => 
-            item.assigned_to.includes(d.name) || item.location?.includes(d.name)
+        // Use location or assigned_to to determine department/organization
+        let department = 'ไม่ระบุหน่วยงาน';
+        
+        if (item.location) {
+          // Check if location matches any department
+          const matchingDept = departmentsData?.find((d: any) => 
+            item.location.toLowerCase().includes(d.name.toLowerCase()) ||
+            d.name.toLowerCase().includes(item.location.toLowerCase())
           );
-          const deptName = dept?.name || 'ไม่ระบุแผนก';
-          deptCount[deptName] = (deptCount[deptName] || 0) + 1;
-        } else {
-          deptCount['ไม่ระบุแผนก'] = (deptCount['ไม่ระบุแผนก'] || 0) + 1;
+          department = matchingDept ? matchingDept.name : item.location;
+        } else if (item.assigned_to) {
+          // Check if assigned_to matches any department
+          const matchingDept = departmentsData?.find((d: any) => 
+            item.assigned_to.toLowerCase().includes(d.name.toLowerCase()) ||
+            d.name.toLowerCase().includes(item.assigned_to.toLowerCase())
+          );
+          department = matchingDept ? matchingDept.name : item.assigned_to;
         }
+        
+        deptCount[department] = (deptCount[department] || 0) + 1;
       });
 
       const deptDistribution = Object.entries(deptCount).map(([name, value]) => ({
@@ -328,22 +338,24 @@ export default function Dashboard() {
 
   return <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground mb-2">แดชบอร์ดระบบครุภัณฑ์</h1>
-        <p className="text-muted-foreground">ภาพรวมการจัดการครุภัณฑ์คอมพิวเตอร์</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">แดชบอร์ดระบบครุภัณฑ์</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">ภาพรวมการจัดการครุภัณฑ์คอมพิวเตอร์</p>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-6">
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               ครุภัณฑ์ทั้งหมด
             </CardTitle>
-            <Computer className="h-4 w-4 text-primary" />
+            <Computer className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-primary">{stats.total}</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-primary">{stats.total}</div>
             <p className="text-xs text-muted-foreground">
               จำนวนครุภัณฑ์ทั้งหมด
             </p>
@@ -352,13 +364,13 @@ export default function Dashboard() {
 
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               ใช้งานปกติ
             </CardTitle>
-            <CheckCircle className="h-4 w-4 text-success" />
+            <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{stats.working}</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-success">{stats.working}</div>
             <p className="text-xs text-muted-foreground">
               {stats.total > 0 ? (stats.working / stats.total * 100).toFixed(1) : 0}% ของทั้งหมด
             </p>
@@ -367,13 +379,13 @@ export default function Dashboard() {
 
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               ชำรุด
             </CardTitle>
-            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{stats.broken}</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-destructive">{stats.broken}</div>
             <p className="text-xs text-muted-foreground">
               ต้องซ่อมแซม
             </p>
@@ -382,13 +394,13 @@ export default function Dashboard() {
 
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               ซ่อมบำรุง
             </CardTitle>
-            <Clock className="h-4 w-4 text-warning" />
+            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-warning" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-warning">{stats.maintenance}</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-warning">{stats.maintenance}</div>
             <p className="text-xs text-muted-foreground">
               อยู่ระหว่างดำเนินการ
             </p>
@@ -397,13 +409,13 @@ export default function Dashboard() {
 
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               ประกันหมดอายุ
             </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-muted-foreground">{stats.expired}</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-muted-foreground">{stats.expired}</div>
             <p className="text-xs text-muted-foreground">
               ใน 3 เดือนข้างหน้า
             </p>
@@ -412,56 +424,56 @@ export default function Dashboard() {
       </div>
 
       {/* Additional Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               อายุเฉลี่ย
             </CardTitle>
-            <Clock className="h-4 w-4 text-info" />
+            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-info" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-info">{additionalStats.avgAge}</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-info">{additionalStats.avgAge}</div>
             <p className="text-xs text-muted-foreground">ปี</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               อัตราการใช้งาน
             </CardTitle>
-            <TrendingUp className="h-4 w-4 text-success" />
+            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{additionalStats.utilizationRate}%</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-success">{additionalStats.utilizationRate}%</div>
             <p className="text-xs text-muted-foreground">ของทั้งหมด</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
               มูลค่าประมาณ
             </CardTitle>
-            <Computer className="h-4 w-4 text-accent" />
+            <Computer className="h-3 w-3 sm:h-4 sm:w-4 text-accent" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-accent">{(additionalStats.totalValue / 1000000).toFixed(1)}M</div>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-accent">{(additionalStats.totalValue / 1000000).toFixed(1)}M</div>
             <p className="text-xs text-muted-foreground">บาท</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-card shadow-soft border-border">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              แผนกที่ใช้
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              หน่วยงาน
             </CardTitle>
-            <Building2 className="h-4 w-4 text-secondary" />
+            <Building2 className="h-3 w-3 sm:h-4 sm:w-4 text-secondary" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-secondary">{departmentDistribution.length}</div>
-            <p className="text-xs text-muted-foreground">แผนก</p>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-secondary">{departmentDistribution.length}</div>
+            <p className="text-xs text-muted-foreground">หน่วยงาน</p>
           </CardContent>
         </Card>
       </div>
@@ -518,7 +530,7 @@ export default function Dashboard() {
                   cy="50%"
                   labelLine={false}
                   label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
+                  outerRadius={70}
                   fill="#8884d8"
                   dataKey="value"
                 >

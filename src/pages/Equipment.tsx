@@ -220,14 +220,14 @@ export default function Equipment() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">รายการครุภัณฑ์</h1>
-          <p className="text-muted-foreground">จัดการและติดตามครุภัณฑ์คอมพิวเตอร์</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">รายการครุภัณฑ์</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">จัดการและติดตามครุภัณฑ์คอมพิวเตอร์</p>
         </div>
         
         <Link to="/equipment/add">
-          <Button className="bg-gradient-primary hover:opacity-90 shadow-soft">
+          <Button className="bg-gradient-primary hover:opacity-90 shadow-soft w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             เพิ่มครุภัณฑ์ใหม่
           </Button>
@@ -235,62 +235,62 @@ export default function Equipment() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card className="bg-gradient-card shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center space-x-2">
-              <Computer className="h-8 w-8 text-primary" />
+              <Computer className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
               <div>
-                <p className="text-2xl font-bold text-primary">{equipmentList.length}</p>
-                <p className="text-sm text-muted-foreground">รายการทั้งหมด</p>
+                <p className="text-xl sm:text-2xl font-bold text-primary">{equipmentList.length}</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">รายการทั้งหมด</p>
               </div>
             </div>
           </CardContent>
         </Card>
         
         <Card className="bg-gradient-card shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 bg-success/10 rounded-lg flex items-center justify-center">
-                <Computer className="h-5 w-5 text-success" />
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-success/10 rounded-lg flex items-center justify-center">
+                <Computer className="h-4 w-4 sm:h-5 sm:w-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-success">
+                <p className="text-xl sm:text-2xl font-bold text-success">
                   {equipmentList.filter(e => e.status === 'available').length}
                 </p>
-                <p className="text-sm text-muted-foreground">พร้อมใช้งาน</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">พร้อมใช้งาน</p>
               </div>
             </div>
           </CardContent>
         </Card>
         
         <Card className="bg-gradient-card shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 bg-warning/10 rounded-lg flex items-center justify-center">
-                <Computer className="h-5 w-5 text-warning" />
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-warning/10 rounded-lg flex items-center justify-center">
+                <Computer className="h-4 w-4 sm:h-5 sm:w-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-warning">
+                <p className="text-xl sm:text-2xl font-bold text-warning">
                   {equipmentList.filter(e => e.status === 'maintenance').length}
                 </p>
-                <p className="text-sm text-muted-foreground">ซ่อมบำรุง</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">ซ่อมบำรุง</p>
               </div>
             </div>
           </CardContent>
         </Card>
         
         <Card className="bg-gradient-card shadow-soft">
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 bg-destructive/10 rounded-lg flex items-center justify-center">
-                <Computer className="h-5 w-5 text-destructive" />
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-destructive/10 rounded-lg flex items-center justify-center">
+                <Computer className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-destructive">
+                <p className="text-xl sm:text-2xl font-bold text-destructive">
                   {equipmentList.filter(e => e.status === 'damaged').length}
                 </p>
-                <p className="text-sm text-muted-foreground">ชำรุด</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">ชำรุด</p>
               </div>
             </div>
           </CardContent>
@@ -300,10 +300,10 @@ export default function Equipment() {
       {/* Filters */}
       <Card className="shadow-soft">
         <CardHeader>
-          <CardTitle>ค้นหาและกรองข้อมูล</CardTitle>
+          <CardTitle className="text-base sm:text-lg">ค้นหาและกรองข้อมูล</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col gap-4">
             <div className="flex-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -317,7 +317,7 @@ export default function Equipment() {
             </div>
             
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full sm:w-48">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="กรองตามสถานะ" />
               </SelectTrigger>
@@ -336,24 +336,25 @@ export default function Equipment() {
       {/* Equipment Table */}
       <Card className="shadow-soft">
         <CardHeader>
-          <CardTitle>รายการครุภัณฑ์ ({filteredEquipment.length} รายการ)</CardTitle>
+          <CardTitle className="text-base sm:text-lg">รายการครุภัณฑ์ ({filteredEquipment.length} รายการ)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>เลขครุภัณฑ์</TableHead>
-                  <TableHead>ชื่อครุภัณฑ์</TableHead>
-                  <TableHead>ประเภท</TableHead>
-                  <TableHead>สถานะ</TableHead>
-                  <TableHead>สถานที่</TableHead>
-                  <TableHead>ผู้ใช้งาน</TableHead>
-                  <TableHead>ประกัน</TableHead>
-                  <TableHead className="text-right">การดำเนินการ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <div className="min-w-[800px]"> {/* Add min-width for better mobile scrolling */}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[120px]">เลขครุภัณฑ์</TableHead>
+                    <TableHead className="min-w-[180px]">ชื่อครุภัณฑ์</TableHead>
+                    <TableHead className="min-w-[100px]">ประเภท</TableHead>
+                    <TableHead className="min-w-[100px]">สถานะ</TableHead>
+                    <TableHead className="min-w-[120px]">สถานที่</TableHead>
+                    <TableHead className="min-w-[120px]">ผู้ใช้งาน</TableHead>
+                    <TableHead className="min-w-[100px]">ประกัน</TableHead>
+                    <TableHead className="text-right min-w-[140px]">การดำเนินการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                 {loading ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8">
@@ -401,11 +402,11 @@ export default function Equipment() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end space-x-2">
+                        <div className="flex items-center justify-end space-x-1">
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="hover:bg-muted"
+                            className="hover:bg-muted h-8 w-8 p-0"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -419,7 +420,7 @@ export default function Equipment() {
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="hover:bg-muted"
+                            className="hover:bg-muted h-8 w-8 p-0"
                             onClick={() => handleView(item)}
                             title="ดูรายละเอียด"
                           >
@@ -428,7 +429,7 @@ export default function Equipment() {
                            <Button 
                              variant="ghost" 
                              size="sm" 
-                             className="hover:bg-muted"
+                             className="hover:bg-muted h-8 w-8 p-0"
                              onClick={() => handleEdit(item)}
                              title="แก้ไขข้อมูล"
                            >
@@ -440,7 +441,7 @@ export default function Equipment() {
                              <Button 
                                variant="ghost" 
                                size="sm" 
-                               className="hover:bg-destructive/10 hover:text-destructive"
+                               className="hover:bg-destructive/10 hover:text-destructive h-8 w-8 p-0"
                                onClick={(e) => {
                                  e.preventDefault();
                                  e.stopPropagation();
@@ -451,13 +452,14 @@ export default function Equipment() {
                                <Trash2 className="h-4 w-4" />
                              </Button>
                            )}
-                         </div>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
                 )}
               </TableBody>
             </Table>
+            </div> {/* Close min-width div */}
           </div>
         </CardContent>
       </Card>
