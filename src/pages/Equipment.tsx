@@ -2,15 +2,14 @@ import { useState, useEffect } from "react";
 import { 
   Computer, 
   Plus, 
-  Search, 
-  Filter, 
   Eye, 
   Edit, 
   QrCode,
   Calendar,
   MapPin,
   Loader2,
-  Trash2
+  Trash2,
+  Building2
 } from "lucide-react";
 import QRCodeDialog from "@/components/equipment/QRCodeDialog";
 import EquipmentViewDialog from "@/components/equipment/EquipmentViewDialog";
@@ -18,7 +17,6 @@ import EquipmentEditDialog from "@/components/equipment/EquipmentEditDialog";
 import DeleteEquipmentDialog from "@/components/equipment/DeleteEquipmentDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,16 +27,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { getWarrantyStatusInfo } from "@/lib/warranty";
+import { cn } from "@/lib/utils";
 
 // Equipment interface matching database schema
 interface Equipment {
@@ -55,6 +48,7 @@ interface Equipment {
   purchase_date: string | null;
   warranty_end: string | null;
   quantity: string | null;
+  images: string[] | null;
   specs: any;
   created_at: string;
   updated_at: string;
@@ -75,12 +69,11 @@ const transformEquipment = (dbEquipment: Equipment) => ({
   purchaseDate: dbEquipment.purchase_date || "",
   warrantyEnd: dbEquipment.warranty_end || "",
   quantity: dbEquipment.quantity || "1",
+  images: dbEquipment.images || [],
   specs: dbEquipment.specs || {}
 });
 
 export default function Equipment() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedEquipment, setSelectedEquipment] = useState<any>(null);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -162,6 +155,7 @@ export default function Equipment() {
         assigned_to: updatedEquipment.user,
         purchase_date: updatedEquipment.purchaseDate,
         warranty_end: updatedEquipment.warrantyEnd,
+        images: updatedEquipment.images,
         specs: updatedEquipment.specs
       };
 
@@ -197,7 +191,10 @@ export default function Equipment() {
       available: { color: "bg-success text-success-foreground", label: "พร้อมใช้งาน" },
       borrowed: { color: "bg-primary text-primary-foreground", label: "ถูกยืม" },
       maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
-      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" }
+      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
+      pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
+      disposed: { color: "bg-muted text-muted-foreground", label: "จำหน่าย" },
+      lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" }
     };
     
     const config = variants[status as keyof typeof variants] || {
@@ -207,15 +204,7 @@ export default function Equipment() {
     return <Badge className={config.color}>{config.label}</Badge>;
   };
 
-  const filteredEquipment = equipmentList.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.assetNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.serialNumber.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+  const filteredEquipment = equipmentList;
 
   return (
     <div className="space-y-6">
@@ -297,42 +286,6 @@ export default function Equipment() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card className="shadow-soft">
-        <CardHeader>
-          <CardTitle className="text-base sm:text-lg">ค้นหาและกรองข้อมูล</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="ค้นหาด้วยชื่อ, เลขครุภัณฑ์, หรือ Serial Number..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-48">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="กรองตามสถานะ" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">ทุกสถานะ</SelectItem>
-                <SelectItem value="available">พร้อมใช้งาน</SelectItem>
-                <SelectItem value="borrowed">ถูกยืม</SelectItem>
-                <SelectItem value="maintenance">ซ่อมบำรุง</SelectItem>
-                <SelectItem value="damaged">ชำรุด</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Equipment Table */}
       <Card className="shadow-soft">
         <CardHeader>
@@ -340,7 +293,7 @@ export default function Equipment() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <div className="min-w-[800px]"> {/* Add min-width for better mobile scrolling */}
+            <div className="min-w-[900px]"> {/* Add min-width for better mobile scrolling */}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -348,6 +301,7 @@ export default function Equipment() {
                     <TableHead className="min-w-[180px]">ชื่อครุภัณฑ์</TableHead>
                     <TableHead className="min-w-[100px]">ประเภท</TableHead>
                     <TableHead className="min-w-[100px]">สถานะ</TableHead>
+                    <TableHead className="min-w-[140px]">หน่วยงาน</TableHead>
                     <TableHead className="min-w-[120px]">สถานที่</TableHead>
                     <TableHead className="min-w-[120px]">ผู้ใช้งาน</TableHead>
                     <TableHead className="min-w-[100px]">ประกัน</TableHead>
@@ -357,7 +311,7 @@ export default function Equipment() {
                 <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <div className="flex items-center justify-center space-x-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span>กำลังโหลดข้อมูล...</span>
@@ -366,7 +320,7 @@ export default function Equipment() {
                   </TableRow>
                 ) : filteredEquipment.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <div className="text-muted-foreground">
                         {equipmentList.length === 0 ? "ไม่มีข้อมูลครุภัณฑ์" : "ไม่พบข้อมูลที่ค้นหา"}
                       </div>
@@ -390,6 +344,14 @@ export default function Equipment() {
                       <TableCell>{getStatusBadge(item.status)}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-1">
+                          <Building2 className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-sm truncate max-w-[160px]" title={item.specs?.department || "-"}>
+                            {item.specs?.department || "-"}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-1">
                           <MapPin className="h-3 w-3 text-muted-foreground" />
                           <span className="text-sm">{item.location}</span>
                         </div>
@@ -398,7 +360,20 @@ export default function Equipment() {
                       <TableCell>
                         <div className="flex items-center space-x-1">
                           <Calendar className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-sm">{item.warrantyEnd}</span>
+                          {(() => {
+                            const info = getWarrantyStatusInfo(item.warrantyEnd);
+                            if (!info) {
+                              return <span className="text-sm text-muted-foreground">-</span>;
+                            }
+
+                            const detailText = info.detail ? `(${info.detail})` : "";
+                            return (
+                              <span className={cn("text-sm font-medium", info.textClass)}>
+                                {info.label}
+                                {detailText ? ` ${detailText}` : ""}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">

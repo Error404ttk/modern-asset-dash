@@ -22,36 +22,13 @@ pop3_port = 54326
 
 [storage]
 enabled = true
-port = 54327
 file_size_limit = "50MiB"
 image_transformation = { enabled = true }
 
 [auth]
 enabled = true
-port = 54328
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["https://dzleqfsaxlbkzwyxzypo.lovableproject.com"]
 jwt_expiry = 3600
-refresh_token_rotation_enabled = true
 refresh_token_reuse_interval = 10
 enable_signup = true
-
-[edge_functions]
-enabled = true
-port = 54329
-
-[[edge_functions.functions]]
-name = "delete-equipment"
-verify_jwt = true
-
-[[edge_functions.functions]]
-name = "delete-user"
-verify_jwt = true
-
-[[edge_functions.functions]]
-name = "delete-department"
-verify_jwt = true
-
-[[edge_functions.functions]]
-name = "delete-equipment-type"
-verify_jwt = true

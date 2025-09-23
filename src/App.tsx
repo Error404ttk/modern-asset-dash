@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Footer } from "@/components/Footer";
+import { Navbar } from "@/components/Navbar";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import Dashboard from "./pages/Dashboard";
 import Equipment from "./pages/Equipment";
@@ -17,6 +18,7 @@ import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import { OrganizationSettingsProvider } from "@/hooks/useOrganizationSettings";
 
 const queryClient = new QueryClient();
 
@@ -43,11 +45,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="flex min-h-screen w-full bg-muted/30">
         <AppSidebar />
-        <div className="flex-1 flex flex-col">
-          <main className="flex-1 p-6 bg-background">
-            {children}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Navbar />
+          <main className="flex-1 overflow-y-auto bg-background p-4 sm:p-6">
+            <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+              {children}
+            </div>
           </main>
           <Footer />
         </div>
@@ -59,11 +64,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
+      <OrganizationSettingsProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/" element={
               <ProtectedRoute>
@@ -129,9 +135,10 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </OrganizationSettingsProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

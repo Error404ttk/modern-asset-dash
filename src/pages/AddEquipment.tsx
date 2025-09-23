@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Save, ArrowLeft, Upload, Computer, Monitor, Printer, Server, Loader2, Shield, HardDrive, Wifi, Tablet, Battery, ScanLine, Archive, Router, Database, Lock, Eye, Camera, X } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Save, ArrowLeft, Upload, Computer, Monitor, Loader2, Camera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,9 +13,13 @@ import {
   SelectValue 
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { BASE_EQUIPMENT_TYPES } from "@/data/equipmentTypes.ts";
+import { getWarrantyStatusInfo } from "@/lib/warranty";
+import { cn } from "@/lib/utils";
 
 export default function AddEquipment() {
   const { toast } = useToast();
@@ -23,6 +27,7 @@ export default function AddEquipment() {
   const [equipmentType, setEquipmentType] = useState("");
   const [equipmentSubType, setEquipmentSubType] = useState("");
   const [quantity, setQuantity] = useState("1");
+  const [warrantyEnd, setWarrantyEnd] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
@@ -46,7 +51,7 @@ export default function AddEquipment() {
           // Map database equipment types to the format expected by the UI
           const mappedTypes = equipmentTypesData.map(dbType => {
             // Find matching type from equipmentTypes array
-            const matchingType = equipmentTypes.find(t => 
+            const matchingType = baseEquipmentTypes.find(t => 
               t.code === dbType.code || t.label.includes(dbType.name)
             );
             
@@ -153,40 +158,73 @@ export default function AddEquipment() {
     setIsSubmitting(true);
 
     const formData = new FormData(e.currentTarget as HTMLFormElement);
-    
+
+    const getTrimmedValue = (field: string) => {
+      const value = formData.get(field);
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      }
+      return value ?? null;
+    };
+
     // Build specs object for computer types
-    const specs: any = {};
+    const specs: Record<string, string> = {};
     if (isComputerType) {
-      specs.cpu = formData.get('cpu') || null;
-      specs.ram = formData.get('ram') || null;
-      specs.storage = formData.get('storage') || null;
-      specs.gpu = formData.get('gpu') || null;
-      specs.os = formData.get('os') || null;
-      specs.productKey = formData.get('productKey') || null;
-      specs.ipAddress = formData.get('ipAddress') || null;
-      specs.macAddress = formData.get('macAddress') || null;
-      specs.hostname = formData.get('hostname') || null;
+      const cpu = getTrimmedValue('cpu');
+      const cpuSeries = getTrimmedValue('cpuSeries');
+      const ramGb = getTrimmedValue('ramGb');
+      const harddisk = getTrimmedValue('harddisk');
+      const operatingSystem = getTrimmedValue('operatingSystem');
+      const officeSuite = getTrimmedValue('officeSuite');
+      const gpu = getTrimmedValue('gpu');
+
+      if (cpu) specs.cpu = cpu;
+      if (cpuSeries) specs.cpuSeries = cpuSeries;
+      if (ramGb) specs.ramGb = ramGb;
+      if (harddisk) specs.harddisk = harddisk;
+      if (operatingSystem) specs.operatingSystem = operatingSystem;
+      if (officeSuite) specs.officeSuite = officeSuite;
+      if (gpu) specs.gpu = gpu;
+
+      const productKey = getTrimmedValue('productKey');
+      const ipAddress = getTrimmedValue('ipAddress');
+      const macAddress = getTrimmedValue('macAddress');
+      const hostname = getTrimmedValue('hostname');
+
+      if (productKey) specs.productKey = productKey;
+      if (ipAddress) specs.ipAddress = ipAddress;
+      if (macAddress) specs.macAddress = macAddress;
+      if (hostname) specs.hostname = hostname;
     }
 
+    const nameValue = getTrimmedValue('equipmentName');
+    const brandValue = getTrimmedValue('brand');
+    const modelValue = getTrimmedValue('model');
+    const serialNumberValue = getTrimmedValue('serialNumber');
+    const purchaseDateValue = getTrimmedValue('purchaseDate');
+    const budgetTypeValue = getTrimmedValue('budgetType');
+    const acquisitionMethodValue = getTrimmedValue('acquisitionMethod');
+
     const equipmentData = {
-      name: formData.get('equipmentName') as string,
+      name: nameValue,
       type: getEquipmentTypeLabel(equipmentType),
-      brand: formData.get('brand') as string,
-      model: formData.get('model') as string,
-      serial_number: formData.get('serialNumber') as string,
+      brand: brandValue,
+      model: modelValue,
+      serial_number: serialNumberValue,
       asset_number: equipmentSubType || (formData.get('assetNumber') as string),
       quantity: parseInt(quantity) || 1,
-      status: formData.get('status') as string || 'available',
+      status: (formData.get('status') as string) || 'available',
       location: getLocationLabel(formData.get('location') as string),
-      assigned_to: formData.get('currentUser') as string || null,
-      purchase_date: formData.get('purchaseDate') as string || null,
-      warranty_end: formData.get('warrantyEnd') as string || null,
+      assigned_to: getTrimmedValue('currentUser'),
+      purchase_date: purchaseDateValue,
+      warranty_end: getTrimmedValue('warrantyEnd'),
       specs: {
         ...specs,
         price: parseFloat(formData.get('price') as string) || null,
-        budgetType: formData.get('budgetType') as string || null,
-        acquisitionMethod: formData.get('acquisitionMethod') as string || null,
-        department: formData.get('department') as string || null
+        budgetType: budgetTypeValue,
+        acquisitionMethod: acquisitionMethodValue,
+        department: getTrimmedValue('department')
       }
     };
 
@@ -232,7 +270,7 @@ export default function AddEquipment() {
   };
 
   const getEquipmentTypeLabel = (value: string) => {
-    const types = activeEquipmentTypes.length > 0 ? activeEquipmentTypes : equipmentTypes;
+    const types = activeEquipmentTypes.length > 0 ? activeEquipmentTypes : baseEquipmentTypes;
     const type = types.find(t => t.value === value);
     return type ? type.label : value;
   };
@@ -248,296 +286,10 @@ export default function AddEquipment() {
     return locations[value as keyof typeof locations] || value;
   };
 
-  const equipmentTypes = [
-    { 
-      value: "server", 
-      label: "เครื่องคอมพิวเตอร์แม่ข่าย", 
-      icon: Server,
-      code: "7440-001",
-      subTypes: [
-        { value: "7440-001-0001", label: "เครื่องคอมพิวเตอร์แม่ข่าย แบบที่ 1" },
-        { value: "7440-001-0002", label: "เครื่องคอมพิวเตอร์แม่ข่าย แบบที่ 2" }
-      ]
-    },
-    { 
-      value: "desktop", 
-      label: "เครื่องคอมพิวเตอร์", 
-      icon: Computer,
-      code: "7440-002",
-      subTypes: [
-        { value: "7440-002-0001", label: "เครื่องคอมพิวเตอร์ สำหรับสำนักงาน (จอแสดงภาพขนาดไม่น้อยกว่า 19 นิ้ว)" },
-        { value: "7440-002-0002", label: "เครื่องคอมพิวเตอร์ สำหรับประมวลผล แบบที่ 1 (จอแสดงภาพขนาดไม่น้อยกว่า 19 นิ้ว)" },
-        { value: "7440-002-0003", label: "เครื่องคอมพิวเตอร์ สำหรับประมวลผล แบบที่ 2 (จอแสดงภาพขนาดไม่น้อยกว่า 19 นิ้ว)" },
-        { value: "7440-002-0004", label: "เครื่องคอมพิวเตอร์ All in One สำหรับสำนักงาน" },
-        { value: "7440-002-0005", label: "เครื่องคอมพิวเตอร์ All in One สำหรับประมวลผล" }
-      ]
-    },
-    { 
-      value: "monitor", 
-      label: "จอแสดงภาพ", 
-      icon: Monitor,
-      code: "7440-003",
-      subTypes: [
-        { value: "7440-003-0001", label: "จอแสดงภาพ ขนาดไม่น้อยกว่า 19 นิ้ว" },
-        { value: "7440-003-0002", label: "จอแสดงภาพ ขนาดไม่น้อยกว่า 21.5 นิ้ว" }
-      ]
-    },
-    { 
-      value: "laptop", 
-      label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค", 
-      icon: Computer,
-      code: "7440-004",
-      subTypes: [
-        { value: "7440-004-0001", label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค สำหรับสำนักงาน" },
-        { value: "7440-004-0002", label: "เครื่องคอมพิวเตอร์โน้ตบุ๊ค สำหรับประมวลผล" }
-      ]
-    },
-    { 
-      value: "tablet", 
-      label: "คอมพิวเตอร์แท็บเล็ต", 
-      icon: Tablet,
-      code: "7440-005",
-      subTypes: [
-        { value: "7440-005-0001", label: "คอมพิวเตอร์แท็บเล็ต แบบที่ 1" },
-        { value: "7440-005-0002", label: "คอมพิวเตอร์แท็บเล็ต แบบที่ 2" }
-      ]
-    },
-    { 
-      value: "ups", 
-      label: "เครื่องสำรองไฟฟ้า", 
-      icon: Battery,
-      code: "7440-006",
-      subTypes: [
-        { value: "7440-006-0001", label: "เครื่องสำรองไฟฟ้า ขนาด 800 VA" },
-        { value: "7440-006-0002", label: "เครื่องสำรองไฟฟ้า ขนาด 1 kVA" },
-        { value: "7440-006-0003", label: "เครื่องสำรองไฟฟ้า ขนาด 2 kVA" },
-        { value: "7440-006-0004", label: "เครื่องสำรองไฟฟ้า ขนาด 3 kVA" },
-        { value: "7440-006-0005", label: "เครื่องสำรองไฟฟ้า ขนาด 10 kVA" }
-      ]
-    },
-    { 
-      value: "scanner", 
-      label: "สแกนเนอร์", 
-      icon: ScanLine,
-      code: "7440-007",
-      subTypes: [
-        { value: "7440-007-0001", label: "สแกนเนอร์ สำหรับเก็บเอกสารทั่วไป" },
-        { value: "7440-007-0002", label: "สแกนเนอร์เก็บเอกสารระดับศูนย์บริการ แบบที่ 1" },
-        { value: "7440-007-0003", label: "สแกนเนอร์เก็บเอกสารระดับศูนย์บริการ แบบที่ 2" },
-        { value: "7440-007-0004", label: "สแกนเนอร์เก็บเอกสารระดับศูนย์บริการ แบบที่ 3" }
-      ]
-    },
-    { 
-      value: "printer", 
-      label: "เครื่องพิมพ์", 
-      icon: Printer,
-      code: "7440-008",
-      subTypes: [
-        { value: "7440-008-0001", label: "เครื่องพิมพ์ชนิด Dot Matrix Printer แบบแคร่สั้น" },
-        { value: "7440-008-0002", label: "เครื่องพิมพ์ชนิด Dot Matrix Printer แบบแคร่ยาว" },
-        { value: "7440-008-0003", label: "เครื่องพิมพ์แบบฉีดหมึกพร้อมติดตั้งถังหมึกพิมพ์ (Ink Tank Printer)" },
-        { value: "7440-008-0004", label: "เครื่องพิมพ์แบบฉีดหมึก (Ink Printer) สำหรับกระดาษ A3" },
-        { value: "7440-008-0005", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ" },
-        { value: "7440-008-0006", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ ชนิด Network แบบที่ 1" },
-        { value: "7440-008-0007", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ ชนิด Network แบบที่ 2" },
-        { value: "7440-008-0008", label: "เครื่องพิมพ์เลเซอร์ หรือ LED สี ชนิด Network แบบที่ 1" },
-        { value: "7440-008-0009", label: "เครื่องพิมพ์เลเซอร์ หรือ LED สี ชนิด Network แบบที่ 2" },
-        { value: "7440-008-0010", label: "เครื่องพิมพ์เลเซอร์ หรือ LED ขาวดำ ชนิด Network สำหรับกระดาษ A3" },
-        { value: "7440-008-0011", label: "เครื่องพิมพ์ Multifunction แบบฉีดหมึกพร้อมติดตั้งถังหมึก (Ink Tank Printer)" },
-        { value: "7440-008-0012", label: "เครื่องพิมพ์ Multifunction เลเซอร์ หรือ LED ขาวดำ" },
-        { value: "7440-008-0013", label: "เครื่องพิมพ์ Multifunction เลเซอร์ LED หรือ สี" },
-        { value: "7440-008-0014", label: "เครื่องพิมพ์วัตถุ 3 มิติ" },
-        { value: "7440-008-0015", label: "เครื่องพิมพ์แบบใช้ความร้อน (Thermal Printer)" }
-      ]
-    },
-    { 
-      value: "blade_enclosure", 
-      label: "ตู้สำหรับการติดตั้งเครื่องแม่ข่ายชนิด Blade (Enclosure/Chassis)", 
-      icon: Archive,
-      code: "7440-009",
-      subTypes: [
-        { value: "7440-009-0001", label: "ตู้สำหรับติดตั้งเครื่องแม่ข่ายชนิด Blade Enclosure/Chassis) แบบที่ 1" },
-        { value: "7440-009-0002", label: "ตู้สำหรับติดตั้งเครื่องแม่ข่ายชนิด Blade Enclosure/Chassis) แบบที่ 2" }
-      ]
-    },
-    { 
-      value: "blade_server", 
-      label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis", 
-      icon: Server,
-      code: "7440-010",
-      subTypes: [
-        { value: "7440-010-0001", label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis แบบที่ 1" },
-        { value: "7440-010-0002", label: "แผงวงจรเครื่องคอมพิวเตอร์แม่ข่าย ชนิด Blade สำหรับตู้ Enclosure/Chassis แบบที่ 2" }
-      ]
-    },
-    { 
-      value: "external_storage", 
-      label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบภายนอก (External Storage)", 
-      icon: HardDrive,
-      code: "7440-011",
-      subTypes: [
-        { value: "7440-011-0001", label: "External Harddisk (มีราคาตั้งแต่ 5,000 บาท ขึ้นไป)" }
-      ]
-    },
-    { 
-      value: "log_storage", 
-      label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย", 
-      icon: Database,
-      code: "7440-012",
-      subTypes: [
-        { value: "7440-012-0001", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย แบบที่ 1" },
-        { value: "7440-012-0002", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย แบบที่ 2" },
-        { value: "7440-012-0003", label: "อุปกรณ์จัดเก็บ Log File ระบบเครือข่าย แบบที่ 3" }
-      ]
-    },
-    { 
-      value: "firewall", 
-      label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall)", 
-      icon: Shield,
-      code: "7440-013",
-      subTypes: [
-        { value: "7440-013-0001", label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall) แบบที่ 1" },
-        { value: "7440-013-0002", label: "อุปกรณ์ป้องกันเครือข่าย (Next Generation Firewall) แบบที่ 2" }
-      ]
-    },
-    { 
-      value: "ips", 
-      label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System)", 
-      icon: Lock,
-      code: "7440-014",
-      subTypes: [
-        { value: "7440-014-0001", label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System) แบบที่ 1" },
-        { value: "7440-014-0002", label: "อุปกรณ์ป้องกันและตรวจจับการบุกรุก (Intrusion Prevention System) แบบที่ 2" },
-        { value: "7440-014-0003", label: "อุปกรณ์ป้องกันการบุกรุกเว็บไซต์ (Web Application Firewall)" },
-        { value: "7440-014-0004", label: "อุปกรณ์ป้องกันการบุกรุกจดหมายอิเล็กทรอนิกส์ (e-Mail Security)" }
-      ]
-    },
-    { 
-      value: "equipment_rack", 
-      label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์", 
-      icon: Archive,
-      code: "7440-015",
-      subTypes: [
-        { value: "7440-015-0001", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์ แบบที่ 1 (ขนาด 36U)" },
-        { value: "7440-015-0002", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์ แบบที่ 2 (ขนาด 42U)" },
-        { value: "7440-015-0003", label: "ตู้สำหรับจัดเก็บเครื่องคอมพิวเตอร์และอุปกรณ์ แบบที่ 3 (ขนาด 42U)" }
-      ]
-    },
-    { 
-      value: "signal_distributor", 
-      label: "อุปกรณ์กระจายสัญญาณ", 
-      icon: Wifi,
-      code: "7440-016",
-      subTypes: [
-        { value: "7440-016-0001", label: "อุปกรณ์กระจายสัญญาณ (L2 Switch) ขนาด 16 ช่อง" },
-        { value: "7440-016-0002", label: "อุปกรณ์กระจายสัญญาณ (L2 Switch) ขนาด 24 ช่อง แบบที่ 1" },
-        { value: "7440-016-0003", label: "อุปกรณ์กระจายสัญญาณ (L2 Switch) ขนาด 24 ช่อง แบบที่ 2" },
-        { value: "7440-016-0004", label: "อุปกรณ์กระจายสัญญาณ (L3 Switch) ขนาด 24 ช่อง" },
-        { value: "7440-016-0005", label: "อุปกรณ์กระจายสัญญาณไร้สาย (Access Point) แบบที่ 1" },
-        { value: "7440-016-0006", label: "อุปกรณ์กระจายสัญญาณไร้สาย (Access Point) แบบที่ 2" },
-        { value: "7440-016-0007", label: "รีโมทพรีเซนไร้สาย" }
-      ]
-    },
-    { 
-      value: "router", 
-      label: "อุปกรณ์ค้นหาเส้นทางเครือข่าย", 
-      icon: Router,
-      code: "7440-017",
-      subTypes: [
-        { value: "7440-017-0001", label: "อุปกรณ์ค้นหาเส้นทางเครือข่าย (Router)" }
-      ]
-    },
-    { 
-      value: "load_balancer", 
-      label: "อุปกรณ์กระจายการทำงาน", 
-      icon: Server,
-      code: "7440-018",
-      subTypes: [
-        { value: "7440-018-0001", label: "อุปกรณ์กระจายการทำงานสำหรับเครือข่าย (Link Load Balancer)" },
-        { value: "7440-018-0002", label: "อุปกรณ์กระจายการทำงานสำหรับเครื่องคอมพิวเตอร์แม่ข่าย (Server Load Balancer)" }
-      ]
-    },
-    { 
-      value: "card_reader", 
-      label: "เครื่องอ่านบัตรแบบอเนกประสงค์", 
-      icon: ScanLine,
-      code: "7440-019",
-      subTypes: [
-        { value: "7440-019-0001", label: "เครื่องอ่านบัตรแบบอเนกประสงค์ (Smart Card Reader)" }
-      ]
-    },
-    { 
-      value: "software_os", 
-      label: "ชุดโปรแกรมระบบปฏิบัติการ", 
-      icon: Computer,
-      code: "7440-020",
-      subTypes: [
-        { value: "7440-020-0001", label: "สำหรับเครื่องคอมพิวเตอร์ และคอมพิวเตอร์โน้ตบุ๊ก" },
-        { value: "7440-020-0002", label: "สำหรับเครื่องคอมพิวเตอร์แม่ข่าย" },
-        { value: "7440-020-0003", label: "ชุดโปรแกรมจัดการสำนักงาน แบบที่ 1" },
-        { value: "7440-020-0004", label: "ชุดโปรแกรมจัดการสำนักงาน แบบที่ 2" },
-        { value: "7440-020-0005", label: "ชุดโปรแกรมจัดการสำนักงาน แบบที่ 3" },
-        { value: "7440-020-0006", label: "ชุดโปรแกรมป้องกันไวรัส สำหรับเครื่องคอมพิวเตอร์ 1 เครื่อง ต่อปี" }
-      ]
-    },
-    { 
-      value: "nas", 
-      label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ NAS", 
-      icon: HardDrive,
-      code: "7440-021",
-      subTypes: [
-        { value: "7440-021-0001", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ NAS" }
-      ]
-    },
-    { 
-      value: "san", 
-      label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ SAN", 
-      icon: Database,
-      code: "7440-022",
-      subTypes: [
-        { value: "7440-022-0001", label: "อุปกรณ์สำหรับจัดเก็บข้อมูลแบบ SAN" }
-      ]
-    },
-    { 
-      value: "cctv", 
-      label: "กล้องโทรทัศน์วงจรปิด", 
-      icon: Eye,
-      code: "7440-023",
-      subTypes: [
-        { value: "7440-023-0001", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในสำนักงาน" },
-        { value: "7440-023-0002", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร" },
-        { value: "7440-023-0003", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" },
-        { value: "7440-023-0004", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
-        { value: "7440-023-0005", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
-        { value: "7440-023-0006", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
-        { value: "7440-023-0007", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายในอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
-        { value: "7440-023-0008", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกสำนักงาน" },
-        { value: "7440-023-0009", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร สำหรับใช้ในงานรักษาความปลอดภัยทั่วไปและงานอื่นๆ" },
-        { value: "7440-023-0010", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" },
-        { value: "7440-023-0011", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
-        { value: "7440-023-0012", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
-        { value: "7440-023-0013", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัย วิเคราะห์ภาพ และงานอื่นๆ" },
-        { value: "7440-023-0014", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบมุมมองคงที่สำหรับติดตั้งภายนอกอาคาร แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัยและวิเคราะห์ภาพ" },
-        { value: "7440-023-0015", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบปรับมุมมอง แบบที่ 1 สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" },
-        { value: "7440-023-0016", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบปรับมุมมอง สำหรับใช้ในงานรักษาความปลอดภัยทั่วไปและงานอื่นๆ" },
-        { value: "7440-023-0017", label: "กล้องโทรทัศน์วงจรปิดชนิดเครือข่าย แบบปรับมุมมอง แบบที่ 2 สำหรับใช้ในงานรักษาความปลอดภัยทั่วไป" }
-      ]
-    },
-    { 
-      value: "ip_camera", 
-      label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย", 
-      icon: Monitor,
-      code: "7440-024",
-      subTypes: [
-        { value: "7440-024-0001", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย (Network Video Recorder) แบบ 8 ช่อง" },
-        { value: "7440-024-0002", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย (Network Video Recorder) แบบ 16 ช่อง" },
-        { value: "7440-024-0003", label: "อุปกรณ์บันทึกภาพผ่านเครือข่าย (Network Video Recorder) แบบ 32ช่อง" }
-      ]
-    }
-  ];
+  const baseEquipmentTypes = BASE_EQUIPMENT_TYPES;
 
   const getSubTypes = (equipmentType: string) => {
-    const types = activeEquipmentTypes.length > 0 ? activeEquipmentTypes : equipmentTypes;
+    const types = activeEquipmentTypes.length > 0 ? activeEquipmentTypes : baseEquipmentTypes;
     const type = types.find(t => t.value === equipmentType);
     return type?.subTypes || [];
   };
@@ -548,6 +300,20 @@ export default function AddEquipment() {
   };
 
   const isComputerType = equipmentType === "desktop" || equipmentType === "laptop" || equipmentType === "server" || equipmentType === "tablet" || equipmentType === "blade_server";
+
+  const subTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return getSubTypes(equipmentType).filter((subType) => {
+      if (seen.has(subType.value)) return false;
+      seen.add(subType.value);
+      return true;
+    });
+  }, [equipmentType, activeEquipmentTypes]);
+
+  const warrantyStatus = useMemo(() => {
+    if (!warrantyEnd) return null;
+    return getWarrantyStatusInfo(warrantyEnd);
+  }, [warrantyEnd]);
 
   return (
     <div className="space-y-6">
@@ -568,291 +334,298 @@ export default function AddEquipment() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic Information */}
-        <Card className="shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Computer className="h-5 w-5 text-primary" />
-              <span>ข้อมูลทั่วไป</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="equipmentName">ชื่อครุภัณฑ์ *</Label>
-                <Input 
-                  id="equipmentName" 
-                  name="equipmentName"
-                  placeholder="เช่น Dell OptiPlex 7090"
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="equipmentType">ประเภทครุภัณฑ์ *</Label>
-                <Select value={equipmentType} onValueChange={handleEquipmentTypeChange} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกประเภทครุภัณฑ์" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border border-border shadow-lg z-50">
-                    {(activeEquipmentTypes.length > 0 ? activeEquipmentTypes : equipmentTypes).map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        <div className="flex items-center space-x-2">
-                          <type.icon className="h-4 w-4" />
-                          <span>{type.code} - {type.label}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {equipmentType && (
-                <div className="space-y-2">
-                  <Label htmlFor="equipmentSubType">รายละเอียดครุภัณฑ์ *</Label>
-                  <Select value={equipmentSubType} onValueChange={setEquipmentSubType} required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="เลือกรายละเอียดครุภัณฑ์" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
-                      {getSubTypes(equipmentType).map((subType) => (
-                        <SelectItem key={subType.value} value={subType.value}>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{subType.value}</span>
-                            <span className="text-sm text-muted-foreground">{subType.label}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="brand">ยี่ห้อ *</Label>
-                <Input 
-                  id="brand" 
-                  name="brand"
-                  placeholder="เช่น Dell, HP, Lenovo"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="model">รุ่น/โมเดล *</Label>
-                <Input 
-                  id="model" 
-                  name="model"
-                  placeholder="เช่น OptiPlex 7090, LaserJet Pro"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="serialNumber">Serial Number *</Label>
-                <Input 
-                  id="serialNumber" 
-                  name="serialNumber"
-                  placeholder="เช่น DELL7090001"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="assetNumber">เลขครุภัณฑ์</Label>
-                <div className="flex space-x-2">
-                  <div className="flex-1">
-                    <Input 
-                      id="assetNumber" 
-                      name="assetNumber"
-                      placeholder={equipmentSubType ? `อัตโนมัติ: ${equipmentSubType}` : "เช่น EQ001"}
-                      defaultValue={equipmentSubType || ""}
-                      readOnly={!!equipmentSubType}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="space-y-6">
+            {/* Basic Information */}
+            <Card className="shadow-soft">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Computer className="h-5 w-5 text-primary" />
+                  <span>ข้อมูลทั่วไป</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="equipmentName">ชื่อครุภัณฑ์</Label>
+                    <Input
+                      id="equipmentName"
+                      name="equipmentName"
+                      placeholder="เช่น Dell OptiPlex 7090"
                     />
                   </div>
-                  <div className="flex items-center">
-                    <span className="text-muted-foreground mx-2">/</span>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="equipmentType">ประเภทครุภัณฑ์ *</Label>
+                    <Select value={equipmentType} onValueChange={handleEquipmentTypeChange} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกประเภทครุภัณฑ์" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border border-border shadow-lg z-50">
+                    {(activeEquipmentTypes.length > 0 ? activeEquipmentTypes : baseEquipmentTypes).map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            <div className="flex items-center space-x-2">
+                              <type.icon className="h-4 w-4" />
+                              <span>{type.code} - {type.label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="w-20">
-                    <Input 
-                      id="quantity" 
-                      name="quantity"
+
+                  {equipmentType && (
+                    <div className="space-y-2">
+                      <Label htmlFor="equipmentSubType">รายละเอียดครุภัณฑ์ *</Label>
+                      <Select value={equipmentSubType} onValueChange={setEquipmentSubType} required>
+                        <SelectTrigger>
+                          <SelectValue placeholder="เลือกรายละเอียดครุภัณฑ์" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
+                          {subTypeOptions.map((subType, index) => (
+                            <SelectItem key={`${subType.value}-${index}`} value={subType.value}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{subType.value}</span>
+                                <span className="text-sm text-muted-foreground">{subType.label}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="brand">ยี่ห้อ</Label>
+                    <Input
+                      id="brand"
+                      name="brand"
+                      placeholder="เช่น Dell, HP, Lenovo"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="model">รุ่น/โมเดล</Label>
+                    <Input
+                      id="model"
+                      name="model"
+                      placeholder="เช่น OptiPlex 7090, LaserJet Pro"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="serialNumber">Serial Number</Label>
+                    <Input
+                      id="serialNumber"
+                      name="serialNumber"
+                      placeholder="เช่น DELL7090001"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="assetNumber">เลขครุภัณฑ์</Label>
+                    <div className="flex space-x-2">
+                      <div className="flex-1">
+                        <Input
+                          id="assetNumber"
+                          name="assetNumber"
+                          placeholder={equipmentSubType ? `อัตโนมัติ: ${equipmentSubType}` : "เช่น EQ001"}
+                          defaultValue={equipmentSubType || ""}
+                          readOnly={!!equipmentSubType}
+                        />
+                      </div>
+                      <div className="flex items-center">
+                        <span className="mx-2 text-muted-foreground">/</span>
+                      </div>
+                      <div className="w-20">
+                        <Input
+                          id="quantity"
+                          name="quantity"
+                          type="number"
+                          placeholder="1"
+                          defaultValue={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                          min="1"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {equipmentSubType ? `แสดงเป็น: ${equipmentSubType}/${quantity}` : "รูปแบบ: เลขครุภัณฑ์/จำนวน"}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="purchaseDate">วันที่ได้มา</Label>
+                    <Input
+                      id="purchaseDate"
+                      name="purchaseDate"
+                      type="date"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="warrantyEnd">วันที่หมดประกัน</Label>
+                    <Input
+                      id="warrantyEnd"
+                      name="warrantyEnd"
+                      type="date"
+                      value={warrantyEnd}
+                      onChange={(event) => setWarrantyEnd(event.target.value)}
+                    />
+                    {warrantyStatus && (
+                      <Alert
+                        variant={warrantyStatus.tone === "destructive" ? "destructive" : "default"}
+                        className={cn(
+                          "mt-2",
+                          warrantyStatus.tone === "warning" && "border-warning/40 bg-warning/10 text-warning",
+                          warrantyStatus.tone === "success" && "border-success/40 bg-success/10 text-success",
+                          warrantyStatus.tone === "destructive" && "bg-destructive/10 text-destructive"
+                        )}
+                      >
+                        <AlertDescription>
+                          <span className="font-medium">{warrantyStatus.label}</span>
+                          {warrantyStatus.detail ? ` • ${warrantyStatus.detail}` : null}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="status">สถานะ *</Label>
+                    <Select name="status" defaultValue="available" required>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="available">พร้อมใช้งาน</SelectItem>
+                        <SelectItem value="borrowed">ถูกยืม</SelectItem>
+                        <SelectItem value="maintenance">ซ่อมบำรุง</SelectItem>
+                        <SelectItem value="damaged">ชำรุด</SelectItem>
+                        <SelectItem value="pending_disposal">รอจำหน่าย</SelectItem>
+                        <SelectItem value="disposed">จำหน่าย</SelectItem>
+                        <SelectItem value="lost">สูญหาย</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="price">ราคาครุภัณฑ์ (บาท)</Label>
+                    <Input
+                      id="price"
+                      name="price"
                       type="number"
-                      placeholder="1"
-                      defaultValue={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      min="1"
-                      required
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="budgetType">ประเภทของเงิน</Label>
+                    <Select name="budgetType">
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกประเภทของเงิน" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border border-border shadow-lg z-50">
+                        <SelectItem value="budget">เงินงบประมาณ</SelectItem>
+                        <SelectItem value="non-budget">เงินนอกงบประมาณ</SelectItem>
+                        <SelectItem value="donation">เงินบริจาค</SelectItem>
+                        <SelectItem value="other">อื่น ๆ</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="acquisitionMethod">วิธีการได้มา</Label>
+                    <Select name="acquisitionMethod">
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกวิธีการได้มา" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border border-border shadow-lg z-50">
+                        <SelectItem value="price-agreement">ตกลงราคา</SelectItem>
+                        <SelectItem value="price-auction">ประกวดราคา</SelectItem>
+                        <SelectItem value="special-method">วิธีพิเศษ</SelectItem>
+                        <SelectItem value="donation-received">รับบริจาค</SelectItem>
+                        <SelectItem value="price-inquiry">สอบราคา</SelectItem>
+                        <SelectItem value="e-bidding">e-bidding</SelectItem>
+                        <SelectItem value="e-market">e-market</SelectItem>
+                        <SelectItem value="selection">คัดเลือก</SelectItem>
+                        <SelectItem value="specific">เฉพาะเจาะจง</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {equipmentSubType ? `แสดงเป็น: ${equipmentSubType}/${quantity}` : "รูปแบบ: เลขครุภัณฑ์/จำนวน"}
-                </p>
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="space-y-2">
-                <Label htmlFor="purchaseDate">วันที่ได้มา *</Label>
-                <Input 
-                  id="purchaseDate" 
-                  name="purchaseDate"
-                  type="date"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="warrantyEnd">วันที่หมดประกัน</Label>
-                <Input 
-                  id="warrantyEnd" 
-                  name="warrantyEnd"
-                  type="date"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="status">สถานะ *</Label>
-                <Select name="status" defaultValue="available" required>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="available">พร้อมใช้งาน</SelectItem>
-                    <SelectItem value="borrowed">ถูกยืม</SelectItem>
-                    <SelectItem value="maintenance">ซ่อมบำรุง</SelectItem>
-                    <SelectItem value="damaged">ชำรุด</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="price">ราคาครุภัณฑ์ (บาท) *</Label>
-                <Input 
-                  id="price" 
-                  name="price"
-                  type="number"
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="budgetType">ประเภทของเงิน *</Label>
-                <Select name="budgetType" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกประเภทของเงิน" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border border-border shadow-lg z-50">
-                    <SelectItem value="budget">เงินงบประมาณ</SelectItem>
-                    <SelectItem value="non-budget">เงินนอกงบประมาณ</SelectItem>
-                    <SelectItem value="donation">เงินบริจาค</SelectItem>
-                    <SelectItem value="other">อื่น ๆ</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="acquisitionMethod">วิธีการได้มา *</Label>
-                <Select name="acquisitionMethod" required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกวิธีการได้มา" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border border-border shadow-lg z-50">
-                    <SelectItem value="price-agreement">ตกลงราคา</SelectItem>
-                    <SelectItem value="price-auction">ประกวดราคา</SelectItem>
-                    <SelectItem value="special-method">วิธีพิเศษ</SelectItem>
-                    <SelectItem value="donation-received">รับบริจาค</SelectItem>
-                    <SelectItem value="price-inquiry">สอบราคา</SelectItem>
-                    <SelectItem value="e-bidding">e-bidding</SelectItem>
-                    <SelectItem value="e-market">e-market</SelectItem>
-                    <SelectItem value="selection">คัดเลือก</SelectItem>
-                    <SelectItem value="specific">เฉพาะเจาะจง</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="department">หน่วยงานที่รับผิดชอบ *</Label>
-              <Select name="department" required>
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกหน่วยงาน" />
-                </SelectTrigger>
-                <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
-                  {departments.map((dept) => (
-                    <SelectItem key={dept.id} value={dept.name}>
-                      {dept.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="equipmentImage">รูปภาพครุภัณฑ์</Label>
-              <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
-                <Upload className="mx-auto h-12 w-12 text-muted-foreground/50" />
-                <div className="mt-4">
-                  <Label 
-                    htmlFor="equipmentImage" 
-                    className="cursor-pointer text-primary hover:text-primary/80"
-                  >
-                    คลิกเพื่ือเลือกไฟล์รูปภาพ
-                  </Label>
-                  <Input 
-                    id="equipmentImage" 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden"
-                  />
-                </div>
-                <p className="text-sm text-muted-foreground mt-2">
-                  รองรับไฟล์ JPG, PNG, GIF ขนาดไม่เกิน 5MB
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Computer Specifications */}
-        {isComputerType && (
-          <Card className="shadow-soft">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Computer className="h-5 w-5 text-primary" />
-                <span>ข้อมูลเฉพาะคอมพิวเตอร์</span>
-              </CardTitle>
+            {/* Computer Specifications */}
+            {isComputerType && (
+              <Card className="shadow-soft">
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Computer className="h-5 w-5 text-primary" />
+                    <span>ข้อมูลเฉพาะคอมพิวเตอร์</span>
+                  </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="cpu">CPU (ประเภท, รุ่น)</Label>
+                  <Label htmlFor="cpu">CPU</Label>
                   <Input 
                     id="cpu" 
                     name="cpu"
-                    placeholder="เช่น Intel Core i5-11500, AMD Ryzen 5 5500U"
+                    placeholder="เช่น Intel Core i5-11500"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="ram">RAM (ขนาด, ประเภท)</Label>
+                  <Label htmlFor="cpuSeries">CPU Series</Label>
                   <Input 
-                    id="ram" 
-                    name="ram"
-                    placeholder="เช่น 8GB DDR4, 16GB DDR4"
+                    id="cpuSeries" 
+                    name="cpuSeries"
+                    placeholder="เช่น 11th Gen Core i5"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="storage">Storage (ประเภท, ขนาด)</Label>
+                  <Label htmlFor="ramGb">RAM (GB)</Label>
                   <Input 
-                    id="storage" 
-                    name="storage"
-                    placeholder="เช่น 256GB SSD, 1TB HDD"
+                    id="ramGb" 
+                    name="ramGb"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="เช่น 16"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="harddisk">Harddisk</Label>
+                  <Input 
+                    id="harddisk" 
+                    name="harddisk"
+                    placeholder="เช่น HDD 1TB"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="operatingSystem">Operating System</Label>
+                  <Input 
+                    id="operatingSystem" 
+                    name="operatingSystem"
+                    placeholder="เช่น Windows 11 Pro"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="officeSuite">Office</Label>
+                  <Input 
+                    id="officeSuite" 
+                    name="officeSuite"
+                    placeholder="เช่น Microsoft 365"
                   />
                 </div>
 
@@ -861,24 +634,8 @@ export default function AddEquipment() {
                   <Input 
                     id="gpu" 
                     name="gpu"
-                    placeholder="เช่น Intel UHD Graphics, NVIDIA GTX 1650"
+                    placeholder="เช่น NVIDIA GTX 1650"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="os">Operating System</Label>
-                  <Select name="os">
-                    <SelectTrigger>
-                      <SelectValue placeholder="เลือก OS" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="windows11">Windows 11</SelectItem>
-                      <SelectItem value="windows10">Windows 10</SelectItem>
-                      <SelectItem value="ubuntu">Ubuntu</SelectItem>
-                      <SelectItem value="macos">macOS</SelectItem>
-                      <SelectItem value="other">อื่นๆ</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 <div className="space-y-2">
@@ -921,119 +678,155 @@ export default function AddEquipment() {
           </Card>
         )}
 
-        {/* Usage Information */}
-        <Card className="shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Monitor className="h-5 w-5 text-primary" />
-              <span>ข้อมูลการใช้งาน</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="currentUser">ผู้ใช้งานปัจจุบัน</Label>
-                <Input 
-                  id="currentUser" 
-                  name="currentUser"
-                  placeholder="เช่น นายสมชาย ใจดี"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes">หมายเหตุ</Label>
-                <Textarea 
-                  id="notes" 
-                  name="notes"
-                  placeholder="ข้อมูลเพิ่มเติมหรือหมายเหตุพิเศษ..."
-                  rows={3}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Image Upload Section */}
-        <Card className="shadow-soft">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Camera className="h-5 w-5 text-primary" />
-              <span>รูปภาพครุภัณฑ์</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={selectedImages.length >= 3}
-                className="flex items-center space-x-2"
-              >
-                <Upload className="h-4 w-4" />
-                <span>เลือกรูปภาพ</span>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => cameraInputRef.current?.click()}
-                disabled={selectedImages.length >= 3}
-                className="flex items-center space-x-2"
-              >
-                <Camera className="h-4 w-4" />
-                <span>ถ่ายรูป</span>
-              </Button>
-            </div>
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              multiple
-              className="hidden"
-              onChange={(e) => handleImageUpload(e.target.files)}
-            />
-            
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => handleImageUpload(e.target.files)}
-            />
-
-            <p className="text-sm text-muted-foreground">
-              อัปโหลดรูปภาพได้สูงสุด 3 รูป (สนับสนุนไฟล์ JPG, PNG, WEBP ขนาดไม่เกิน 5MB ต่อรูป)
-            </p>
-
-            {/* Image Previews */}
-            {imagePreviews.length > 0 && (
-              <div className="grid grid-cols-3 gap-4">
-                {imagePreviews.map((preview, index) => (
-                  <div key={index} className="relative">
-                    <div className="aspect-square bg-muted rounded-lg overflow-hidden border">
-                      <img
-                        src={preview}
-                        alt={`Preview ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0 shadow-md"
-                      onClick={() => removeImage(index)}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
+            {/* Usage Information */}
+            <Card className="shadow-soft">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Monitor className="h-5 w-5 text-primary" />
+                  <span>ข้อมูลการใช้งาน/จัดเก็บ</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="department">หน่วยงานที่รับผิดชอบ *</Label>
+                    <Select name="department" required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกหน่วยงาน" />
+                      </SelectTrigger>
+                      <SelectContent className="z-50 max-h-60 overflow-auto border border-border bg-background shadow-lg">
+                        {departments.map((dept) => (
+                          <SelectItem key={dept.id} value={dept.name}>
+                            {dept.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="location">สถานที่ติดตั้ง/จัดเก็บ *</Label>
+                    <Input 
+                      id="location" 
+                      name="location"
+                      placeholder="เช่น ห้อง IT-101"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="currentUser">ผู้ใช้งานปัจจุบัน</Label>
+                    <Input 
+                      id="currentUser" 
+                      name="currentUser"
+                      placeholder="เช่น นายสมชาย ใจดี"
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="notes">หมายเหตุ</Label>
+                    <Textarea 
+                      id="notes" 
+                      name="notes"
+                      placeholder="ข้อมูลเพิ่มเติมหรือหมายเหตุพิเศษ..."
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6 lg:sticky lg:top-24">
+            {/* Image Upload Section */}
+            <Card className="shadow-soft">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Camera className="h-5 w-5 text-primary" />
+                  <span>รูปภาพครุภัณฑ์</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border border-dashed border-muted-foreground/25 bg-muted/30 p-4 text-sm">
+                  <p className="font-medium text-foreground">จัดการรูปภาพ</p>
+                  <p className="text-muted-foreground">
+                    เลือกหรือถ่ายรูปเพื่อแสดงรายละเอียดครุภัณฑ์ ภาพแรกจะถูกใช้เป็นรูปหลัก
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={selectedImages.length >= 3}
+                    className="flex items-center space-x-2"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span>เลือกรูปภาพ</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => cameraInputRef.current?.click()}
+                    disabled={selectedImages.length >= 3}
+                    className="flex items-center space-x-2"
+                  >
+                    <Camera className="h-4 w-4" />
+                    <span>ถ่ายรูป</span>
+                  </Button>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => handleImageUpload(e.target.files)}
+                />
+
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => handleImageUpload(e.target.files)}
+                />
+
+                <p className="text-sm text-muted-foreground">
+                  อัปโหลดรูปภาพได้สูงสุด 3 รูป (สนับสนุนไฟล์ JPG, PNG, WEBP ขนาดไม่เกิน 5MB ต่อรูป)
+                </p>
+
+                {imagePreviews.length > 0 && (
+                  <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+                    {imagePreviews.map((preview, index) => (
+                      <div key={index} className="relative">
+                        <div className="aspect-square overflow-hidden rounded-lg border bg-muted">
+                          <img
+                            src={preview}
+                            alt={`Preview ${index + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0 shadow-md"
+                          onClick={() => removeImage(index)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
 
         {/* Submit Buttons */}
         <div className="flex justify-end space-x-4">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, ChangeEvent } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +7,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Settings as SettingsIcon, Building, Tag, Plus, Edit, Trash2, Save, Loader2 } from "lucide-react";
+import { Settings as SettingsIcon, Building, Tag, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { DepartmentDialog } from "@/components/settings/DepartmentDialog";
 import { EquipmentTypeDialog } from "@/components/settings/EquipmentTypeDialog";
 import { DeleteConfirmDialog } from "@/components/settings/DeleteConfirmDialog";
+import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface Department {
   id: string;
@@ -30,27 +32,50 @@ interface EquipmentType {
   active: boolean;
 }
 
-interface OrganizationSettings {
-  id: string;
+type OrganizationFormState = {
   name: string;
   code: string;
-  address: string | null;
-  phone: string | null;
-  email: string | null;
-  logo_url: string | null;
+  address: string;
+  phone: string;
+  email: string;
   email_notifications: boolean;
   auto_backup: boolean;
   session_timeout: number;
-}
+  app_title: string;
+};
+
+const DEFAULT_APP_TITLE = "ระบบครุภัณฑ์";
+
+const createDefaultOrgForm = (): OrganizationFormState => ({
+  name: "",
+  code: "",
+  address: "",
+  phone: "",
+  email: "",
+  email_notifications: true,
+  auto_backup: true,
+  session_timeout: 30,
+  app_title: DEFAULT_APP_TITLE,
+});
 
 const Settings = () => {
   const { toast } = useToast();
+  const { settings: orgSettings, loading: orgSettingsLoading, refresh: refreshOrgSettings } = useOrganizationSettings();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("organization");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
-  const [orgSettings, setOrgSettings] = useState<OrganizationSettings | null>(null);
-  
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoPreviewObjectUrl, setLogoPreviewObjectUrl] = useState<string | null>(null);
+  const [logoCleared, setLogoCleared] = useState(false);
+  const [faviconFile, setFaviconFile] = useState<File | null>(null);
+  const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
+  const [faviconPreviewObjectUrl, setFaviconPreviewObjectUrl] = useState<string | null>(null);
+  const [faviconCleared, setFaviconCleared] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [brandingSupported, setBrandingSupported] = useState(true);
+
   // Dialog states
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isEquipmentTypeDialogOpen, setIsEquipmentTypeDialogOpen] = useState(false);
@@ -62,20 +87,98 @@ const Settings = () => {
   const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'equipmentType', item: any } | null>(null);
 
   // Organization form state
-  const [orgForm, setOrgForm] = useState({
-    name: "",
-    code: "",
-    address: "",
-    phone: "",
-    email: "",
-    email_notifications: true,
-    auto_backup: true,
-    session_timeout: 30,
-  });
+  const [orgForm, setOrgForm] = useState<OrganizationFormState>(createDefaultOrgForm);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const checkBrandingSupport = async () => {
+      try {
+        const { error } = await supabase
+          .from('organization_settings')
+          .select('app_title')
+          .limit(1);
+
+        if (error?.code === 'PGRST204') {
+          setBrandingSupported(false);
+        } else if (error) {
+          console.error('Branding support check failed', error);
+        }
+      } catch (error) {
+        console.error('Branding support check threw', error);
+      }
+    };
+
+    checkBrandingSupport();
+  }, []);
+
+  useEffect(() => () => {
+    if (logoPreviewObjectUrl) {
+      URL.revokeObjectURL(logoPreviewObjectUrl);
+    }
+  }, [logoPreviewObjectUrl]);
+
+  useEffect(() => () => {
+    if (faviconPreviewObjectUrl) {
+      URL.revokeObjectURL(faviconPreviewObjectUrl);
+    }
+  }, [faviconPreviewObjectUrl]);
+
+  useEffect(() => {
+    if (orgSettings) {
+      setLogoPreviewObjectUrl((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return null;
+      });
+      setFaviconPreviewObjectUrl((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return null;
+      });
+      setLogoFile(null);
+      setLogoCleared(false);
+      setLogoPreview(orgSettings.logo_url);
+      setFaviconFile(null);
+      setFaviconCleared(false);
+      setFaviconPreview(orgSettings.favicon_url ?? null);
+      setOrgForm({
+        name: orgSettings.name,
+        code: orgSettings.code,
+        address: orgSettings.address ?? "",
+        phone: orgSettings.phone ?? "",
+        email: orgSettings.email ?? "",
+        email_notifications: orgSettings.email_notifications ?? true,
+        auto_backup: orgSettings.auto_backup ?? true,
+        session_timeout: orgSettings.session_timeout ?? 30,
+        app_title: orgSettings.app_title ?? orgSettings.name ?? DEFAULT_APP_TITLE,
+      });
+    } else {
+      setOrgForm(createDefaultOrgForm());
+      setLogoPreviewObjectUrl((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return null;
+      });
+      setLogoPreview(null);
+      setLogoFile(null);
+      setLogoCleared(false);
+      setFaviconPreviewObjectUrl((prev) => {
+        if (prev) {
+          URL.revokeObjectURL(prev);
+        }
+        return null;
+      });
+      setFaviconPreview(null);
+      setFaviconFile(null);
+      setFaviconCleared(false);
+    }
+  }, [orgSettings]);
 
   const loadData = async () => {
     setLoading(true);
@@ -97,29 +200,6 @@ const Settings = () => {
 
       if (typeError) throw typeError;
       setEquipmentTypes(typeData || []);
-
-      // Load organization settings
-      const { data: orgData, error: orgError } = await supabase
-        .from('organization_settings')
-        .select('*')
-        .limit(1)
-        .single();
-
-      if (orgError && orgError.code !== 'PGRST116') throw orgError;
-      
-      if (orgData) {
-        setOrgSettings(orgData);
-        setOrgForm({
-          name: orgData.name,
-          code: orgData.code,
-          address: orgData.address || "",
-          phone: orgData.phone || "",
-          email: orgData.email || "",
-          email_notifications: orgData.email_notifications,
-          auto_backup: orgData.auto_backup,
-          session_timeout: orgData.session_timeout,
-        });
-      }
     } catch (error: any) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -131,37 +211,179 @@ const Settings = () => {
     }
   };
 
+  const handleFaviconChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!brandingSupported) {
+      event.target.value = "";
+      return;
+    }
+
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const allowedTypes = [
+      "image/x-icon",
+      "image/vnd.microsoft.icon",
+      "image/png",
+      "image/svg+xml",
+    ];
+
+    if (file.size > 512 * 1024) {
+      toast({
+        title: "ไฟล์ใหญ่เกินไป",
+        description: "กรุณาเลือกไฟล์ที่มีขนาดไม่เกิน 512KB",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    if (file.type && !allowedTypes.includes(file.type)) {
+      toast({
+        title: "ชนิดไฟล์ไม่รองรับ",
+        description: "กรุณาเลือกไฟล์ ICO, PNG หรือ SVG",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    setFaviconPreviewObjectUrl((prev) => {
+      if (prev) {
+        URL.revokeObjectURL(prev);
+      }
+      return null;
+    });
+
+    const objectUrl = URL.createObjectURL(file);
+    setFaviconFile(file);
+    setFaviconPreview(objectUrl);
+    setFaviconPreviewObjectUrl(objectUrl);
+    setFaviconCleared(false);
+    event.target.value = "";
+  };
+
+  const handleClearFavicon = () => {
+    if (!brandingSupported) {
+      return;
+    }
+
+    setFaviconFile(null);
+    setFaviconCleared(true);
+    setFaviconPreviewObjectUrl((prev) => {
+      if (prev) {
+        URL.revokeObjectURL(prev);
+      }
+      return null;
+    });
+    setFaviconPreview(null);
+  };
+
   const handleSaveOrganization = async () => {
+    if (!orgForm.name.trim() || !orgForm.code.trim()) {
+      toast({
+        title: "กรอกข้อมูลไม่ครบ",
+        description: "กรุณาระบุชื่อองค์กรและรหัสองค์กร",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      if (orgSettings) {
-        // Update existing
+      const sanitize = (value: string) => {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : null;
+      };
+
+      const normalizedSessionTimeout = Math.min(Math.max(orgForm.session_timeout, 5), 480);
+      const normalizedName = orgForm.name.trim() || DEFAULT_APP_TITLE;
+      const updates: Record<string, any> = {
+        name: normalizedName,
+        code: orgForm.code.trim(),
+        address: sanitize(orgForm.address),
+        phone: sanitize(orgForm.phone),
+        email: sanitize(orgForm.email),
+        email_notifications: orgForm.email_notifications,
+        auto_backup: orgForm.auto_backup,
+        session_timeout: normalizedSessionTimeout,
+      };
+
+      if (brandingSupported) {
+        let faviconUrl = orgSettings?.favicon_url ?? null;
+
+        if (faviconCleared && !faviconFile) {
+          faviconUrl = null;
+        }
+
+        if (faviconFile) {
+          const extension = faviconFile.name.split('.').pop()?.toLowerCase() || 'png';
+          const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+          const basePath = orgSettings?.id ?? 'global';
+          const storagePath = `branding/${basePath}/favicon-${uniqueSuffix}.${extension}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('branding-assets')
+            .upload(storagePath, faviconFile, {
+              cacheControl: '3600',
+              upsert: true,
+              contentType: faviconFile.type,
+            });
+
+          if (uploadError) throw uploadError;
+
+          const { data: publicUrlData } = supabase.storage
+            .from('branding-assets')
+            .getPublicUrl(storagePath);
+
+          faviconUrl = publicUrlData.publicUrl;
+        }
+
+        const normalizedTitle = orgForm.app_title.trim() || orgForm.name.trim() || DEFAULT_APP_TITLE;
+        updates.app_title = normalizedTitle;
+        updates.favicon_url = faviconUrl;
+      }
+
+      if (orgSettings?.id) {
         const { error } = await supabase
           .from('organization_settings')
-          .update(orgForm)
+          .update(updates)
           .eq('id', orgSettings.id);
 
         if (error) throw error;
       } else {
-        // Create new
         const { error } = await supabase
           .from('organization_settings')
-          .insert(orgForm);
+          .insert(updates);
 
         if (error) throw error;
       }
 
+      await refreshOrgSettings();
+
       toast({
         title: "บันทึกสำเร็จ",
-        description: "บันทึกข้อมูลองค์กรเรียบร้อยแล้ว",
+        description: "บันทึกข้อมูลองค์กรและการตั้งค่าระบบเรียบร้อยแล้ว",
       });
-      
-      loadData();
     } catch (error: any) {
+      console.error('Failed to save organization settings', error);
+
+      if (error?.code === 'PGRST204') {
+        setBrandingSupported(false);
+      }
+
+      const description = error?.code === 'PGRST204'
+        ? 'ระบบยังไม่พบคอลัมน์ app_title ในฐานข้อมูล จึงไม่สามารถบันทึกการตั้งค่าการแสดงผลได้ กรุณาอัปเดตฐานข้อมูลแล้วลองใหม่อีกครั้ง'
+        : error.message;
+
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description,
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -276,7 +498,7 @@ const Settings = () => {
     setDeletingItem(null);
   };
 
-  if (loading) {
+  if (loading || orgSettingsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -335,7 +557,7 @@ const Settings = () => {
                   />
                 </div>
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="orgAddress">ที่อยู่</Label>
                 <Textarea 
@@ -369,13 +591,22 @@ const Settings = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="logo">โลโก้องค์กร</Label>
-                <Input type="file" accept="image/*" />
+                <Input id="logo" type="file" accept="image/*" />
                 <p className="text-sm text-muted-foreground">รองรับไฟล์ JPG, PNG ขนาดไม่เกิน 2MB</p>
               </div>
 
-              <Button onClick={handleSaveOrganization}>
-                <Save className="mr-2 h-4 w-4" />
-                บันทึกข้อมูล
+              <Button onClick={handleSaveOrganization} disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    กำลังบันทึก...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    บันทึกข้อมูล
+                  </>
+                )}
               </Button>
             </CardContent>
           </Card>
@@ -554,9 +785,82 @@ const Settings = () => {
                   </p>
                 </div>
 
-                <Button onClick={handleSaveOrganization}>
-                  <Save className="mr-2 h-4 w-4" />
-                  บันทึกการตั้งค่า
+                {brandingSupported ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="appTitle">ชื่อที่แสดงบน Title Bar</Label>
+                      <Input
+                        id="appTitle"
+                        value={orgForm.app_title}
+                        onChange={(e) => setOrgForm({ ...orgForm, app_title: e.target.value })}
+                        placeholder="เช่น ระบบครุภัณฑ์หน่วยงานราชการ"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        ข้อความนี้จะแสดงบนแถบชื่อหน้าต่างและส่วนหัวของระบบ
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="favicon">Favicon</Label>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40">
+                          {faviconPreview ? (
+                            <img
+                              src={faviconPreview}
+                              alt="ตัวอย่าง Favicon"
+                              className="h-8 w-8 rounded"
+                            />
+                          ) : (
+                            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+                          <Input
+                            id="favicon"
+                            type="file"
+                            accept="image/png,image/x-icon,image/svg+xml,image/vnd.microsoft.icon"
+                            onChange={handleFaviconChange}
+                            disabled={isSaving}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleClearFavicon}
+                            disabled={isSaving || (!faviconPreview && !faviconFile)}
+                          >
+                            ล้าง favicon
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        แนะนำไฟล์ขนาด 32x32 พิกเซล (PNG, ICO หรือ SVG) และมีขนาดไม่เกิน 512KB
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <Alert variant="destructive" className="border-dashed">
+                    <AlertTriangle className="h-5 w-5" />
+                    <div>
+                      <AlertTitle>ต้องการอัปเดตฐานข้อมูล</AlertTitle>
+                      <AlertDescription>
+                        ระบบยังไม่รองรับการบันทึก favicon และชื่อ Title Bar ในฐานข้อมูล โปรดรันการอัปเดตสคีมาของ Supabase (เช่น `supabase db push`) หรือรอให้ผู้ดูแลฐานข้อมูลเพิ่มคอลัมน์ `app_title` และ `favicon_url` ก่อนใช้งานฟีเจอร์นี้
+                      </AlertDescription>
+                    </div>
+                  </Alert>
+                )}
+
+                <Button onClick={handleSaveOrganization} disabled={isSaving}>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      กำลังบันทึก...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      บันทึกการตั้งค่า
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>

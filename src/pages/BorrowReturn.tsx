@@ -207,7 +207,7 @@ const BorrowReturn = () => {
         newStatus = 'damaged';
         assignedTo = `ชำรุดโดย: ${borrowRecord.borrower} (${new Date().toLocaleDateString('th-TH')})`; 
       } else if (condition === 'lost') {
-        newStatus = 'damaged'; // Use 'damaged' status for lost items too
+        newStatus = 'lost';
         assignedTo = `สูญหายโดย: ${borrowRecord.borrower} (${new Date().toLocaleDateString('th-TH')})`;
       }
 

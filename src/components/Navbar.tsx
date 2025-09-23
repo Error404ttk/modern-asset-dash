@@ -1,4 +1,4 @@
-import { Bell, Search, User } from "lucide-react";
+import { Bell, Search, User, Monitor } from "lucide-react";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -10,33 +10,59 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
 
 export function Navbar() {
+  const { settings } = useOrganizationSettings();
+  const appTitle = settings?.app_title?.trim() || settings?.name?.trim() || "ระบบครุภัณฑ์";
+  const organizationSubtitle = settings?.code?.trim() || settings?.name?.trim() || "หน่วยงานราชการ";
+
   return (
-    <header className="h-16 bg-gradient-header border-b border-border shadow-soft flex items-center justify-between px-4">
+    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-border bg-gradient-header px-4 shadow-soft sm:px-6">
       {/* Left side */}
-      <div className="flex items-center space-x-4">
+      <div className="flex flex-1 items-center gap-3 md:flex-none">
         <SidebarTrigger className="text-primary-foreground hover:bg-white/10" />
-        
-        <div className="hidden md:flex items-center space-x-2 bg-white/10 rounded-lg px-3 py-2 min-w-[300px]">
+
+        <div className="flex flex-1 items-center justify-between gap-3 md:flex-none md:justify-start">
+          <div className="flex items-center gap-2 text-primary-foreground">
+            <span className="grid flex-none place-items-center rounded-full bg-white/10 p-1.5">
+              <Monitor className="h-4 w-4" />
+            </span>
+            <div className="leading-tight">
+              <p className="text-sm font-semibold">{appTitle}</p>
+              <p className="hidden text-xs text-primary-foreground/70 sm:block">{organizationSubtitle}</p>
+            </div>
+          </div>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto flex h-9 w-9 items-center justify-center text-primary-foreground hover:bg-white/10 md:hidden"
+            aria-label="ค้นหา"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="hidden min-w-[280px] items-center gap-2 rounded-lg bg-white/10 px-3 py-2 md:flex">
           <Search className="h-4 w-4 text-primary-foreground/70" />
-          <Input 
-            placeholder="ค้นหาครุภัณฑ์..." 
-            className="border-0 bg-transparent placeholder:text-primary-foreground/70 text-primary-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+          <Input
+            placeholder="ค้นหาครุภัณฑ์..."
+            className="h-auto flex-1 border-0 bg-transparent text-primary-foreground placeholder:text-primary-foreground/70 focus-visible:ring-0 focus-visible:ring-offset-0"
           />
         </div>
       </div>
 
       {/* Right side */}
-      <div className="flex items-center space-x-4">
+      <div className="flex flex-none items-center gap-4">
         {/* Notifications */}
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <Button
+          variant="ghost"
+          size="sm"
           className="relative text-primary-foreground hover:bg-white/10"
         >
           <Bell className="h-5 w-5" />
-          <span className="absolute -top-1 -right-1 h-3 w-3 bg-warning rounded-full text-xs flex items-center justify-center text-white">
+          <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-warning text-[10px] font-medium text-white">
             3
           </span>
         </Button>
@@ -52,8 +78,8 @@ export function Navbar() {
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent 
-            className="w-56 bg-card border-border shadow-medium" 
+          <DropdownMenuContent
+            className="w-56 border-border bg-card shadow-medium"
             align="end"
           >
             <div className="flex items-center justify-start gap-2 p-2">
@@ -65,16 +91,16 @@ export function Navbar() {
               </div>
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="hover:bg-muted cursor-pointer">
+            <DropdownMenuItem className="cursor-pointer hover:bg-muted">
               <User className="mr-2 h-4 w-4" />
               โปรไฟล์
             </DropdownMenuItem>
-            <DropdownMenuItem className="hover:bg-muted cursor-pointer">
+            <DropdownMenuItem className="cursor-pointer hover:bg-muted">
               <Bell className="mr-2 h-4 w-4" />
               การแจ้งเตือน
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="hover:bg-destructive hover:text-destructive-foreground cursor-pointer">
+            <DropdownMenuItem className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground">
               ออกจากระบบ
             </DropdownMenuItem>
           </DropdownMenuContent>

@@ -1,8 +1,8 @@
-import { useState } from "react";
 import { Home, Computer, Plus, FileText, ArrowLeftRight, History, Users, Settings, Monitor, QrCode, LogOut } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
-import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar, SidebarFooter } from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar, SidebarFooter } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
+import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
 import { Button } from "@/components/ui/button";
 const menuItems = [{
   title: "แดชบอร์ด",
@@ -39,12 +39,17 @@ const menuItems = [{
 }];
 export function AppSidebar() {
   const {
-    state
+    state,
+    isMobile,
+    setOpenMobile
   } = useSidebar();
   const { profile, signOut } = useAuth();
+  const { settings } = useOrganizationSettings();
+  const appTitle = settings?.app_title?.trim() || settings?.name?.trim() || "ระบบครุภัณฑ์";
+  const organizationSubtitle = settings?.code?.trim() || settings?.name?.trim() || "หน่วยงานราชการ";
   const location = useLocation();
   const currentPath = location.pathname;
-  const isActive = (path: string) => {
+  const isPathActive = (path: string) => {
     if (path === "/") {
       return currentPath === "/";
     }
@@ -54,20 +59,34 @@ export function AppSidebar() {
     isActive
   }: {
     isActive: boolean;
-  }) => isActive ? "bg-primary text-primary-foreground font-medium shadow-soft" : "hover:bg-muted/70 text-muted-foreground hover:text-foreground";
+  }) => {
+    const base = isActive ? "bg-primary text-primary-foreground font-medium shadow-soft" : "hover:bg-muted/70 text-muted-foreground hover:text-foreground";
+    const collapsedCls = isCollapsed
+      ? "justify-center px-3"
+      : "justify-start gap-3";
+
+    return `${base} ${collapsedCls} group`;
+  };
   const isCollapsed = state === "collapsed";
-  return <Sidebar className={isCollapsed ? "w-14 border-r border-border" : "w-64 border-r border-border bg-card"} collapsible="icon">
+  return <Sidebar className={isCollapsed ? "w-16 border-r border-border" : "w-64 border-r border-border bg-card"} collapsible="icon">
       <SidebarContent className="bg-card">
         {/* Header */}
         <div className="p-4 border-b border-border">
-          {!isCollapsed && <div className="flex items-center space-x-2">
+          {!isCollapsed && (
+            <div className="flex items-center space-x-2">
               <Monitor className="h-8 w-8 text-primary" />
               <div>
-                <h2 className="text-lg font-bold text-primary">ระบบครุภัณฑ์</h2>
-                <p className="text-xs text-muted-foreground">หน่วยงานราชการ</p>
+                <h2 className="text-lg font-bold text-primary">{appTitle}</h2>
+                <p className="text-xs text-muted-foreground">{organizationSubtitle}</p>
               </div>
-            </div>}
-          {isCollapsed && <Monitor className="h-8 w-8 text-primary mx-auto" />}
+            </div>
+          )}
+          {isCollapsed && (
+            <div className="flex items-center justify-center" aria-label={appTitle}>
+              <Monitor className="h-9 w-9 text-primary" aria-hidden="true" />
+              <span className="sr-only">{appTitle}</span>
+            </div>
+          )}
         </div>
 
         <SidebarGroup>
@@ -76,14 +95,29 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map(item => <SidebarMenuItem key={item.title}>
+              {menuItems.map(item => {
+                const active = isPathActive(item.url);
+                const iconCollapsedCls = isCollapsed
+                  ? `${active ? "text-primary" : "text-muted-foreground"} group-hover:text-primary`
+                  : "";
+                return <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink to={item.url} end={item.url === "/"} className={getNavCls}>
-                      <item.icon className="h-5 w-5" />
+                    <NavLink
+                      to={item.url}
+                      end={item.url === "/"}
+                      className={getNavCls}
+                      onClick={() => {
+                        if (isMobile) {
+                          setOpenMobile(false);
+                        }
+                      }}
+                    >
+                      <item.icon className={`h-5 w-5 transition-colors ${iconCollapsedCls}`} />
                       {!isCollapsed && <span className="text-slate-900">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
-                </SidebarMenuItem>)}
+                </SidebarMenuItem>;
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -101,25 +135,30 @@ export function AppSidebar() {
             </div>
             </div>}
         <SidebarFooter>
-          <div className="p-4 space-y-2">
-            {profile && (
+          <div className={isCollapsed ? "flex flex-col items-center gap-2 p-2" : "p-4 space-y-2"}>
+            {profile && !isCollapsed && (
               <div className="text-sm">
                 <div className="font-medium">{profile.full_name}</div>
                 <div className="text-muted-foreground text-xs">{profile.email}</div>
                 <div className="text-xs bg-primary/10 text-primary px-2 py-1 rounded mt-1 inline-block">
-                  {profile.role === 'super_admin' ? 'ผู้ดูแลระบบสูงสุด' : 
-                   profile.role === 'admin' ? 'ผู้ดูแลระบบ' : 'ผู้ใช้'}
+                  {profile.role === "super_admin"
+                    ? "ผู้ดูแลระบบสูงสุด"
+                    : profile.role === "admin"
+                      ? "ผู้ดูแลระบบ"
+                      : "ผู้ใช้"}
                 </div>
               </div>
             )}
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size={isCollapsed ? "icon" : "sm"}
               onClick={signOut}
-              className="w-full"
+              className={isCollapsed ? "" : "w-full"}
+              aria-label="ออกจากระบบ"
+              title="ออกจากระบบ"
             >
-              <LogOut className="h-4 w-4 mr-2" />
-              ออกจากระบบ
+              <LogOut className={`h-4 w-4 ${isCollapsed ? "" : "mr-2"}`} />
+              {!isCollapsed && "ออกจากระบบ"}
             </Button>
           </div>
         </SidebarFooter>

@@ -8,9 +8,46 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Calendar, MapPin, User, HardDrive, Cpu, Monitor, Zap, Image, ZoomIn } from "lucide-react";
+import { Calendar, MapPin, User, HardDrive, Cpu, Monitor, Zap, Image, ZoomIn, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+const SPEC_LABELS: Record<string, string> = {
+  cpu: "CPU",
+  cpuSeries: "CPU Series",
+  ramGb: "RAM (GB)",
+  harddisk: "Harddisk",
+  operatingSystem: "Operating System",
+  officeSuite: "Office",
+  gpu: "Graphic Card (GPU)",
+  productKey: "Product Key",
+  ipAddress: "IP Address",
+  macAddress: "MAC Address",
+  hostname: "Hostname",
+};
+
+const PRIMARY_SPEC_ORDER = [
+  "cpu",
+  "cpuSeries",
+  "ramGb",
+  "harddisk",
+  "operatingSystem",
+  "officeSuite",
+  "gpu",
+  "productKey",
+  "ipAddress",
+  "macAddress",
+  "hostname",
+];
+
+const formatSpecLabel = (key: string) => {
+  if (SPEC_LABELS[key]) return SPEC_LABELS[key];
+  const prettified = key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return prettified.charAt(0).toUpperCase() + prettified.slice(1);
+};
 
 interface Equipment {
   id: string;
@@ -40,13 +77,17 @@ interface EquipmentViewDialogProps {
 
 export default function EquipmentViewDialog({ open, onOpenChange, equipment }: EquipmentViewDialogProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
+  const [activePreviewIndex, setActivePreviewIndex] = useState(0);
   
   const getStatusBadge = (status: string) => {
     const variants = {
       available: { color: "bg-success text-success-foreground", label: "พร้อมใช้งาน" },
       borrowed: { color: "bg-primary text-primary-foreground", label: "ถูกยืม" },
       maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
-      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" }
+      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
+      pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
+      disposed: { color: "bg-muted text-muted-foreground", label: "จำหน่าย" },
+      lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" }
     };
     
     const config = variants[status as keyof typeof variants] || { color: "bg-muted text-muted-foreground", label: status };
@@ -56,22 +97,60 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
   const getSpecIcon = (key: string) => {
     const iconMap: { [key: string]: any } = {
       cpu: Cpu,
+      cpuseries: Cpu,
       ram: Monitor,
+      ramgb: Monitor,
+      harddisk: HardDrive,
       storage: HardDrive,
-      size: Monitor,
-      resolution: Monitor,
-      panel: Monitor,
-      type: HardDrive,
-      speed: Zap,
+      operatingsystem: Monitor,
+      officesuite: Monitor,
+      gpu: Monitor,
+      productkey: Zap,
+      ipaddress: Monitor,
+      macaddress: Monitor,
+      hostname: Monitor,
     };
-    
+
     const IconComponent = iconMap[key.toLowerCase()] || HardDrive;
     return <IconComponent className="h-4 w-4 text-muted-foreground" />;
   };
 
+  const specs = equipment.specs || {};
+  const fullAssetNumber = equipment.quantity
+    ? `${equipment.assetNumber}/${equipment.quantity}`
+    : equipment.assetNumber;
+  const notes = typeof specs.notes === "string" ? specs.notes.trim() : "";
+  const primarySpecs = PRIMARY_SPEC_ORDER
+    .map((key) => {
+      const rawValue = specs[key];
+      const value = rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+      return value ? { key, value } : null;
+    })
+    .filter((entry): entry is { key: string; value: string } => Boolean(entry));
+
+  const additionalSpecs = Object.entries(specs)
+    .filter(([key]) => !PRIMARY_SPEC_ORDER.includes(key))
+    .map(([key, rawValue]) => {
+      const value = rawValue === null || rawValue === undefined ? "" : String(rawValue).trim();
+      return value ? { key, value } : null;
+    })
+    .filter((entry): entry is { key: string; value: string } => Boolean(entry));
+
+  useEffect(() => {
+    setActivePreviewIndex(0);
+    setSelectedImageIndex(null);
+  }, [equipment, open]);
+
+  const images = Array.isArray(equipment.images)
+    ? equipment.images.filter((image): image is string => Boolean(image))
+    : [];
+  const hasImages = images.length > 0;
+  const activeImageIndex = hasImages ? Math.min(activePreviewIndex, images.length - 1) : 0;
+  const activeImageUrl = hasImages ? images[activeImageIndex] : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>รายละเอียดครุภัณฑ์</DialogTitle>
           <DialogDescription>
@@ -79,169 +158,245 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
           </DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-6">
-          {/* ข้อมูลหลัก */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">ข้อมูลทั่วไป</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">ชื่อครุภัณฑ์</label>
-                  <p className="font-semibold">{equipment.name}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">ประเภท</label>
-                  <div><Badge variant="outline">{equipment.type}</Badge></div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">ยี่ห้อ</label>
-                  <p>{equipment.brand}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">รุ่น</label>
-                  <p>{equipment.model}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Serial Number</label>
-                  <p className="font-mono text-sm">{equipment.serialNumber}</p>
-                </div>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="space-y-6">
+            {/* ข้อมูลหลัก */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">ข้อมูลทั่วไป</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">ชื่อครุภัณฑ์</label>
+                    <p className="font-semibold">{equipment.name}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">ประเภท</label>
+                    <div><Badge variant="outline">{equipment.type}</Badge></div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">ยี่ห้อ</label>
+                    <p>{equipment.brand}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">รุ่น</label>
+                    <p>{equipment.model}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Serial Number</label>
+                    <p className="font-mono text-sm">{equipment.serialNumber}</p>
+                  </div>
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">เลขครุภัณฑ์</label>
-                  <p className="font-mono text-sm font-semibold text-primary">{equipment.assetNumber}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">จำนวน</label>
-                  <p className="font-semibold">{equipment.quantity} ชิ้น</p>
+                  <p className="font-mono text-sm font-semibold text-primary">{fullAssetNumber}</p>
                 </div>
               </div>
-              
+
               <Separator />
-              
+
               <div>
                 <label className="text-sm font-medium text-muted-foreground">สถานะ</label>
                 <div className="mt-1">{getStatusBadge(equipment.status)}</div>
               </div>
+
+              {notes && (
+                <>
+                  <Separator />
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">หมายเหตุ</label>
+                    <p className="mt-1 whitespace-pre-line text-sm text-foreground">{notes}</p>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
-          {/* ข้อมูลการใช้งาน */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">ข้อมูลการใช้งาน</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-start space-x-2">
-                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">สถานที่</label>
-                    <p>{equipment.location}</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <User className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">ผู้ใช้งาน</label>
-                    <p>{equipment.user}</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">วันที่ได้มา</label>
-                    <p>{equipment.purchaseDate}</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">หมดประกัน</label>
-                    <p>{equipment.warrantyEnd}</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* ข้อมูลสเปค */}
-          {Object.keys(equipment.specs).length > 0 && (
+            {/* ข้อมูลการใช้งาน/จัดเก็บ */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">ข้อมูลเทคนิค</CardTitle>
+                <CardTitle className="text-lg">ข้อมูลการใช้งาน/จัดเก็บ</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {Object.entries(equipment.specs).map(([key, value]) => (
-                    <div key={key} className="flex items-start space-x-2">
-                      {getSpecIcon(key)}
+                  {equipment.specs?.department && (
+                    <div className="flex items-start space-x-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground mt-0.5" />
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground capitalize">
-                          {key === 'cpu' ? 'CPU' : 
-                           key === 'ram' ? 'RAM' :
-                           key === 'storage' ? 'Storage' :
-                           key === 'size' ? 'ขนาด' :
-                           key === 'resolution' ? 'ความละเอียด' :
-                           key === 'panel' ? 'Panel' :
-                           key === 'type' ? 'ประเภท' :
-                           key === 'speed' ? 'ความเร็ว' :
-                           key}
-                        </label>
-                        <p>{value}</p>
+                        <label className="text-sm font-medium text-muted-foreground">หน่วยงานที่รับผิดชอบ</label>
+                        <p>{equipment.specs.department}</p>
                       </div>
                     </div>
-                  ))}
+                  )}
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">สถานที่ติดตั้ง/จัดเก็บ</label>
+                      <p>{equipment.location}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <User className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">ผู้ใช้งาน</label>
+                      <p>{equipment.user}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">วันที่ได้มา</label>
+                      <p>{equipment.purchaseDate}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">หมดประกัน</label>
+                      <p>{equipment.warrantyEnd}</p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          )}
 
-          {/* รูปภาพครุภัณฑ์ */}
-          {equipment.images && equipment.images.length > 0 && (
-            <Card>
+            {/* ข้อมูลสเปค */}
+            {(primarySpecs.length > 0 || additionalSpecs.length > 0) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">ข้อมูลเทคนิค</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {primarySpecs.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {primarySpecs.map(({ key, value }) => (
+                        <div key={key} className="flex items-start space-x-2">
+                          {getSpecIcon(key)}
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              {formatSpecLabel(key)}
+                            </label>
+                            <p>{value}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {additionalSpecs.length > 0 && (
+                    <>
+                      <Separator />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {additionalSpecs.map(({ key, value }) => (
+                          <div key={key} className="flex items-start space-x-2">
+                            {getSpecIcon(key)}
+                            <div>
+                              <label className="text-sm font-medium text-muted-foreground">
+                                {formatSpecLabel(key)}
+                              </label>
+                              <p>{value}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-6 lg:sticky lg:top-20">
+            <Card className="shadow-soft">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Image className="h-5 w-5 text-primary" />
                   <span>รูปภาพครุภัณฑ์</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {equipment.images.map((imageUrl, index) => (
-                    <div key={index} className="relative group">
-                      <div className="aspect-square bg-muted rounded-lg overflow-hidden border cursor-pointer">
+              <CardContent className="space-y-4">
+                {hasImages ? (
+                  <>
+                    <div
+                      className="relative aspect-square overflow-hidden rounded-xl border bg-muted"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedImageIndex(activeImageIndex)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          setSelectedImageIndex(activeImageIndex);
+                        }
+                      }}
+                    >
+                      {activeImageUrl && (
                         <img
-                          src={imageUrl}
-                          alt={`${equipment.name} - รูปที่ ${index + 1}`}
-                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                          onClick={() => setSelectedImageIndex(index)}
+                          src={activeImageUrl}
+                          alt={`${equipment.name} - รูปที่ ${activeImageIndex + 1}`}
+                          className="h-full w-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                          <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
+                      )}
+                      <div className="absolute inset-0 flex items-end justify-end p-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="bg-black/60 text-white hover:bg-black/70"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedImageIndex(activeImageIndex);
+                          }}
+                        >
+                          <ZoomIn className="mr-1 h-4 w-4" /> ดูแบบเต็ม
+                        </Button>
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    {images.length > 1 && (
+                      <div className="grid grid-cols-3 gap-3">
+                        {images.map((imageUrl, index) => (
+                          <button
+                            key={`thumb-${index}`}
+                            type="button"
+                            onClick={() => setActivePreviewIndex(index)}
+                            className={`relative aspect-square overflow-hidden rounded-lg border transition focus:outline-none ${
+                              index === activeImageIndex
+                                ? 'ring-2 ring-primary border-primary'
+                                : 'opacity-70 hover:opacity-100'
+                            }`}
+                          >
+                            <img
+                              src={imageUrl}
+                              alt={`${equipment.name} - ตัวอย่าง ${index + 1}`}
+                              className="h-full w-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/40 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                    ยังไม่มีรูปภาพสำหรับครุภัณฑ์รายการนี้
+                  </div>
+                )}
               </CardContent>
             </Card>
-          )}
+          </div>
         </div>
 
         {/* Image Modal */}
-        {selectedImageIndex !== null && equipment.images && (
+        {selectedImageIndex !== null && hasImages && (
           <Dialog open={selectedImageIndex !== null} onOpenChange={() => setSelectedImageIndex(null)}>
             <DialogContent className="sm:max-w-4xl">
               <DialogHeader>
                 <DialogTitle>รูปภาพครุภัณฑ์ - {equipment.name}</DialogTitle>
                 <DialogDescription>
-                  รูปที่ {selectedImageIndex + 1} จาก {equipment.images.length} รูป
+                  รูปที่ {selectedImageIndex + 1} จาก {images.length} รูป
                 </DialogDescription>
               </DialogHeader>
               <div className="flex items-center justify-center p-4">
                 <img
-                  src={equipment.images[selectedImageIndex]}
+                  src={images[selectedImageIndex]}
                   alt={`${equipment.name} - รูปที่ ${selectedImageIndex + 1}`}
                   className="max-w-full max-h-[70vh] object-contain rounded-lg"
                 />
@@ -255,12 +410,12 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
                   รูปก่อนหน้า
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  {selectedImageIndex + 1} / {equipment.images.length}
+                  {selectedImageIndex + 1} / {images.length}
                 </span>
                 <Button
                   variant="outline"
-                  onClick={() => setSelectedImageIndex(Math.min(equipment.images!.length - 1, selectedImageIndex + 1))}
-                  disabled={selectedImageIndex === equipment.images.length - 1}
+                  onClick={() => setSelectedImageIndex(Math.min(images.length - 1, selectedImageIndex + 1))}
+                  disabled={selectedImageIndex === images.length - 1}
                 >
                   รูปถัดไป
                 </Button>

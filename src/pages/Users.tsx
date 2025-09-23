@@ -6,12 +6,19 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Plus, Users as UsersIcon, Edit, Trash2, Shield, Eye } from "lucide-react";
+import { Search, Plus, Users as UsersIcon, Edit, Trash2, Shield, Eye, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ViewUserDialog } from "@/components/users/ViewUserDialog";
 import { EditUserDialog } from "@/components/users/EditUserDialog";
 import { DeleteUserDialog } from "@/components/users/DeleteUserDialog";
 import { supabase } from "@/integrations/supabase/client";
+
+const ROLE_OPTIONS = [
+  { value: "admin", label: "ผู้ดูแลระบบ" },
+  { value: "user", label: "ผู้ใช้งานทั่วไป" },
+];
+
+const NO_DEPARTMENT_VALUE = "__none__";
 
 const Users = () => {
   const { toast } = useToast();
@@ -23,6 +30,17 @@ const Users = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [departmentOptions, setDepartmentOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [departmentLoadError, setDepartmentLoadError] = useState<string | null>(null);
+  const [newUserForm, setNewUserForm] = useState({
+    email: "",
+    password: "",
+    fullName: "",
+    department: NO_DEPARTMENT_VALUE,
+    role: 'user',
+  });
 
   // Fetch users from Supabase
   const fetchUsers = async () => {
@@ -35,17 +53,23 @@ const Users = () => {
       if (error) throw error;
 
       // Transform data to match UI format
-      const transformedUsers = data.map(user => ({
-        id: user.user_id,
-        username: user.email.split('@')[0], // Extract username from email
-        fullName: user.full_name || 'ไม่ระบุชื่อ',
-        email: user.email,
-        department: 'ไม่ระบุหน่วยงาน', // Add department field to profiles table if needed
-        role: getRoleDisplayName(user.role),
-        status: 'ใช้งาน', // Add status field to profiles table if needed
-        lastLogin: 'ไม่ระบุ',
-        createdAt: new Date(user.created_at).toLocaleDateString('th-TH')
-      }));
+      const transformedUsers = data.map(user => {
+        const email = user.email ?? '';
+        const username = email ? email.split('@')[0] : '-';
+
+        return {
+          id: user.user_id,
+          username,
+          fullName: user.full_name || 'ไม่ระบุชื่อ',
+          email,
+          department: user.department || 'ไม่ระบุหน่วยงาน',
+          role: getRoleDisplayName(user.role),
+          roleCode: user.role,
+          status: 'ใช้งาน',
+          lastLogin: 'ไม่ระบุ',
+          createdAt: new Date(user.created_at).toLocaleDateString('th-TH'),
+        };
+      });
 
       setUsers(transformedUsers);
     } catch (error) {
@@ -57,6 +81,23 @@ const Users = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      setDepartmentLoadError(null);
+      const { data, error } = await supabase
+        .from('departments')
+        .select('id, name')
+        .eq('active', true)
+        .order('name');
+
+      if (error) throw error;
+      setDepartmentOptions(data || []);
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+      setDepartmentLoadError('ไม่สามารถโหลดรายชื่อหน่วยงานได้');
     }
   };
 
@@ -75,16 +116,15 @@ const Users = () => {
 
   useEffect(() => {
     fetchUsers();
+    fetchDepartments();
   }, []);
 
   const getRoleBadgeVariant = (role: string) => {
     switch (role) {
-      case "ผู้ดูแลระบบ":
+      case "ผู้ดูแลระบบสูงสุด":
         return "destructive";
-      case "ผู้จัดการ":
+      case "ผู้ดูแลระบบ":
         return "default";
-      case "ช่างเทคนิค":
-        return "secondary";
       default:
         return "outline";
     }
@@ -94,12 +134,94 @@ const Users = () => {
     return status === "ใช้งาน" ? "default" : "secondary";
   };
 
-  const handleAddUser = () => {
-    toast({
-      title: "เพิ่มผู้ใช้งานสำเร็จ",
-      description: "เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว",
+  const resetAddUserForm = () => {
+    setNewUserForm({
+      email: '',
+      password: '',
+      fullName: '',
+      department: NO_DEPARTMENT_VALUE,
+      role: 'user',
     });
-    setIsAddDialogOpen(false);
+    setAddError(null);
+  };
+
+  const handleAddUserSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAddError(null);
+
+    const email = newUserForm.email.trim();
+    const password = newUserForm.password.trim();
+    const fullName = newUserForm.fullName.trim();
+
+    if (!email || !password || !fullName) {
+      setAddError('กรุณากรอกอีเมล รหัสผ่าน และชื่อ-นามสกุล');
+      return;
+    }
+
+    if (password.length < 6) {
+      setAddError('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+      return;
+    }
+
+    setAddLoading(true);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      const accessToken = session?.access_token;
+
+      if (!accessToken) {
+        throw new Error('ไม่พบ token สำหรับยืนยันตัวตน');
+      }
+
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: {
+          email,
+          password,
+          fullName,
+          department: newUserForm.department === NO_DEPARTMENT_VALUE ? null : newUserForm.department || null,
+          role: newUserForm.role,
+        },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'ไม่สามารถเพิ่มผู้ใช้งานได้');
+      }
+
+      toast({
+        title: 'เพิ่มผู้ใช้งานสำเร็จ',
+        description: 'เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว',
+      });
+
+      resetAddUserForm();
+      setIsAddDialogOpen(false);
+      await fetchUsers();
+    } catch (err) {
+      console.error('Error creating user:', err);
+      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเพิ่มผู้ใช้งาน';
+      setAddError(message);
+      toast({
+        title: 'เกิดข้อผิดพลาด',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setAddLoading(false);
+    }
   };
 
   const handleViewUser = (user: any) => {
@@ -148,7 +270,7 @@ const Users = () => {
           <h1 className="text-3xl font-bold text-foreground">จัดการผู้ใช้งาน</h1>
           <p className="text-muted-foreground mt-2">จัดการบัญชีผู้ใช้งานและสิทธิ์การเข้าถึงระบบ</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <Dialog open={isAddDialogOpen} onOpenChange={(open) => { setIsAddDialogOpen(open); if (!open) { resetAddUserForm(); } else { setAddError(null); } }}>
           <DialogTrigger asChild>
             <Button className="bg-primary hover:bg-primary/90">
               <Plus className="mr-2 h-4 w-4" />
@@ -162,64 +284,106 @@ const Users = () => {
                 กรอกข้อมูลผู้ใช้งานใหม่และกำหนดสิทธิ์การเข้าถึง
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form className="grid gap-4 py-4" onSubmit={handleAddUserSubmit}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="username">ชื่อผู้ใช้</Label>
-                  <Input placeholder="username" />
+                  <Label htmlFor="email">อีเมล *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={newUserForm.email}
+                    onChange={(e) => setNewUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                    placeholder="email@department.go.th"
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">รหัสผ่าน</Label>
-                  <Input type="password" placeholder="password" />
+                  <Label htmlFor="password">รหัสผ่าน *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={newUserForm.password}
+                    onChange={(e) => setNewUserForm((prev) => ({ ...prev, password: e.target.value }))}
+                    placeholder="อย่างน้อย 6 ตัวอักษร"
+                    required
+                  />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="fullName">ชื่อ-นามสกุล</Label>
-                <Input placeholder="ชื่อ-นามสกุล" />
+                <Label htmlFor="fullName">ชื่อ-นามสกุล *</Label>
+                <Input
+                  id="fullName"
+                  value={newUserForm.fullName}
+                  onChange={(e) => setNewUserForm((prev) => ({ ...prev, fullName: e.target.value }))}
+                  placeholder="ชื่อ-นามสกุล"
+                  required
+                />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">อีเมล</Label>
-                <Input type="email" placeholder="email@department.go.th" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="department">หน่วยงาน</Label>
-                  <Select>
-                    <SelectTrigger>
+                  <Select
+                    value={newUserForm.department}
+                    onValueChange={(value) => setNewUserForm((prev) => ({ ...prev, department: value }))}
+                    disabled={departmentOptions.length === 0 && !departmentLoadError}
+                  >
+                    <SelectTrigger id="department">
                       <SelectValue placeholder="เลือกหน่วยงาน" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="finance">กองคลัง</SelectItem>
-                      <SelectItem value="engineering">กองช่าง</SelectItem>
-                      <SelectItem value="planning">กองแผน</SelectItem>
-                      <SelectItem value="it">ฝ่ายเทคโนโลยีสารสนเทศ</SelectItem>
+                      <SelectItem value={NO_DEPARTMENT_VALUE}>ไม่ระบุ</SelectItem>
+                      {departmentOptions.map((option) => (
+                        <SelectItem key={option.id} value={option.name}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {departmentLoadError && (
+                    <p className="text-xs text-destructive">{departmentLoadError}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">บทบาท</Label>
-                  <Select>
-                    <SelectTrigger>
+                  <Select
+                    value={newUserForm.role}
+                    onValueChange={(value) => setNewUserForm((prev) => ({ ...prev, role: value }))}
+                  >
+                    <SelectTrigger id="role">
                       <SelectValue placeholder="เลือกบทบาท" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">ผู้ดูแลระบบ</SelectItem>
-                      <SelectItem value="manager">ผู้จัดการ</SelectItem>
-                      <SelectItem value="user">ผู้ใช้งานทั่วไป</SelectItem>
-                      <SelectItem value="technician">ช่างเทคนิค</SelectItem>
+                      {ROLE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+              {addError && (
+                <p className="text-sm text-destructive">{addError}</p>
+              )}
               <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => { setIsAddDialogOpen(false); resetAddUserForm(); }}
+                  disabled={addLoading}
+                >
                   ยกเลิก
                 </Button>
-                <Button onClick={handleAddUser} className="bg-primary hover:bg-primary/90">
+                <Button
+                  type="submit"
+                  className="bg-primary hover:bg-primary/90"
+                  disabled={addLoading}
+                >
+                  {addLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   เพิ่มผู้ใช้งาน
                 </Button>
               </div>
-            </div>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
@@ -364,6 +528,10 @@ const Users = () => {
         onOpenChange={setEditDialogOpen}
         user={selectedUser}
         onUserUpdated={handleUserUpdated}
+        departmentOptions={departmentOptions}
+        departmentLoadError={departmentLoadError}
+        roleOptions={ROLE_OPTIONS}
+        noDepartmentValue={NO_DEPARTMENT_VALUE}
       />
       
       <DeleteUserDialog

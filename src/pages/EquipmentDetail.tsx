@@ -110,7 +110,10 @@ export default function EquipmentDetail() {
       available: { color: "bg-success text-success-foreground", label: "พร้อมใช้งาน" },
       borrowed: { color: "bg-primary text-primary-foreground", label: "ถูกยืม" },
       maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
-      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" }
+      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
+      pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
+      disposed: { color: "bg-muted text-muted-foreground", label: "จำหน่าย" },
+      lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" }
     };
     
     const config = variants[status as keyof typeof variants] || {
