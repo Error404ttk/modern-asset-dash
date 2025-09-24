@@ -57,11 +57,41 @@ export const EquipmentTypeDialog = ({ open, onOpenChange, equipmentType, onSucce
     setLoading(true);
 
     try {
+      // Basic validation for code format: e.g., 7440-019
+      const codePattern = /^\d{4}-\d{3}$/;
+      const trimmedName = formData.name.trim();
+      const trimmedCode = formData.code.trim();
+      if (!trimmedName || !trimmedCode) {
+        toast({
+          title: "กรอกข้อมูลไม่ครบ",
+          description: "กรุณาระบุชื่อประเภทและรหัสประเภท",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+      if (!codePattern.test(trimmedCode)) {
+        toast({
+          title: "รูปแบบรหัสไม่ถูกต้อง",
+          description: "รูปแบบที่ถูกต้องคือ ####-### เช่น 7440-019",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        name: trimmedName,
+        code: trimmedCode,
+        description: formData.description?.trim() || null,
+        active: formData.active,
+      };
+
       if (equipmentType) {
         // Update existing equipment type
         const { error } = await supabase
           .from('equipment_types')
-          .update(formData)
+          .update(payload)
           .eq('id', equipmentType.id);
 
         if (error) throw error;
@@ -74,7 +104,7 @@ export const EquipmentTypeDialog = ({ open, onOpenChange, equipmentType, onSucce
         // Create new equipment type
         const { error } = await supabase
           .from('equipment_types')
-          .insert(formData);
+          .insert(payload);
 
         if (error) throw error;
 
