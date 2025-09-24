@@ -14,6 +14,7 @@ import AddEquipment from "./pages/AddEquipment";
 import EquipmentDetail from "./pages/EquipmentDetail";
 import BorrowReturn from "./pages/BorrowReturn";
 import History from "./pages/History";
+import Scan from "./pages/Scan";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
@@ -110,6 +111,13 @@ const App = () => (
               <ProtectedRoute>
                 <AppLayout>
                   <BorrowReturn />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/scan" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Scan />
                 </AppLayout>
               </ProtectedRoute>
             } />

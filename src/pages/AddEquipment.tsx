@@ -50,11 +50,11 @@ export default function AddEquipment() {
         if (equipmentTypesData) {
           // Map database equipment types to the format expected by the UI
           const mappedTypes = equipmentTypesData.map(dbType => {
-            // Find matching type from equipmentTypes array
-            const matchingType = baseEquipmentTypes.find(t => 
-              t.code === dbType.code || t.label.includes(dbType.name)
-            );
-            
+            // Prefer exact code match; if not found, fall back to strict label equality
+            const matchingType =
+              baseEquipmentTypes.find(t => t.code === dbType.code) ||
+              baseEquipmentTypes.find(t => t.label === dbType.name);
+
             return {
               value: dbType.code.toLowerCase(),
               label: dbType.name,
@@ -63,7 +63,7 @@ export default function AddEquipment() {
               subTypes: matchingType?.subTypes || []
             };
           });
-          
+
           setActiveEquipmentTypes(mappedTypes);
         }
 
@@ -159,13 +159,14 @@ export default function AddEquipment() {
 
     const formData = new FormData(e.currentTarget as HTMLFormElement);
 
-    const getTrimmedValue = (field: string) => {
+    const getTrimmedValue = (field: string): string | undefined => {
       const value = formData.get(field);
       if (typeof value === "string") {
         const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : null;
+        return trimmed.length > 0 ? trimmed : undefined;
       }
-      return value ?? null;
+      // For non-string (e.g., File), treat as undefined for this text helper
+      return undefined;
     };
 
     // Build specs object for computer types
@@ -198,6 +199,12 @@ export default function AddEquipment() {
       if (hostname) specs.hostname = hostname;
     }
 
+    const reasonValue = getTrimmedValue('notes');
+    if (reasonValue) {
+      specs.reason = reasonValue;
+      specs.notes = reasonValue;
+    }
+
     const nameValue = getTrimmedValue('equipmentName');
     const brandValue = getTrimmedValue('brand');
     const modelValue = getTrimmedValue('model');
@@ -207,7 +214,8 @@ export default function AddEquipment() {
     const acquisitionMethodValue = getTrimmedValue('acquisitionMethod');
 
     const equipmentData = {
-      name: nameValue,
+      // Ensure name is always a non-empty string for insertion
+      name: nameValue || getEquipmentTypeLabel(equipmentType) || "ครุภัณฑ์",
       type: getEquipmentTypeLabel(equipmentType),
       brand: brandValue,
       model: modelValue,
@@ -299,7 +307,16 @@ export default function AddEquipment() {
     setEquipmentSubType(""); // Reset sub type when main type changes
   };
 
-  const isComputerType = equipmentType === "desktop" || equipmentType === "laptop" || equipmentType === "server" || equipmentType === "tablet" || equipmentType === "blade_server";
+  // Determine if current selection is a computer-type (for showing specs)
+  const isComputerType = useMemo(() => {
+    const types = activeEquipmentTypes.length > 0 ? activeEquipmentTypes : baseEquipmentTypes;
+    const selected = types.find(t => t.value === equipmentType);
+    const val = selected?.value || "";
+    const code = selected?.code || "";
+    const valueIsComputer = ["desktop", "laptop", "server", "tablet", "blade_server"].includes(val);
+    const codeIsComputer = ["7440-001", "7440-002", "7440-004", "7440-005", "7440-010"].includes(code);
+    return valueIsComputer || codeIsComputer;
+  }, [equipmentType, activeEquipmentTypes]);
 
   const subTypeOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -724,11 +741,11 @@ export default function AddEquipment() {
                   </div>
 
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="notes">หมายเหตุ</Label>
+                    <Label htmlFor="notes">เหตุผล</Label>
                     <Textarea 
                       id="notes" 
                       name="notes"
-                      placeholder="ข้อมูลเพิ่มเติมหรือหมายเหตุพิเศษ..."
+                      placeholder="ระบุเหตุผลในการจัดซื้อหรือการได้มาของครุภัณฑ์..."
                       rows={3}
                     />
                   </div>

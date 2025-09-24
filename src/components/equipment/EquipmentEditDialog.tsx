@@ -38,6 +38,7 @@ const DEFAULT_SPEC_FIELDS: Record<string, string> = {
   macAddress: "",
   hostname: "",
   notes: "",
+  reason: "",
 };
 
 const COMPUTER_SPEC_FIELDS: Array<{
@@ -67,12 +68,18 @@ const SYSTEM_SPEC_FIELDS: Array<{
   { key: "hostname", label: "Hostname", placeholder: "เช่น PC-OFFICE-01" },
 ];
 
-const normalizeSpecs = (specs: Record<string, any> | undefined) => {
+const normalizeSpecs = (specs: unknown) => {
   const normalized = { ...DEFAULT_SPEC_FIELDS } as Record<string, string>;
-  const entries = specs || {};
-  Object.entries(entries).forEach(([key, value]) => {
-    normalized[key] = value === null || value === undefined ? "" : String(value);
-  });
+  if (specs && typeof specs === "object" && !Array.isArray(specs)) {
+    Object.entries(specs as Record<string, unknown>).forEach(([key, value]) => {
+      normalized[key] = value === null || value === undefined ? "" : String(value);
+    });
+  }
+  if (!normalized.reason && normalized.notes) {
+    normalized.reason = normalized.notes;
+  } else if (!normalized.notes && normalized.reason) {
+    normalized.notes = normalized.reason;
+  }
   return normalized;
 };
 
@@ -357,14 +364,19 @@ export default function EquipmentEditDialog({
       // Combine existing and new images
       const finalImages = [...existingImages, ...newImageUrls];
       
-      const cleanedSpecs = Object.fromEntries(
-        Object.entries(formData.specs || {})
-          .map(([key, value]) => {
-            const trimmed = value?.toString().trim();
-            return trimmed ? [key, trimmed] : null;
-          })
-          .filter((entry): entry is [string, string] => Boolean(entry))
-      );
+      const cleanedSpecsEntries = Object.entries(formData.specs || {})
+        .map(([key, value]) => {
+          const trimmed = value?.toString().trim();
+          return trimmed ? [key, trimmed] : null;
+        })
+        .filter((entry): entry is [string, string] => Boolean(entry));
+
+      const cleanedSpecs = Object.fromEntries(cleanedSpecsEntries);
+      if (cleanedSpecs.reason && !cleanedSpecs.notes) {
+        cleanedSpecs.notes = cleanedSpecs.reason;
+      } else if (!cleanedSpecs.reason && cleanedSpecs.notes) {
+        cleanedSpecs.reason = cleanedSpecs.notes;
+      }
 
       // Update equipment data
       const updatedEquipment = {
@@ -401,13 +413,23 @@ export default function EquipmentEditDialog({
   };
 
   const handleSpecChange = (specKey: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      specs: {
+    setFormData(prev => {
+      const updatedSpecs = {
         ...prev.specs,
         [specKey]: value,
-      },
-    }));
+      } as Record<string, string>;
+
+      if (specKey === "reason") {
+        updatedSpecs.notes = value;
+      } else if (specKey === "notes") {
+        updatedSpecs.reason = value;
+      }
+
+      return {
+        ...prev,
+        specs: updatedSpecs,
+      };
+    });
   };
 
   const combinedEquipmentTypes = useMemo(() => {
@@ -657,13 +679,13 @@ export default function EquipmentEditDialog({
                 />
               </div>
               <div className="md:col-span-2">
-                <Label htmlFor="notes">หมายเหตุ</Label>
+                <Label htmlFor="reason">เหตุผล</Label>
                 <Textarea
-                  id="notes"
-                  value={formData.specs?.notes ?? ""}
-                  onChange={(e) => handleSpecChange('notes', e.target.value)}
+                  id="reason"
+                  value={formData.specs?.reason ?? formData.specs?.notes ?? ""}
+                  onChange={(e) => handleSpecChange('reason', e.target.value)}
                   rows={3}
-                  placeholder="ข้อมูลเพิ่มเติมเกี่ยวกับครุภัณฑ์"
+                  placeholder="ระบุเหตุผลของการจัดซื้อหรือการได้มาของครุภัณฑ์"
                 />
               </div>
             </div>

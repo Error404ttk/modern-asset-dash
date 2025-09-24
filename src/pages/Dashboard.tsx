@@ -11,6 +11,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
   Table,
   TableBody,
   TableCell,
@@ -82,6 +90,8 @@ export default function Dashboard() {
   const [yearOptions, setYearOptions] = useState<string[]>([]);
   const [allEquipment, setAllEquipment] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showMoreCharts, setShowMoreCharts] = useState(false);
 
   const roleLabels: Record<string, string> = {
     user: "ผู้ใช้งาน",
@@ -637,6 +647,277 @@ export default function Dashboard() {
     });
   }, [allEquipment, searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter]);
 
+  // Stats computed from filtered equipment to reflect current filters
+  const filteredStats = useMemo(() => {
+    const total = filteredEquipment.length;
+    const working = filteredEquipment.filter((e: any) => e.status === 'available').length;
+    const broken = filteredEquipment.filter((e: any) => e.status === 'damaged').length;
+    const maintenance = filteredEquipment.filter((e: any) => e.status === 'maintenance').length;
+    const threeMonthsFromNow = new Date();
+    threeMonthsFromNow.setMonth(threeMonthsFromNow.getMonth() + 3);
+    const expired = filteredEquipment.filter((e: any) => {
+      if (!e.warranty_end) return false;
+      const warrantyDate = new Date(e.warranty_end);
+      return warrantyDate <= threeMonthsFromNow;
+    }).length;
+    return { total, working, broken, maintenance, expired };
+  }, [filteredEquipment]);
+
+  const filteredAdditionalStats = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const ages = filteredEquipment
+      .filter((item: any) => item.purchase_date)
+      .map((item: any) => currentYear - new Date(item.purchase_date).getFullYear());
+    const avgAge = ages.length > 0 ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length) : 0;
+    const utilizationRate = filteredStats.total > 0 ? Math.round((filteredStats.working / filteredStats.total) * 100) : 0;
+    const totalValue = filteredEquipment.length * 50000; // same heuristic as original
+    return { avgAge, utilizationRate, totalValue };
+  }, [filteredEquipment, filteredStats.total, filteredStats.working]);
+
+  // Derived analytics based on filtered equipment so charts reflect filters
+  const {
+    typeDistributionFiltered,
+    departmentDistributionFiltered,
+    brandDistributionFiltered,
+    cpuDistributionFiltered,
+    ramDistributionFiltered,
+    osDistributionFiltered,
+    yearDistributionFiltered,
+    bookValueTrendFiltered,
+    agingByDepartmentFiltered,
+    survivalCurveFiltered,
+    heatmapDataFiltered,
+    depreciationByTypeFiltered,
+  } = useMemo(() => {
+    const COLORS_LOCAL = COLORS;
+    const result: any = {};
+
+    const getSpecValueLocal = (specs: any, keys: string[]): string => {
+      if (!specs) return "";
+      for (const key of keys) {
+        if (specs[key] !== undefined && specs[key] !== null) {
+          const value = String(specs[key]).trim();
+          if (value.length > 0) return value;
+        }
+      }
+      return "";
+    };
+
+    // Type distribution
+    const typeCount: Record<string, number> = {};
+    filteredEquipment.forEach((item: any) => {
+      const t = item.type || "ไม่ระบุ";
+      typeCount[t] = (typeCount[t] || 0) + 1;
+    });
+    result.typeDistributionFiltered = Object.entries(typeCount).map(([name, value]) => ({ name, value, type: name }));
+
+    // Department distribution
+    const deptCount: Record<string, number> = {};
+    filteredEquipment.forEach((item: any) => {
+      const departmentName = (item.specs?.department ?? '').toString().trim() || 'ไม่ระบุหน่วยงาน';
+      deptCount[departmentName] = (deptCount[departmentName] || 0) + 1;
+    });
+    result.departmentDistributionFiltered = Object.entries(deptCount)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    // Brand distribution (Top 10)
+    const brandCount: Record<string, number> = {};
+    filteredEquipment.forEach((item: any) => {
+      if (item.brand) brandCount[item.brand] = (brandCount[item.brand] || 0) + 1;
+    });
+    result.brandDistributionFiltered = Object.entries(brandCount)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    // CPU distribution (Top 8)
+    const cpuCount: Record<string, number> = {};
+    filteredEquipment.forEach((item: any) => {
+      if (item.specs?.cpu) {
+        const cpu = item.specs.cpu;
+        cpuCount[cpu] = (cpuCount[cpu] || 0) + 1;
+      }
+    });
+    result.cpuDistributionFiltered = Object.entries(cpuCount)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+
+    // RAM distribution
+    const ramCount: Record<string, number> = {};
+    filteredEquipment.forEach((item: any) => {
+      const ramRaw = getSpecValueLocal(item.specs, ['ramGb', 'ram']);
+      if (!ramRaw) return;
+      const normalized = /^[0-9]+(\.[0-9]+)?$/.test(ramRaw) ? `${ramRaw} GB` : ramRaw;
+      ramCount[normalized] = (ramCount[normalized] || 0) + 1;
+    });
+    result.ramDistributionFiltered = Object.entries(ramCount).map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    // OS distribution
+    const osCount: Record<string, number> = {};
+    filteredEquipment.forEach((item: any) => {
+      const osRaw = getSpecValueLocal(item.specs, ['operatingSystem', 'os']);
+      if (!osRaw) return;
+      osCount[osRaw] = (osCount[osRaw] || 0) + 1;
+    });
+    result.osDistributionFiltered = Object.entries(osCount).map(([name, value]) => ({ name, value }));
+
+    // Year distribution
+    const yearCount: Record<string, number> = {};
+    filteredEquipment.forEach((item: any) => {
+      if (item.purchase_date) {
+        const year = new Date(item.purchase_date).getFullYear().toString();
+        yearCount[year] = (yearCount[year] || 0) + 1;
+      }
+    });
+    result.yearDistributionFiltered = Object.entries(yearCount)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => parseInt(a.name) - parseInt(b.name));
+
+    // Advanced analytics
+    const bookValueByYear: Record<string, { total: number; aged: number }> = {};
+    const agingDepartmentMap: Record<string, { count: number; value: number }> = {};
+    const survivalBuckets: Record<number, { alive: number; total: number }> = {};
+    const departmentYearCounts: Record<string, Record<string, { total: number; active: number; inactive: number }>> = {};
+    const depreciationMap: Record<string, { depreciation: number; remaining: number; total: number }> = {};
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const msPerYear = 1000 * 60 * 60 * 24 * 365.25;
+    const usefulLifeYears = 5;
+    const activeStatuses = new Set(["available", "borrowed", "maintenance"]);
+
+    const extractPrice = (rawPrice: any): number | null => {
+      if (rawPrice === null || rawPrice === undefined) return null;
+      const numeric = Number(String(rawPrice).replace(/[^0-9.]/g, ""));
+      return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    filteredEquipment.forEach((item: any) => {
+      const purchaseDate = item.purchase_date ? new Date(item.purchase_date) : null;
+      const typeLabel = item.type || "ไม่ระบุ";
+      const departmentName = (item.specs?.department ?? "").toString().trim() || "ไม่ระบุหน่วยงาน";
+      const price = extractPrice(item.specs?.price) ?? 50000;
+
+      let ageYears = 0;
+      let purchaseYear: number | null = null;
+      if (purchaseDate && !isNaN(purchaseDate.getTime())) {
+        ageYears = (today.getTime() - purchaseDate.getTime()) / msPerYear;
+        purchaseYear = purchaseDate.getFullYear();
+
+        const depreciationPerYear = price / usefulLifeYears;
+        for (let year = purchaseYear; year <= currentYear; year++) {
+          const ageAtYear = Math.max(0, year - purchaseYear);
+          const accumulated = Math.min(ageAtYear, usefulLifeYears) * depreciationPerYear;
+          const remaining = Math.max(price - accumulated, 0);
+          const key = year.toString();
+
+          if (!bookValueByYear[key]) bookValueByYear[key] = { total: 0, aged: 0 };
+          bookValueByYear[key].total += remaining;
+          if (ageAtYear >= usefulLifeYears) bookValueByYear[key].aged += remaining;
+        }
+
+        if (!departmentYearCounts[departmentName]) departmentYearCounts[departmentName] = {};
+        const yearKey = purchaseYear.toString();
+        if (!departmentYearCounts[departmentName][yearKey]) {
+          departmentYearCounts[departmentName][yearKey] = { total: 0, active: 0, inactive: 0 };
+        }
+        departmentYearCounts[departmentName][yearKey].total += 1;
+        if (activeStatuses.has(item.status)) departmentYearCounts[departmentName][yearKey].active += 1;
+        else departmentYearCounts[departmentName][yearKey].inactive += 1;
+      }
+
+      const depreciationPerYear = price / usefulLifeYears;
+      const accumulatedCurrent = Math.min(Math.max(ageYears, 0), usefulLifeYears) * depreciationPerYear;
+      const remainingCurrent = Math.max(price - accumulatedCurrent, 0);
+
+      if (ageYears >= usefulLifeYears) {
+        if (!agingDepartmentMap[departmentName]) agingDepartmentMap[departmentName] = { count: 0, value: 0 };
+        agingDepartmentMap[departmentName].count += 1;
+        agingDepartmentMap[departmentName].value += remainingCurrent;
+      }
+
+      const ageFloor = Math.max(0, Math.floor(ageYears));
+      for (let age = 0; age <= ageFloor; age++) {
+        if (!survivalBuckets[age]) survivalBuckets[age] = { total: 0, alive: 0 };
+        survivalBuckets[age].total += 1;
+        if (activeStatuses.has(item.status)) survivalBuckets[age].alive += 1;
+      }
+
+      if (!depreciationMap[typeLabel]) depreciationMap[typeLabel] = { depreciation: 0, remaining: 0, total: 0 };
+      depreciationMap[typeLabel].depreciation += accumulatedCurrent;
+      depreciationMap[typeLabel].remaining += remainingCurrent;
+      depreciationMap[typeLabel].total += price;
+    });
+
+    result.bookValueTrendFiltered = Object.entries(bookValueByYear)
+      .map(([year, values]) => ({ year, totalValue: Number(values.total.toFixed(2)), agedValue: Number(values.aged.toFixed(2)) }))
+      .sort((a, b) => parseInt(a.year) - parseInt(b.year));
+
+    result.agingByDepartmentFiltered = Object.entries(agingDepartmentMap)
+      .map(([department, values]) => ({ department, count: values.count, value: Number(values.value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    result.survivalCurveFiltered = Object.entries(survivalBuckets)
+      .map(([age, counts]) => ({ age: Number(age), survivalRate: counts.total > 0 ? Number(((counts.alive / counts.total) * 100).toFixed(1)) : 0 }))
+      .sort((a, b) => a.age - b.age);
+
+    const departmentTotals = Object.entries(departmentYearCounts).map(([department, yearMap]) => ({
+      department,
+      total: Object.values(yearMap).reduce((sum, entry) => sum + entry.total, 0),
+    }));
+    const topDepartments = departmentTotals.sort((a, b) => b.total - a.total).slice(0, 6).map((item) => item.department);
+    const heatmapYears = Array.from(new Set(
+      Object.values(departmentYearCounts).flatMap((yearMap) => Object.keys(yearMap))
+    ))
+      .map((v) => String(v))
+      .sort((a, b) => parseInt(a) - parseInt(b));
+
+    if (topDepartments.length > 0 && heatmapYears.length > 0) {
+      let maxCount = 0;
+      const matrix = topDepartments.map((department) => {
+        const values = heatmapYears.map((year) => {
+          const cell = departmentYearCounts[department]?.[year];
+          const total = cell?.total ?? 0;
+          const active = cell?.active ?? 0;
+          const inactive = cell?.inactive ?? 0;
+          maxCount = Math.max(maxCount, total);
+          return { year, total, active, inactive };
+        });
+        return { department, values };
+      });
+      result.heatmapDataFiltered = { departments: topDepartments, years: heatmapYears, matrix, maxCount };
+    } else {
+      result.heatmapDataFiltered = null;
+    }
+
+    result.depreciationByTypeFiltered = Object.entries(depreciationMap)
+      .map(([type, values]) => ({ type, depreciation: Number(values.depreciation.toFixed(2)), remaining: Number(values.remaining.toFixed(2)), total: Number(values.total.toFixed(2)) }))
+      .sort((a, b) => b.depreciation - a.depreciation);
+
+    return result;
+  }, [filteredEquipment]);
+
+  // Pagination logic (10 per page)
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredEquipment.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const pagedEquipment = filteredEquipment.slice(startIndex, endIndex);
+
+  // Reset page when filters or data change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, allEquipment.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   const isDefaultFilters =
     searchTerm.trim() === "" &&
     typeFilter === "all" &&
@@ -674,7 +955,142 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Search & Filters */}
+      {/* Stats (move to top) */}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-6">
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              ครุภัณฑ์ทั้งหมด
+            </CardTitle>
+            <Computer className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.total}</div>
+            <p className="text-xs text-muted-foreground">
+              จำนวนครุภัณฑ์ทั้งหมด
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              ใช้งานปกติ
+            </CardTitle>
+            <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-success">{filteredStats.working}</div>
+            <p className="text-xs text-muted-foreground">
+              {filteredStats.total > 0 ? (filteredStats.working / filteredStats.total * 100).toFixed(1) : 0}% ของทั้งหมด
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              ชำรุด
+            </CardTitle>
+            <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-destructive">{filteredStats.broken}</div>
+            <p className="text-xs text-muted-foreground">
+              ต้องซ่อมแซม
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              ซ่อมบำรุง
+            </CardTitle>
+            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-warning" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-warning">{filteredStats.maintenance}</div>
+            <p className="text-xs text-muted-foreground">
+              อยู่ระหว่างดำเนินการ
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              ประกันหมดอายุ
+            </CardTitle>
+            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-muted-foreground">{filteredStats.expired}</div>
+            <p className="text-xs text-muted-foreground">
+              ใน 3 เดือนข้างหน้า
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Additional Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              อายุเฉลี่ย
+            </CardTitle>
+            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-info" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-info">{filteredAdditionalStats.avgAge}</div>
+            <p className="text-xs text-muted-foreground">ปี</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              อัตราการใช้งาน
+            </CardTitle>
+            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-success">{filteredAdditionalStats.utilizationRate}%</div>
+            <p className="text-xs text-muted-foreground">ของทั้งหมด</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              มูลค่าประมาณ
+            </CardTitle>
+            <Computer className="h-3 w-3 sm:h-4 sm:w-4 text-accent" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-accent">{(filteredAdditionalStats.totalValue / 1000000).toFixed(1)}M</div>
+            <p className="text-xs text-muted-foreground">บาท</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft border-border">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+              หน่วยงาน
+            </CardTitle>
+            <Building2 className="h-3 w-3 sm:h-4 sm:w-4 text-secondary" />
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-xl sm:text-2xl font-bold text-secondary">{departmentDistributionFiltered.length}</div>
+            <p className="text-xs text-muted-foreground">หน่วยงาน</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search & Filters (moved below stats) */}
       <Card className="shadow-soft border-border">
         <CardHeader className="space-y-1">
           <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
@@ -777,6 +1193,7 @@ export default function Dashboard() {
                   ไม่พบข้อมูลที่ตรงกับตัวกรองที่เลือก
                 </div>
               ) : (
+                <>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -789,7 +1206,7 @@ export default function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredEquipment.map((item: any) => {
+                    {pagedEquipment.map((item: any) => {
                       const departmentName = (item.specs?.department ?? "").toString().trim() || "ไม่ระบุหน่วยงาน";
                       const purchaseYear = item.purchase_date
                         ? new Date(item.purchase_date).getFullYear().toString()
@@ -797,7 +1214,7 @@ export default function Dashboard() {
 
                       return (
                         <TableRow key={item.id} className="hover:bg-muted/50">
-                          <TableCell className="font-medium">{item.asset_number}</TableCell>
+                          <TableCell className="font-medium">{item.asset_number}/{item.quantity ?? 1}</TableCell>
                           <TableCell>
                             <div className="space-y-1">
                               <p className="font-medium text-sm">{item.name}</p>
@@ -822,143 +1239,49 @@ export default function Dashboard() {
                     })}
                   </TableBody>
                 </Table>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between py-4">
+                  <p className="text-sm text-muted-foreground">
+                    แสดง {filteredEquipment.length === 0 ? 0 : startIndex + 1} - {Math.min(endIndex, filteredEquipment.length)} จาก {filteredEquipment.length} รายการ
+                  </p>
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          onClick={() => currentPage > 1 && setCurrentPage(currentPage - 1)}
+                          className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                        />
+                      </PaginationItem>
+                      {[...Array(totalPages)].map((_, i) => (
+                        <PaginationItem key={i}>
+                          <PaginationLink
+                            isActive={currentPage === i + 1}
+                            onClick={() => setCurrentPage(i + 1)}
+                          >
+                            {i + 1}
+                          </PaginationLink>
+                        </PaginationItem>
+                      ))}
+                      <PaginationItem>
+                        <PaginationNext
+                          onClick={() => currentPage < totalPages && setCurrentPage(currentPage + 1)}
+                          className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+                </>
               )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 md:gap-6">
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              ครุภัณฑ์ทั้งหมด
-            </CardTitle>
-            <Computer className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-primary">{stats.total}</div>
-            <p className="text-xs text-muted-foreground">
-              จำนวนครุภัณฑ์ทั้งหมด
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              ใช้งานปกติ
-            </CardTitle>
-            <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-success">{stats.working}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats.total > 0 ? (stats.working / stats.total * 100).toFixed(1) : 0}% ของทั้งหมด
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              ชำรุด
-            </CardTitle>
-            <AlertTriangle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-destructive">{stats.broken}</div>
-            <p className="text-xs text-muted-foreground">
-              ต้องซ่อมแซม
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              ซ่อมบำรุง
-            </CardTitle>
-            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-warning" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-warning">{stats.maintenance}</div>
-            <p className="text-xs text-muted-foreground">
-              อยู่ระหว่างดำเนินการ
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              ประกันหมดอายุ
-            </CardTitle>
-            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-muted-foreground">{stats.expired}</div>
-            <p className="text-xs text-muted-foreground">
-              ใน 3 เดือนข้างหน้า
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Additional Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              อายุเฉลี่ย
-            </CardTitle>
-            <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-info" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-info">{additionalStats.avgAge}</div>
-            <p className="text-xs text-muted-foreground">ปี</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              อัตราการใช้งาน
-            </CardTitle>
-            <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-success" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-success">{additionalStats.utilizationRate}%</div>
-            <p className="text-xs text-muted-foreground">ของทั้งหมด</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              มูลค่าประมาณ
-            </CardTitle>
-            <Computer className="h-3 w-3 sm:h-4 sm:w-4 text-accent" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-accent">{(additionalStats.totalValue / 1000000).toFixed(1)}M</div>
-            <p className="text-xs text-muted-foreground">บาท</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gradient-card shadow-soft border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-              หน่วยงาน
-            </CardTitle>
-            <Building2 className="h-3 w-3 sm:h-4 sm:w-4 text-secondary" />
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-xl sm:text-2xl font-bold text-secondary">{departmentDistribution.length}</div>
-            <p className="text-xs text-muted-foreground">หน่วยงาน</p>
-          </CardContent>
-        </Card>
+      {/* Charts Controls */}
+      <div className="flex justify-end">
+        <Button variant="secondary" onClick={() => setShowMoreCharts((v) => !v)}>
+          {showMoreCharts ? "ซ่อน กราฟเพิ่มเติม" : "แสดง กราฟเพิ่มเติม"}
+        </Button>
       </div>
 
       {/* Charts Grid */}
@@ -976,7 +1299,7 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={typeDistribution}
+                  data={typeDistributionFiltered}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -985,7 +1308,7 @@ export default function Dashboard() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {typeDistribution.map((entry, index) => (
+                  {typeDistributionFiltered.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -1008,7 +1331,7 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={departmentDistribution}
+                  data={departmentDistributionFiltered}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -1017,7 +1340,7 @@ export default function Dashboard() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {departmentDistribution.map((entry, index) => (
+                  {departmentDistributionFiltered.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -1028,6 +1351,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        {/* Additional charts (hidden until toggled) */}
+        {showMoreCharts && <>
         {/* Equipment by Brand - Bar Chart */}
         <Card className="shadow-soft border-border">
           <CardHeader>
@@ -1038,7 +1363,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={brandDistribution}>
+              <BarChart data={brandDistributionFiltered}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
                 <YAxis />
@@ -1059,7 +1384,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={cpuDistribution}>
+              <BarChart data={cpuDistributionFiltered}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
                 <YAxis />
@@ -1082,7 +1407,7 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={ramDistribution}
+                  data={ramDistributionFiltered}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -1091,7 +1416,7 @@ export default function Dashboard() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {ramDistribution.map((entry, index) => (
+                  {ramDistributionFiltered.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -1114,7 +1439,7 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
-                  data={osDistribution}
+                  data={osDistributionFiltered}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
@@ -1123,7 +1448,7 @@ export default function Dashboard() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {osDistribution.map((entry, index) => (
+                  {osDistributionFiltered.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -1144,7 +1469,7 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={yearDistribution}>
+            <BarChart data={yearDistributionFiltered}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis />
@@ -1164,11 +1489,11 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {bookValueTrend.length === 0 ? (
+          {bookValueTrendFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลมูลค่าตามบัญชี</p>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={bookValueTrend}>
+              <LineChart data={bookValueTrendFiltered}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="year" />
                 <YAxis tickFormatter={(value) => `${(Number(value) / 1_000_000).toFixed(1)}M`} />
@@ -1191,11 +1516,11 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {agingByDepartment.length === 0 ? (
+          {agingByDepartmentFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">ยังไม่มีครุภัณฑ์ที่มีอายุเกิน 5 ปี</p>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart data={agingByDepartment}>
+              <ComposedChart data={agingByDepartmentFiltered}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="department" interval={0} angle={-20} textAnchor="end" height={80} />
                 <YAxis yAxisId="left" allowDecimals={false} />
@@ -1224,11 +1549,11 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {survivalCurve.length === 0 ? (
+          {survivalCurveFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">ยังไม่มีข้อมูลสำหรับคำนวณอายุครุภัณฑ์</p>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={survivalCurve}>
+              <LineChart data={survivalCurveFiltered}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="age" label={{ value: "อายุ (ปี)", position: "insideBottom", offset: -5 }} />
                 <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
@@ -1251,7 +1576,7 @@ export default function Dashboard() {
           <p className="text-sm text-muted-foreground">เข้มขึ้น = มีจำนวนครุภัณฑ์มากในปีนั้น • ตัวเลขล่าง: ใช้งานอยู่ / ไม่พร้อมใช้งาน</p>
         </CardHeader>
         <CardContent>
-          {!heatmapData ? (
+          {!heatmapDataFiltered ? (
             <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลการจัดซื้อที่เพียงพอสำหรับสร้าง Heatmap</p>
           ) : (
             <div className="overflow-x-auto">
@@ -1259,17 +1584,17 @@ export default function Dashboard() {
                 <thead>
                   <tr>
                     <th className="sticky left-0 bg-background px-3 py-2 text-left">หน่วยงาน</th>
-                    {heatmapData.years.map((year) => (
+                    {heatmapDataFiltered.years.map((year) => (
                       <th key={year} className="px-3 py-2 text-left">{year}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {heatmapData.matrix.map((row) => (
+                  {heatmapDataFiltered.matrix.map((row) => (
                     <tr key={row.department}>
                       <td className="sticky left-0 bg-background px-3 py-2 font-medium">{row.department}</td>
                       {row.values.map((cell) => {
-                        const intensity = heatmapData.maxCount > 0 ? cell.total / heatmapData.maxCount : 0;
+                        const intensity = heatmapDataFiltered.maxCount > 0 ? cell.total / heatmapDataFiltered.maxCount : 0;
                         const background = intensity === 0 ? "transparent" : `rgba(37, 99, 235, ${0.15 + intensity * 0.7})`;
                         const textColor = intensity > 0.6 ? "text-white" : "text-foreground";
                         return (
@@ -1369,13 +1694,13 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {depreciationByType.length === 0 ? (
+          {depreciationByTypeFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">
               ไม่มีข้อมูลค่าเสื่อมราคาที่สามารถคำนวณได้
             </p>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={depreciationByType}>
+              <BarChart data={depreciationByTypeFiltered}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="type" />
                 <YAxis />
@@ -1388,6 +1713,7 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+      </>}
       </div>
     </div>;
 }

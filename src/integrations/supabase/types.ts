@@ -68,10 +68,14 @@ export type Database = {
           borrower_contact: string | null
           borrower_name: string
           created_at: string
+          department: string | null
           equipment_id: string
           expected_return_at: string | null
           id: string
           notes: string | null
+          return_delay_days: number | null
+          return_condition: string | null
+          return_receiver: string | null
           returned_at: string | null
           status: string
           user_id: string
@@ -81,10 +85,14 @@ export type Database = {
           borrower_contact?: string | null
           borrower_name: string
           created_at?: string
+          department?: string | null
           equipment_id: string
           expected_return_at?: string | null
           id?: string
           notes?: string | null
+          return_delay_days?: number | null
+          return_condition?: string | null
+          return_receiver?: string | null
           returned_at?: string | null
           status?: string
           user_id: string
@@ -94,10 +102,14 @@ export type Database = {
           borrower_contact?: string | null
           borrower_name?: string
           created_at?: string
+          department?: string | null
           equipment_id?: string
           expected_return_at?: string | null
           id?: string
           notes?: string | null
+          return_delay_days?: number | null
+          return_condition?: string | null
+          return_receiver?: string | null
           returned_at?: string | null
           status?: string
           user_id?: string

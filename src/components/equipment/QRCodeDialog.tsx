@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import QRCode from "qrcode";
 import {
   Dialog,
@@ -31,6 +31,29 @@ export default function QRCodeDialog({ open, onOpenChange, equipment }: QRCodeDi
   
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const generateQRCode = useCallback(async () => {
+    try {
+      console.log('Generating QR Code for equipment:', equipment);
+      const qrUrl = `${window.location.origin}/equipment/${equipment.id}`;
+      console.log('QR Code URL:', qrUrl);
+      const canvas = canvasRef.current;
+      console.log('Canvas element:', canvas);
+      if (canvas) {
+        await QRCode.toCanvas(canvas, qrUrl, {
+          width: 256,
+          margin: 2,
+          color: { dark: '#000000', light: '#ffffff' }
+        });
+        const dataUrl = canvas.toDataURL('image/png');
+        setQrDataUrl(dataUrl);
+        console.log('QR Code generated successfully');
+      } else {
+        console.error('Canvas element not found');
+      }
+    } catch (error) {
+      console.error('Error generating QR code:', error);
+    }
+  }, [equipment]);
   const setCanvasRef = (node: HTMLCanvasElement | null) => {
     canvasRef.current = node;
     if (node && open && equipment) {
@@ -45,39 +68,7 @@ export default function QRCodeDialog({ open, onOpenChange, equipment }: QRCodeDi
       console.log('Calling generateQRCode...');
       generateQRCode();
     }
-  }, [open, equipment]);
-
-  const generateQRCode = async () => {
-    try {
-      console.log('Generating QR Code for equipment:', equipment);
-      
-      // Create a simple URL that points to the equipment detail page
-      const qrUrl = `${window.location.origin}/equipment/${equipment.id}`;
-      console.log('QR Code URL:', qrUrl);
-
-      const canvas = canvasRef.current;
-      console.log('Canvas element:', canvas);
-      
-      if (canvas) {
-        await QRCode.toCanvas(canvas, qrUrl, {
-          width: 256,
-          margin: 2,
-          color: {
-            dark: '#000000',
-            light: '#ffffff'
-          }
-        });
-
-        const dataUrl = canvas.toDataURL('image/png');
-        setQrDataUrl(dataUrl);
-        console.log('QR Code generated successfully');
-      } else {
-        console.error('Canvas element not found');
-      }
-    } catch (error) {
-      console.error('Error generating QR code:', error);
-    }
-  };
+  }, [open, equipment, generateQRCode]);
 
   const handleDownload = () => {
     if (qrDataUrl) {
@@ -118,7 +109,7 @@ export default function QRCodeDialog({ open, onOpenChange, equipment }: QRCodeDi
                 function doPrint() { window.focus(); window.print(); }
                 if (img.complete) { doPrint(); }
                 else { img.onload = doPrint; img.onerror = doPrint; }
-              <\/script>
+              </script>
             </body>
           </html>`;
         printWindow.document.open();

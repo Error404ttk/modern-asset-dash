@@ -115,11 +115,15 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
     return <IconComponent className="h-4 w-4 text-muted-foreground" />;
   };
 
-  const specs = equipment.specs || {};
+  const specs = equipment && typeof equipment.specs === "object" && equipment.specs !== null && !Array.isArray(equipment.specs)
+    ? (equipment.specs as Record<string, unknown>)
+    : {};
   const fullAssetNumber = equipment.quantity
     ? `${equipment.assetNumber}/${equipment.quantity}`
     : equipment.assetNumber;
+  const reason = typeof specs.reason === "string" ? specs.reason.trim() : "";
   const notes = typeof specs.notes === "string" ? specs.notes.trim() : "";
+  const reasonText = reason || notes;
   const primarySpecs = PRIMARY_SPEC_ORDER
     .map((key) => {
       const rawValue = specs[key];
@@ -200,12 +204,12 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
                 <div className="mt-1">{getStatusBadge(equipment.status)}</div>
               </div>
 
-              {notes && (
+              {reasonText && (
                 <>
                   <Separator />
                   <div>
-                    <label className="text-sm font-medium text-muted-foreground">หมายเหตุ</label>
-                    <p className="mt-1 whitespace-pre-line text-sm text-foreground">{notes}</p>
+                    <label className="text-sm font-medium text-muted-foreground">เหตุผล</label>
+                    <p className="mt-1 whitespace-pre-line text-sm text-foreground">{reasonText}</p>
                   </div>
                 </>
               )}

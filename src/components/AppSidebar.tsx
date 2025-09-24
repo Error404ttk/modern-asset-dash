@@ -13,13 +13,13 @@ const menuItems = [{
   url: "/equipment",
   icon: Computer
 }, {
+  title: "สแกน QR",
+  url: "/scan",
+  icon: QrCode
+}, {
   title: "เพิ่มครุภัณฑ์",
   url: "/equipment/add",
   icon: Plus
-}, {
-  title: "รายงาน",
-  url: "/reports",
-  icon: FileText
 }, {
   title: "การยืม-คืน",
   url: "/borrow-return",
@@ -122,18 +122,24 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* QR Scanner Section */}
-        {!isCollapsed && <div className="p-4 mt-auto">
-            <div className="bg-gradient-card p-4 rounded-lg border border-border">
-              <div className="flex items-center space-x-2 text-primary">
-                <QrCode className="h-5 w-5" />
-                <span className="text-sm font-medium">สแกน QR Code</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                สแกนเพื่อดูข้อมูลครุภัณฑ์
-              </p>
-            </div>
-            </div>}
+        {/* QR Scanner Section (clickable) */}
+        {!isCollapsed && (
+          <div className="p-4 mt-auto">
+            <NavLink to="/scan">
+              {({ isActive }) => (
+                <div className={`bg-gradient-card p-4 rounded-lg border border-border transition hover:bg-muted/60 cursor-pointer ${isActive ? "ring-2 ring-primary" : ""}`}>
+                  <div className="flex items-center space-x-2 text-primary">
+                    <QrCode className="h-5 w-5" />
+                    <span className="text-sm font-medium">สแกน QR Code</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    สแกนเพื่อดูข้อมูลครุภัณฑ์
+                  </p>
+                </div>
+              )}
+            </NavLink>
+          </div>
+        )}
         <SidebarFooter>
           <div className={isCollapsed ? "flex flex-col items-center gap-2 p-2" : "p-4 space-y-2"}>
             {profile && !isCollapsed && (

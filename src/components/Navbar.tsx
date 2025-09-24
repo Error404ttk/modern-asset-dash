@@ -1,4 +1,5 @@
-import { Bell, Search, User, Monitor } from "lucide-react";
+import { Bell, Search, User, Monitor, QrCode } from "lucide-react";
+import { Link } from "react-router-dom";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -55,6 +56,16 @@ export function Navbar() {
 
       {/* Right side */}
       <div className="flex flex-none items-center gap-4">
+        {/* Scan QR */}
+        <Link to="/scan" className="hidden sm:block">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-primary-foreground/90 border-white/30 hover:bg-white/10"
+          >
+            <QrCode className="h-4 w-4 mr-2" /> สแกน QR
+          </Button>
+        </Link>
         {/* Notifications */}
         <Button
           variant="ghost"
