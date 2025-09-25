@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -26,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Computer, AlertTriangle, CheckCircle, Clock, TrendingUp, Monitor, Printer, Server, Loader2, Building2, HardDrive, Cpu, Activity, Search } from "lucide-react";
+import { Computer, AlertTriangle, CheckCircle, Clock, TrendingUp, Monitor, Printer, Server, Loader2, Building2, HardDrive, Cpu, Activity, Search, Maximize2, type LucideIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart } from "recharts";
@@ -42,6 +43,47 @@ const STATUS_OPTIONS = [
   { value: "disposed", label: "จำหน่าย" },
   { value: "lost", label: "สูญหาย" },
 ];
+
+type ChartId =
+  | "typeDistribution"
+  | "departmentDistribution"
+  | "brandDistribution"
+  | "cpuDistribution"
+  | "ramDistribution"
+  | "osDistribution"
+  | "yearDistribution"
+  | "bookValueTrend"
+  | "agingByDepartment"
+  | "survivalCurve"
+  | "depreciationByType";
+
+const chartTitles: Record<ChartId, string> = {
+  typeDistribution: "จำนวนครุภัณฑ์ตามประเภท",
+  departmentDistribution: "จำนวนครุภัณฑ์ตามหน่วยงาน",
+  brandDistribution: "ครุภัณฑ์ตามยี่ห้อ (Top 10)",
+  cpuDistribution: "CPU ที่ใช้ (Top 8)",
+  ramDistribution: "RAM ที่ใช้",
+  osDistribution: "ระบบปฏิบัติการ",
+  yearDistribution: "ครุภัณฑ์ตามปีที่ซื้อ",
+  bookValueTrend: "มูลค่าตามบัญชี (Book Value) ตามปี",
+  agingByDepartment: "ครุภัณฑ์ ≥ 5 ปี แยกตามหน่วยงาน",
+  survivalCurve: "อัตราการคงอยู่ของครุภัณฑ์ (Survival Curve)",
+  depreciationByType: "ค่าเสื่อมราคาครุภัณฑ์ตามประเภท",
+};
+
+const chartDimensions: Record<ChartId, { regular: number; expanded: number }> = {
+  typeDistribution: { regular: 300, expanded: 420 },
+  departmentDistribution: { regular: 300, expanded: 420 },
+  brandDistribution: { regular: 300, expanded: 420 },
+  cpuDistribution: { regular: 300, expanded: 420 },
+  ramDistribution: { regular: 300, expanded: 420 },
+  osDistribution: { regular: 300, expanded: 420 },
+  yearDistribution: { regular: 300, expanded: 420 },
+  bookValueTrend: { regular: 320, expanded: 460 },
+  agingByDepartment: { regular: 320, expanded: 460 },
+  survivalCurve: { regular: 320, expanded: 460 },
+  depreciationByType: { regular: 320, expanded: 460 },
+};
 export default function Dashboard() {
   const { toast } = useToast();
   const { profile } = useAuth();
@@ -92,6 +134,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [showMoreCharts, setShowMoreCharts] = useState(false);
+  const [expandedChart, setExpandedChart] = useState<ChartId | null>(null);
 
   const roleLabels: Record<string, string> = {
     user: "ผู้ใช้งาน",
@@ -900,6 +943,237 @@ export default function Dashboard() {
     return result;
   }, [filteredEquipment]);
 
+  const renderTypeDistributionChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <PieChart>
+        <Pie
+          data={typeDistributionFiltered}
+          cx="50%"
+          cy="50%"
+          labelLine={false}
+          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+          outerRadius={80}
+          fill="#8884d8"
+          dataKey="value"
+        >
+          {typeDistributionFiltered.map((entry, index) => (
+            <Cell key={`type-cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+
+  const renderDepartmentDistributionChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={departmentDistributionFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" angle={-20} textAnchor="end" interval={0} height={80} />
+        <YAxis allowDecimals={false} />
+        <Tooltip formatter={(value: number) => Number(value).toLocaleString("th-TH") } />
+        <Legend />
+        <Bar dataKey="value" name="จำนวนครุภัณฑ์" fill="#2563eb" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+
+  const renderBrandDistributionChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={brandDistributionFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} interval={0} />
+        <YAxis allowDecimals={false} />
+        <Tooltip formatter={(value: number) => Number(value).toLocaleString("th-TH") } />
+        <Legend />
+        <Bar dataKey="value" name="จำนวนครุภัณฑ์" fill="#8884d8" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+
+  const renderCpuDistributionChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={cpuDistributionFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} interval={0} />
+        <YAxis allowDecimals={false} />
+        <Tooltip />
+        <Legend />
+        <Bar dataKey="value" name="จำนวน" fill="#82ca9d" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+
+  const renderRamDistributionChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <PieChart>
+        <Pie
+          data={ramDistributionFiltered}
+          cx="50%"
+          cy="50%"
+          labelLine={false}
+          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+          outerRadius={80}
+          fill="#8884d8"
+          dataKey="value"
+        >
+          {ramDistributionFiltered.map((entry, index) => (
+            <Cell key={`ram-cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+
+  const renderOsDistributionChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <PieChart>
+        <Pie
+          data={osDistributionFiltered}
+          cx="50%"
+          cy="50%"
+          labelLine={false}
+          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+          outerRadius={80}
+          fill="#8884d8"
+          dataKey="value"
+        >
+          {osDistributionFiltered.map((entry, index) => (
+            <Cell key={`os-cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+
+  const renderYearDistributionChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={yearDistributionFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" />
+        <YAxis allowDecimals={false} />
+        <Tooltip formatter={(value: number) => Number(value).toLocaleString("th-TH") } />
+        <Legend />
+        <Bar dataKey="value" name="จำนวนครุภัณฑ์" fill="#ffc658" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+
+  const renderBookValueTrendChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={bookValueTrendFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="year" />
+        <YAxis tickFormatter={(value) => `${(Number(value) / 1_000_000).toFixed(1)}M`} />
+        <Tooltip formatter={(value: any) => Number(value).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} />
+        <Legend />
+        <Line type="monotone" dataKey="totalValue" name="มูลค่าคงเหลือรวม" stroke="#2563eb" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="agedValue" name="มูลค่า ≥ 5 ปี" stroke="#f43f5e" strokeWidth={2} strokeDasharray="5 3" activeDot={{ r: 6 }} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+
+  const renderAgingByDepartmentChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={agingByDepartmentFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="department" interval={0} angle={-20} textAnchor="end" height={80} />
+        <YAxis yAxisId="left" allowDecimals={false} />
+        <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => `${(Number(value) / 1000).toFixed(0)}k`} />
+        <Tooltip
+          formatter={(value: any, name) => {
+            if (name === "มูลค่าคงเหลือ (บาท)") {
+              return [Number(value).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 }), name];
+            }
+            return [value, name];
+          }}
+        />
+        <Legend />
+        <Bar yAxisId="left" dataKey="count" name="จำนวน (รายการ)" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+        <Line yAxisId="right" type="monotone" dataKey="value" name="มูลค่าคงเหลือ (บาท)" stroke="#f97316" strokeWidth={2} activeDot={{ r: 5 }} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+
+  const renderSurvivalCurveChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={survivalCurveFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="age" label={{ value: "อายุ (ปี)", position: "insideBottom", offset: -5 }} />
+        <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+        <Tooltip formatter={(value: any) => `${value}%`} />
+        <Legend />
+        <Line type="monotone" dataKey="survivalRate" name="เปอร์เซ็นต์ที่ยังใช้งาน" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+
+  const renderDepreciationByTypeChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={depreciationByTypeFiltered}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="type" interval={0} angle={-20} textAnchor="end" height={80} />
+        <YAxis tickFormatter={(value) => value.toLocaleString("th-TH") } />
+        <Tooltip formatter={(value: number) => Number(value).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} />
+        <Legend />
+        <Bar dataKey="depreciation" name="ค่าเสื่อมสะสม" fill="#ef4444" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="remaining" name="มูลค่าคงเหลือ" fill="#22c55e" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+
+  const chartRenderers: Record<ChartId, (height: number) => JSX.Element> = {
+    typeDistribution: renderTypeDistributionChart,
+    departmentDistribution: renderDepartmentDistributionChart,
+    brandDistribution: renderBrandDistributionChart,
+    cpuDistribution: renderCpuDistributionChart,
+    ramDistribution: renderRamDistributionChart,
+    osDistribution: renderOsDistributionChart,
+    yearDistribution: renderYearDistributionChart,
+    bookValueTrend: renderBookValueTrendChart,
+    agingByDepartment: renderAgingByDepartmentChart,
+    survivalCurve: renderSurvivalCurveChart,
+    depreciationByType: renderDepreciationByTypeChart,
+  };
+
+  const renderExpandedChart = (chartId: ChartId) => chartRenderers[chartId](chartDimensions[chartId].expanded);
+
+  type ChartHeaderProps = {
+    icon: LucideIcon;
+    iconClassName?: string;
+    title: string;
+    chartId: ChartId;
+    disabled?: boolean;
+    subtitle?: ReactNode;
+  };
+
+  const ChartHeader = ({ icon: Icon, iconClassName, title, chartId, disabled = false, subtitle }: ChartHeaderProps) => (
+    <CardHeader className="flex flex-row items-start justify-between space-y-0">
+      <div className="space-y-1">
+        <CardTitle className="flex items-center gap-2">
+          <Icon className={iconClassName ?? "h-5 w-5 text-primary"} />
+          {title}
+        </CardTitle>
+        {subtitle}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 text-muted-foreground"
+        onClick={() => setExpandedChart(chartId)}
+        disabled={disabled}
+      >
+        <Maximize2 className="h-4 w-4" />
+        <span className="sr-only">ขยายกราฟ {title}</span>
+      </Button>
+    </CardHeader>
+  );
+
   // Pagination logic (10 per page)
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(filteredEquipment.length / pageSize));
@@ -946,7 +1220,21 @@ export default function Dashboard() {
     );
   }
 
-  return <div className="space-y-8">
+  return (
+    <div className="space-y-8">
+      <Dialog open={!!expandedChart} onOpenChange={(open) => !open && setExpandedChart(null)}>
+        {expandedChart && (
+          <DialogContent className="max-w-5xl sm:max-w-6xl">
+            <DialogHeader>
+              <DialogTitle>{chartTitles[expandedChart]}</DialogTitle>
+            </DialogHeader>
+            <div className="mt-4" style={{ height: chartDimensions[expandedChart].expanded }}>
+              {renderExpandedChart(expandedChart)}
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -1287,281 +1575,176 @@ export default function Dashboard() {
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* Equipment by Type - Pie Chart */}
+        {/* Equipment by Type */}
         <Card className="shadow-soft border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-5 w-5 text-primary" />
-              จำนวนครุภัณฑ์ตามประเภท
-            </CardTitle>
-          </CardHeader>
+          <ChartHeader
+            icon={Server}
+            title={chartTitles.typeDistribution}
+            chartId="typeDistribution"
+            disabled={typeDistributionFiltered.length === 0}
+          />
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={typeDistributionFiltered}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {typeDistributionFiltered.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {typeDistributionFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลการกระจายตามประเภท</p>
+            ) : (
+              renderTypeDistributionChart(chartDimensions.typeDistribution.regular)
+            )}
           </CardContent>
         </Card>
 
-        {/* Equipment by Department - Pie Chart */}
+        {/* Equipment by Department */}
         <Card className="shadow-soft border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-primary" />
-              จำนวนครุภัณฑ์ตามหน่วยงาน
-            </CardTitle>
-          </CardHeader>
+          <ChartHeader
+            icon={Building2}
+            title={chartTitles.departmentDistribution}
+            chartId="departmentDistribution"
+            disabled={departmentDistributionFiltered.length === 0}
+          />
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={departmentDistributionFiltered}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={70}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {departmentDistributionFiltered.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {departmentDistributionFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลหน่วยงานสำหรับสร้างกราฟ</p>
+            ) : (
+              renderDepartmentDistributionChart(chartDimensions.departmentDistribution.regular)
+            )}
           </CardContent>
         </Card>
 
         {/* Additional charts (hidden until toggled) */}
         {showMoreCharts && <>
-        {/* Equipment by Brand - Bar Chart */}
+        {/* Equipment by Brand */}
         <Card className="shadow-soft border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Monitor className="h-5 w-5 text-primary" />
-              ครุภัณฑ์ตามยี่ห้อ (Top 10)
-            </CardTitle>
-          </CardHeader>
+          <ChartHeader
+            icon={Monitor}
+            title={chartTitles.brandDistribution}
+            chartId="brandDistribution"
+            disabled={brandDistributionFiltered.length === 0}
+          />
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={brandDistributionFiltered}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#8884d8" />
-              </BarChart>
-            </ResponsiveContainer>
+            {brandDistributionFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลยี่ห้อที่จะแสดง</p>
+            ) : (
+              renderBrandDistributionChart(chartDimensions.brandDistribution.regular)
+            )}
           </CardContent>
         </Card>
 
-        {/* CPU Distribution - Bar Chart */}
+        {/* CPU Distribution */}
         <Card className="shadow-soft border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Cpu className="h-5 w-5 text-primary" />
-              CPU ที่ใช้ (Top 8)
-            </CardTitle>
-          </CardHeader>
+          <ChartHeader
+            icon={Cpu}
+            title={chartTitles.cpuDistribution}
+            chartId="cpuDistribution"
+            disabled={cpuDistributionFiltered.length === 0}
+          />
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={cpuDistributionFiltered}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#82ca9d" />
-              </BarChart>
-            </ResponsiveContainer>
+            {cpuDistributionFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูล CPU ที่จะแสดง</p>
+            ) : (
+              renderCpuDistributionChart(chartDimensions.cpuDistribution.regular)
+            )}
           </CardContent>
         </Card>
 
-        {/* RAM Distribution - Pie Chart */}
+        {/* RAM Distribution */}
         <Card className="shadow-soft border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <HardDrive className="h-5 w-5 text-primary" />
-              RAM ที่ใช้
-            </CardTitle>
-          </CardHeader>
+          <ChartHeader
+            icon={HardDrive}
+            title={chartTitles.ramDistribution}
+            chartId="ramDistribution"
+            disabled={ramDistributionFiltered.length === 0}
+          />
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={ramDistributionFiltered}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {ramDistributionFiltered.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {ramDistributionFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูล RAM ที่จะแสดง</p>
+            ) : (
+              renderRamDistributionChart(chartDimensions.ramDistribution.regular)
+            )}
           </CardContent>
         </Card>
 
-        {/* OS Distribution - Pie Chart */}
+        {/* OS Distribution */}
         <Card className="shadow-soft border-border">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Computer className="h-5 w-5 text-primary" />
-              ระบบปฏิบัติการ
-            </CardTitle>
-          </CardHeader>
+          <ChartHeader
+            icon={Computer}
+            title={chartTitles.osDistribution}
+            chartId="osDistribution"
+            disabled={osDistributionFiltered.length === 0}
+          />
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={osDistributionFiltered}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {osDistributionFiltered.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            {osDistributionFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลระบบปฏิบัติการที่จะแสดง</p>
+            ) : (
+              renderOsDistributionChart(chartDimensions.osDistribution.regular)
+            )}
           </CardContent>
         </Card>
         
-        {/* Equipment by Purchase Year - Bar Chart */}
-      <Card className="shadow-soft border-border">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            ครุภัณฑ์ตามปีที่ซื้อ
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={yearDistributionFiltered}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#ffc658" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+        {/* Equipment by Purchase Year */}
+        <Card className="shadow-soft border-border">
+          <ChartHeader
+            icon={TrendingUp}
+            title={chartTitles.yearDistribution}
+            chartId="yearDistribution"
+            disabled={yearDistributionFiltered.length === 0}
+          />
+          <CardContent>
+            {yearDistributionFiltered.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลปีที่ซื้อที่จะแสดง</p>
+            ) : (
+              renderYearDistributionChart(chartDimensions.yearDistribution.regular)
+            )}
+          </CardContent>
+        </Card>
 
       {/* Book Value Trend */}
       <Card className="shadow-soft border-border">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            มูลค่าตามบัญชี (Book Value) ตามปี
-          </CardTitle>
-        </CardHeader>
+        <ChartHeader
+          icon={TrendingUp}
+          title={chartTitles.bookValueTrend}
+          chartId="bookValueTrend"
+          disabled={bookValueTrendFiltered.length === 0}
+        />
         <CardContent>
           {bookValueTrendFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">ไม่มีข้อมูลมูลค่าตามบัญชี</p>
           ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={bookValueTrendFiltered}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="year" />
-                <YAxis tickFormatter={(value) => `${(Number(value) / 1_000_000).toFixed(1)}M`} />
-                <Tooltip formatter={(value: any) => Number(value).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} />
-                <Legend />
-                <Line type="monotone" dataKey="totalValue" name="มูลค่าคงเหลือรวม" stroke="#2563eb" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="agedValue" name="มูลค่า ≥ 5 ปี" stroke="#f43f5e" strokeWidth={2} strokeDasharray="5 3" activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            renderBookValueTrendChart(chartDimensions.bookValueTrend.regular)
           )}
         </CardContent>
       </Card>
 
       {/* Aging Assets by Department */}
       <Card className="shadow-soft border-border">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-secondary" />
-            ครุภัณฑ์ ≥ 5 ปี แยกตามหน่วยงาน
-          </CardTitle>
-        </CardHeader>
+        <ChartHeader
+          icon={Building2}
+          iconClassName="h-5 w-5 text-secondary"
+          title={chartTitles.agingByDepartment}
+          chartId="agingByDepartment"
+          disabled={agingByDepartmentFiltered.length === 0}
+        />
         <CardContent>
           {agingByDepartmentFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">ยังไม่มีครุภัณฑ์ที่มีอายุเกิน 5 ปี</p>
           ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart data={agingByDepartmentFiltered}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="department" interval={0} angle={-20} textAnchor="end" height={80} />
-                <YAxis yAxisId="left" allowDecimals={false} />
-                <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => `${(Number(value) / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(value: any, name) => {
-                  if (name === "มูลค่าคงเหลือ (บาท)") {
-                    return [Number(value).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 }), name];
-                  }
-                  return [value, name];
-                }} />
-                <Legend />
-                <Bar yAxisId="left" dataKey="count" name="จำนวน (รายการ)" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="value" name="มูลค่าคงเหลือ (บาท)" stroke="#f97316" strokeWidth={2} activeDot={{ r: 5 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
+            renderAgingByDepartmentChart(chartDimensions.agingByDepartment.regular)
           )}
         </CardContent>
       </Card>
 
       {/* Survival Curve */}
       <Card className="shadow-soft border-border">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-accent" />
-            อัตราการคงอยู่ของครุภัณฑ์ (Survival Curve)
-          </CardTitle>
-        </CardHeader>
+        <ChartHeader
+          icon={Activity}
+          iconClassName="h-5 w-5 text-accent"
+          title={chartTitles.survivalCurve}
+          chartId="survivalCurve"
+          disabled={survivalCurveFiltered.length === 0}
+        />
         <CardContent>
           {survivalCurveFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">ยังไม่มีข้อมูลสำหรับคำนวณอายุครุภัณฑ์</p>
           ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={survivalCurveFiltered}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="age" label={{ value: "อายุ (ปี)", position: "insideBottom", offset: -5 }} />
-                <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-                <Tooltip formatter={(value: any) => `${value}%`} />
-                <Legend />
-                <Line type="monotone" dataKey="survivalRate" name="เปอร์เซ็นต์ที่ยังใช้งาน" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            renderSurvivalCurveChart(chartDimensions.survivalCurve.regular)
           )}
         </CardContent>
       </Card>
@@ -1687,33 +1870,25 @@ export default function Dashboard() {
       
       {/* Depreciation by Type */}
       <Card className="shadow-soft border-border">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-success" />
-            ค่าเสื่อมราคาครุภัณฑ์ตามประเภท
-          </CardTitle>
-        </CardHeader>
+        <ChartHeader
+          icon={TrendingUp}
+          iconClassName="h-5 w-5 text-success"
+          title={chartTitles.depreciationByType}
+          chartId="depreciationByType"
+          disabled={depreciationByTypeFiltered.length === 0}
+        />
         <CardContent>
           {depreciationByTypeFiltered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">
               ไม่มีข้อมูลค่าเสื่อมราคาที่สามารถคำนวณได้
             </p>
           ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={depreciationByTypeFiltered}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="type" />
-                <YAxis />
-                <Tooltip formatter={(value: number) => value.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} />
-                <Legend />
-                <Bar dataKey="depreciation" name="ค่าเสื่อมสะสม" fill="#ef4444" />
-                <Bar dataKey="remaining" name="มูลค่าคงเหลือ" fill="#22c55e" />
-              </BarChart>
-            </ResponsiveContainer>
+            renderDepreciationByTypeChart(chartDimensions.depreciationByType.regular)
           )}
         </CardContent>
       </Card>
       </>}
       </div>
-    </div>;
+    </div>
+  );
 }
