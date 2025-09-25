@@ -187,7 +187,7 @@ export default function EquipmentEditDialog({
       try {
         const { data, error } = await supabase
           .from('equipment_types')
-          .select('*')
+          .select('*, equipment_type_details(*)')
           .eq('active', true)
           .order('name');
 
@@ -205,12 +205,24 @@ export default function EquipmentEditDialog({
                 return null;
               }
 
+              const details = (dbType?.equipment_type_details || []) as Array<{
+                id: string;
+                name: string;
+                code: string;
+                active: boolean;
+              }>;
+
+              const activeDetails = details
+                .filter((detail) => detail.active)
+                .sort((a, b) => a.code.localeCompare(b.code, 'th'))
+                .map((detail) => ({ value: detail.code, label: detail.name }));
+
               return {
                 value: (dbType?.code || matchingType?.code || label).toLowerCase(),
                 label,
                 code: dbType?.code || matchingType?.code || '',
                 icon: matchingType?.icon || Computer,
-                subTypes: matchingType?.subTypes || [],
+                subTypes: activeDetails.length > 0 ? activeDetails : (matchingType?.subTypes || []),
               } satisfies EquipmentTypeOption;
             })
             .filter((item): item is EquipmentTypeOption => Boolean(item));

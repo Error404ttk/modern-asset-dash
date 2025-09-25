@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Save, ArrowLeft, Upload, Computer, Monitor, Loader2, Camera, X } from "lucide-react";
+import { Save, ArrowLeft, Upload, Computer, Monitor, Loader2, Camera, X, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,8 @@ export default function AddEquipment() {
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [activeEquipmentTypes, setActiveEquipmentTypes] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [latestAssetNumber, setLatestAssetNumber] = useState<string | null>(null);
+  const [checkingLatestAsset, setCheckingLatestAsset] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -52,7 +54,7 @@ export default function AddEquipment() {
         // Load equipment types
         const { data: equipmentTypesData } = await supabase
           .from('equipment_types')
-          .select('*')
+          .select('*, equipment_type_details(*)')
           .eq('active', true)
           .order('name');
 
@@ -64,12 +66,24 @@ export default function AddEquipment() {
               baseEquipmentTypes.find(t => t.code === dbType.code) ||
               baseEquipmentTypes.find(t => t.label === dbType.name);
 
+            const details = (dbType.equipment_type_details || []) as Array<{
+              id: string;
+              name: string;
+              code: string;
+              active: boolean;
+            }>;
+
+            const activeDetails = details
+              .filter(detail => detail.active)
+              .sort((a, b) => a.code.localeCompare(b.code, 'th'))
+              .map(detail => ({ value: detail.code, label: detail.name }));
+
             return {
               value: dbType.code.toLowerCase(),
               label: dbType.name,
               icon: matchingType?.icon || Computer,
               code: dbType.code,
-              subTypes: matchingType?.subTypes || []
+              subTypes: activeDetails.length > 0 ? activeDetails : (matchingType?.subTypes || [])
             };
           });
 
@@ -93,6 +107,53 @@ export default function AddEquipment() {
 
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!equipmentSubType) {
+      setLatestAssetNumber(null);
+      setCheckingLatestAsset(false);
+      return;
+    }
+
+    let isActive = true;
+
+    const fetchLatestAsset = async () => {
+      try {
+        setCheckingLatestAsset(true);
+        const { data, error } = await supabase
+          .from('equipment')
+          .select('asset_number, created_at')
+          .ilike('asset_number', `${equipmentSubType}/%`)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (error) throw error;
+
+        if (!isActive) return;
+
+        if (data && data.length > 0 && typeof data[0].asset_number === 'string') {
+          setLatestAssetNumber(data[0].asset_number);
+        } else {
+          setLatestAssetNumber(null);
+        }
+      } catch (error) {
+        if (isActive) {
+          console.error('Error fetching latest asset number:', error);
+          setLatestAssetNumber(null);
+        }
+      } finally {
+        if (isActive) {
+          setCheckingLatestAsset(false);
+        }
+      }
+    };
+
+    fetchLatestAsset();
+
+    return () => {
+      isActive = false;
+    };
+  }, [equipmentSubType]);
 
   const handleImageUpload = (files: FileList | null) => {
     if (!files) return;
@@ -428,24 +489,47 @@ export default function AddEquipment() {
                   </div>
 
                   {equipmentType && (
-                    <div className="space-y-2">
-                      <Label htmlFor="equipmentSubType">รายละเอียดครุภัณฑ์ *</Label>
-                      <Select value={equipmentSubType} onValueChange={setEquipmentSubType} required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="เลือกรายละเอียดครุภัณฑ์" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
-                          {subTypeOptions.map((subType, index) => (
-                            <SelectItem key={`${subType.value}-${index}`} value={subType.value}>
-                              <div className="flex flex-col">
-                                <span className="font-medium">{subType.value}</span>
-                                <span className="text-sm text-muted-foreground">{subType.label}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    subTypeOptions.length > 0 ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="equipmentSubType">รายละเอียดครุภัณฑ์ *</Label>
+                        <Select value={equipmentSubType} onValueChange={setEquipmentSubType} required>
+                          <SelectTrigger>
+                            <SelectValue placeholder="เลือกรายละเอียดครุภัณฑ์" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
+                            {subTypeOptions.map((subType, index) => (
+                              <SelectItem key={`${subType.value}-${index}`} value={subType.value}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{subType.value}</span>
+                                  <span className="text-sm text-muted-foreground">{subType.label}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {equipmentSubType ? (
+                          <Alert className="border-primary/30 bg-primary/10 text-primary">
+                            <div className="flex items-start space-x-3">
+                              <Info className="mt-1 h-4 w-4" />
+                              <AlertDescription className="text-sm leading-relaxed text-primary">
+                                {checkingLatestAsset
+                                  ? "กำลังตรวจสอบเลขครุภัณฑ์ล่าสุด..."
+                                  : latestAssetNumber
+                                    ? `เลขครุภัณฑ์ล่าสุดของรายละเอียดนี้คือ ${latestAssetNumber}`
+                                    : "ยังไม่มีข้อมูลเลขครุภัณฑ์สำหรับรายละเอียดนี้"}
+                              </AlertDescription>
+                            </div>
+                          </Alert>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <Label htmlFor="equipmentSubTypeHint">รายละเอียดครุภัณฑ์</Label>
+                        <p id="equipmentSubTypeHint" className="text-sm text-muted-foreground">
+                          ยังไม่มีรายละเอียดสำหรับประเภทนี้ สามารถกำหนดเลขครุภัณฑ์ได้เองที่ช่องด้านล่าง
+                        </p>
+                      </div>
+                    )
                   )}
 
                   <div className="space-y-2">

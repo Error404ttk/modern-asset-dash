@@ -7,11 +7,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Settings as SettingsIcon, Building, Tag, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Settings as SettingsIcon, Building, Tag, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle, ListChecks } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { DepartmentDialog } from "@/components/settings/DepartmentDialog";
 import { EquipmentTypeDialog } from "@/components/settings/EquipmentTypeDialog";
+import { EquipmentTypeDetailDialog, EquipmentTypeDetail } from "@/components/settings/EquipmentTypeDetailDialog";
 import { DeleteConfirmDialog } from "@/components/settings/DeleteConfirmDialog";
 import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,6 +32,7 @@ interface EquipmentType {
   code: string;
   description: string | null;
   active: boolean;
+  details: EquipmentTypeDetail[];
 }
 
 type OrganizationFormState = {
@@ -80,11 +83,15 @@ const Settings = () => {
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isEquipmentTypeDialogOpen, setIsEquipmentTypeDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isEquipmentDetailDialogOpen, setIsEquipmentDetailDialogOpen] = useState(false);
+  const [isDetailDeleteDialogOpen, setIsDetailDeleteDialogOpen] = useState(false);
   
   // Edit states
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [editingEquipmentType, setEditingEquipmentType] = useState<EquipmentType | null>(null);
   const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'equipmentType', item: any } | null>(null);
+  const [detailDialogState, setDetailDialogState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail | null } | null>(null);
+  const [detailDeleteState, setDetailDeleteState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail } | null>(null);
 
   // Organization form state
   const [orgForm, setOrgForm] = useState<OrganizationFormState>(createDefaultOrgForm);
@@ -195,11 +202,34 @@ const Settings = () => {
       // Load equipment types
       const { data: typeData, error: typeError } = await supabase
         .from('equipment_types')
-        .select('*')
+        .select('*, equipment_type_details(*)')
         .order('name');
 
       if (typeError) throw typeError;
-      setEquipmentTypes(typeData || []);
+
+      const mappedTypes: EquipmentType[] = (typeData || []).map((type: any) => {
+        const details: EquipmentTypeDetail[] = (type.equipment_type_details || [])
+          .map((detail: any) => ({
+            id: detail.id as string,
+            equipment_type_id: detail.equipment_type_id as string,
+            name: detail.name as string,
+            code: detail.code as string,
+            description: detail.description as string | null,
+            active: Boolean(detail.active),
+          }))
+          .sort((a, b) => a.code.localeCompare(b.code, 'th'));
+
+        return {
+          id: type.id,
+          name: type.name,
+          code: type.code,
+          description: type.description,
+          active: type.active,
+          details,
+        } satisfies EquipmentType;
+      });
+
+      setEquipmentTypes(mappedTypes);
     } catch (error: any) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -455,6 +485,74 @@ const Settings = () => {
     }
   };
 
+  const handleAddEquipmentDetail = (equipmentType: EquipmentType) => {
+    setDetailDialogState({ equipmentType, detail: null });
+    setIsEquipmentDetailDialogOpen(true);
+  };
+
+  const handleEditEquipmentDetail = (equipmentType: EquipmentType, detail: EquipmentTypeDetail) => {
+    setDetailDialogState({ equipmentType, detail });
+    setIsEquipmentDetailDialogOpen(true);
+  };
+
+  const handleToggleEquipmentDetailStatus = async (_equipmentType: EquipmentType, detail: EquipmentTypeDetail) => {
+    try {
+      const { error } = await supabase
+        .from('equipment_type_details')
+        .update({ active: !detail.active })
+        .eq('id', detail.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "อัปเดตสำเร็จ",
+        description: `${detail.active ? 'พักใช้งาน' : 'เปิดใช้งาน'}รายละเอียดครุภัณฑ์เรียบร้อยแล้ว`,
+      });
+
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleQueueDeleteEquipmentDetail = (equipmentType: EquipmentType, detail: EquipmentTypeDetail) => {
+    setDetailDeleteState({ equipmentType, detail });
+    setIsDetailDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDeleteDetail = async () => {
+    if (!detailDeleteState) return;
+
+    try {
+      const { error } = await supabase
+        .from('equipment_type_details')
+        .delete()
+        .eq('id', detailDeleteState.detail.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "ลบสำเร็จ",
+        description: "ลบรายละเอียดครุภัณฑ์เรียบร้อยแล้ว",
+      });
+
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsDetailDeleteDialogOpen(false);
+      setDetailDeleteState(null);
+    }
+  };
+
   const handleConfirmDelete = async (reason: string, password: string) => {
     if (!deletingItem) return;
 
@@ -496,6 +594,10 @@ const Settings = () => {
     setEditingDepartment(null);
     setEditingEquipmentType(null);
     setDeletingItem(null);
+    setDetailDialogState(null);
+    setDetailDeleteState(null);
+    setIsEquipmentDetailDialogOpen(false);
+    setIsDetailDeleteDialogOpen(false);
   };
 
   if (loading || orgSettingsLoading) {
@@ -723,6 +825,61 @@ const Settings = () => {
                         </Button>
                       </div>
                     </div>
+                    <div className="mt-4 border-t pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2 text-muted-foreground">
+                          <ListChecks className="h-4 w-4" />
+                          <span className="text-sm font-medium">รายละเอียดครุภัณฑ์</span>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => handleAddEquipmentDetail(type)}>
+                          <Plus className="mr-2 h-4 w-4" /> เพิ่มรายละเอียด
+                        </Button>
+                      </div>
+                      {type.details.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">ยังไม่มีรายละเอียดสำหรับประเภทนี้</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {type.details.map((detail) => (
+                            <div
+                              key={detail.id}
+                              className="flex flex-col gap-3 rounded-md border bg-background/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-medium text-foreground">{detail.name}</span>
+                                  <Badge variant={detail.active ? "default" : "secondary"}>
+                                    {detail.active ? "ใช้งาน" : "ไม่ใช้งาน"}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground">รหัส: {detail.code}</p>
+                                {detail.description ? (
+                                  <p className="text-sm text-muted-foreground">{detail.description}</p>
+                                ) : null}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleToggleEquipmentDetailStatus(type, detail)}
+                                >
+                                  {detail.active ? "พักใช้งาน" : "ใช้งาน"}
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => handleEditEquipmentDetail(type, detail)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleQueueDeleteEquipmentDetail(type, detail)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -914,6 +1071,19 @@ const Settings = () => {
         onSuccess={loadData}
       />
 
+      <EquipmentTypeDetailDialog
+        open={isEquipmentDetailDialogOpen}
+        onOpenChange={(open) => {
+          setIsEquipmentDetailDialogOpen(open);
+          if (!open) {
+            setDetailDialogState(null);
+          }
+        }}
+        equipmentType={detailDialogState ? { id: detailDialogState.equipmentType.id, name: detailDialogState.equipmentType.name } : null}
+        detail={detailDialogState?.detail ?? null}
+        onSuccess={loadData}
+      />
+
       <DeleteConfirmDialog
         open={isDeleteDialogOpen}
         onOpenChange={(open) => {
@@ -925,6 +1095,31 @@ const Settings = () => {
         itemName={deletingItem?.item?.name || ''}
         onConfirm={handleConfirmDelete}
       />
+
+      <AlertDialog
+        open={isDetailDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDetailDeleteDialogOpen(open);
+          if (!open) {
+            setDetailDeleteState(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">ยืนยันการลบรายละเอียดครุภัณฑ์</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบรายละเอียดครุภัณฑ์ "{detailDeleteState?.detail.name ?? ''}" หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteDetail} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              ลบรายละเอียด
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
