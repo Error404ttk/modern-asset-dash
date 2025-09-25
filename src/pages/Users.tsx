@@ -190,14 +190,48 @@ const Users = () => {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("user_id, email, full_name, department, role, created_at")
-        .order("created_at", { ascending: false });
+      const runQuery = (columns: string) =>
+        supabase
+          .from("profiles")
+          .select(columns)
+          .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      const { data, error } = await runQuery("user_id, email, full_name, department, role, created_at");
 
-      const transformed = (data ?? []).map((record) => buildUserRow(record as SupabaseProfile));
+      const missingDepartmentColumn = error?.message?.toLowerCase().includes("department") || error?.code === "PGRST204";
+
+      if (error && !missingDepartmentColumn) {
+        throw error;
+      }
+
+      if (error && missingDepartmentColumn) {
+        console.warn("Department column not available; falling back to legacy schema", error);
+        const fallback = await runQuery("user_id, email, full_name, role, created_at, updated_at");
+        if (fallback.error) {
+          throw fallback.error;
+        }
+        const transformedFallback = (fallback.data ?? []).map((record: any) => {
+          // Create a new object that matches the SupabaseProfile type
+          const profile: Omit<SupabaseProfile, 'updated_at'> & { updated_at?: string } = {
+            user_id: record.user_id,
+            email: record.email,
+            full_name: record.full_name,
+            role: record.role as Role,
+            created_at: record.created_at,
+            department: null,
+            ...(record.updated_at && { updated_at: record.updated_at })
+          };
+          return buildUserRow(profile as SupabaseProfile);
+        });
+        setUsers(transformedFallback);
+        return;
+      }
+
+      const transformed = (data ?? []).map((record: unknown) => {
+        // Safely cast the record to SupabaseProfile with runtime type checking
+        const profile = record as SupabaseProfile;
+        return buildUserRow(profile);
+      });
       setUsers(transformed);
     } catch (error) {
       console.error("Error fetching users:", error);

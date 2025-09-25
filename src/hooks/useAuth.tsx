@@ -111,7 +111,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('Error signing out:', error);
+      return;
     }
+
+    // Ensure local auth state updates immediately so protected routes redirect
+    setSession(null);
+    setUser(null);
+    setProfile(null);
   };
 
   return (
