@@ -84,6 +84,81 @@ const chartDimensions: Record<ChartId, { regular: number; expanded: number }> = 
   survivalCurve: { regular: 320, expanded: 460 },
   depreciationByType: { regular: 320, expanded: 460 },
 };
+
+type NamedEntityInfo = {
+  name: string;
+  code: string;
+};
+
+type DepartmentInfo = NamedEntityInfo;
+
+const DEFAULT_DEPARTMENT_NAME = "ไม่ระบุหน่วยงาน";
+const DEFAULT_DEPARTMENT_CODE = "N/A";
+
+const createNameCodeResolver = (
+  entities: NamedEntityInfo[],
+  fallbackName: string,
+  fallbackCode: string,
+) => {
+  const normalized = entities
+    .map((entity) => ({
+      name: (entity.name ?? "").toString().trim(),
+      code: (entity.code ?? "").toString().trim(),
+    }))
+    .filter((entity) => entity.name.length > 0 || entity.code.length > 0);
+
+  const mapByName = new Map<string, NamedEntityInfo>();
+  const mapByCode = new Map<string, NamedEntityInfo>();
+
+  normalized.forEach((entity) => {
+    if (entity.name.length > 0 && !mapByName.has(entity.name)) {
+      mapByName.set(entity.name, entity);
+    }
+    if (entity.code.length > 0) {
+      const codeKey = entity.code.toUpperCase();
+      if (!mapByCode.has(codeKey)) {
+        mapByCode.set(codeKey, entity);
+      }
+    }
+  });
+
+  return (rawValue: string) => {
+    const cleaned = (rawValue ?? "").toString().trim();
+    if (!cleaned || cleaned === fallbackName) {
+      return { name: fallbackName, code: fallbackCode };
+    }
+
+    const exactName = mapByName.get(cleaned);
+    if (exactName) {
+      return exactName;
+    }
+
+    const cleanedUpper = cleaned.toUpperCase();
+    const exactCode = mapByCode.get(cleanedUpper);
+    if (exactCode) {
+      return exactCode;
+    }
+
+    const partialMatch = normalized.find((entity) => {
+      if (entity.code.length > 0 && cleanedUpper.includes(entity.code.toUpperCase())) {
+        return true;
+      }
+      if (entity.name.length > 0 && cleaned.includes(entity.name)) {
+        return true;
+      }
+      return false;
+    });
+
+    if (partialMatch) {
+      return partialMatch;
+    }
+
+    return {
+      name: cleaned || fallbackName,
+      code: cleaned.length > 0 ? cleaned : fallbackCode,
+    };
+  };
+};
 export default function Dashboard() {
   const { toast } = useToast();
   const { profile } = useAuth();
@@ -130,6 +205,7 @@ export default function Dashboard() {
   const [typeOptions, setTypeOptions] = useState<string[]>([]);
   const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
   const [yearOptions, setYearOptions] = useState<string[]>([]);
+  const [departmentsList, setDepartmentsList] = useState<DepartmentInfo[]>([]);
   const [allEquipment, setAllEquipment] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -166,6 +242,11 @@ export default function Dashboard() {
   // Color palette for charts
   const COLORS = ['#2563eb', '#16a34a', '#f97316', '#a855f7', '#f43f5e', '#14b8a6', '#fb923c', '#38bdf8', '#facc15', '#94a3b8'];
 
+  const departmentResolver = useMemo(
+    () => createNameCodeResolver(departmentsList, DEFAULT_DEPARTMENT_NAME, DEFAULT_DEPARTMENT_CODE),
+    [departmentsList],
+  );
+
   // Fetch dashboard data
   const fetchDashboardData = async () => {
     try {
@@ -191,6 +272,31 @@ export default function Dashboard() {
         .order('created_at', { ascending: false });
 
       if (equipmentError) throw equipmentError;
+
+      // Fetch department metadata to map names with codes
+      let departmentRecords: DepartmentInfo[] = [];
+      const { data: departmentsData, error: departmentsError } = await (supabase as any)
+        .from('departments')
+        .select('name, code, active');
+
+      if (departmentsError) {
+        console.warn('Could not fetch departments metadata:', departmentsError);
+      } else {
+        departmentRecords = (departmentsData || [])
+          .filter((dept: any) => dept.active !== false)
+          .map((dept: any) => ({
+            name: String(dept.name ?? '').trim(),
+            code: String(dept.code ?? '').trim(),
+          }))
+          .filter((dept) => dept.name.length > 0 || dept.code.length > 0);
+        setDepartmentsList(departmentRecords);
+      }
+
+      const localResolveDepartment = createNameCodeResolver(
+        departmentRecords,
+        DEFAULT_DEPARTMENT_NAME,
+        DEFAULT_DEPARTMENT_CODE,
+      );
 
       // Fetch recent activities
       const { data: activitiesData, error: activitiesError } = await (supabase as any)
@@ -281,15 +387,28 @@ export default function Dashboard() {
       setTypeDistribution(distribution);
 
       // Calculate department distribution based on responsible department field
-      const deptCount: Record<string, number> = {};
+      const deptCount: Record<string, { code: string; name: string; value: number }> = {};
       equipmentData?.forEach((item: any) => {
-        const responsibleDepartment = (item.specs?.department ?? '').toString().trim();
-        const departmentName = responsibleDepartment.length > 0 ? responsibleDepartment : 'ไม่ระบุหน่วยงาน';
-        deptCount[departmentName] = (deptCount[departmentName] || 0) + 1;
+        const departmentRaw = (item.specs?.department ?? '').toString();
+        const departmentMeta = localResolveDepartment(departmentRaw);
+        const normalizedCode = departmentMeta.code?.trim().length
+          ? departmentMeta.code.trim()
+          : (departmentMeta.name?.trim() || DEFAULT_DEPARTMENT_CODE);
+        const displayName = departmentMeta.name?.trim().length
+          ? departmentMeta.name.trim()
+          : DEFAULT_DEPARTMENT_NAME;
+
+        if (!deptCount[normalizedCode]) {
+          deptCount[normalizedCode] = {
+            code: normalizedCode,
+            name: displayName,
+            value: 0,
+          };
+        }
+        deptCount[normalizedCode].value += 1;
       });
 
-      const deptDistribution = Object.entries(deptCount)
-        .map(([name, value]) => ({ name, value: value as number }))
+      const deptDistribution = Object.values(deptCount)
         .sort((a, b) => b.value - a.value);
 
       setDepartmentDistribution(deptDistribution);
@@ -755,13 +874,27 @@ export default function Dashboard() {
     result.typeDistributionFiltered = Object.entries(typeCount).map(([name, value]) => ({ name, value, type: name }));
 
     // Department distribution
-    const deptCount: Record<string, number> = {};
+    const deptCount: Record<string, { code: string; name: string; value: number }> = {};
     filteredEquipment.forEach((item: any) => {
-      const departmentName = (item.specs?.department ?? '').toString().trim() || 'ไม่ระบุหน่วยงาน';
-      deptCount[departmentName] = (deptCount[departmentName] || 0) + 1;
+      const departmentRaw = (item.specs?.department ?? '').toString();
+      const departmentMeta = departmentResolver(departmentRaw);
+      const normalizedCode = departmentMeta.code?.trim().length
+        ? departmentMeta.code.trim()
+        : (departmentMeta.name?.trim() || DEFAULT_DEPARTMENT_CODE);
+      const displayName = departmentMeta.name?.trim().length
+        ? departmentMeta.name.trim()
+        : DEFAULT_DEPARTMENT_NAME;
+
+      if (!deptCount[normalizedCode]) {
+        deptCount[normalizedCode] = {
+          code: normalizedCode,
+          name: displayName,
+          value: 0,
+        };
+      }
+      deptCount[normalizedCode].value += 1;
     });
-    result.departmentDistributionFiltered = Object.entries(deptCount)
-      .map(([name, value]) => ({ name, value }))
+    result.departmentDistributionFiltered = Object.values(deptCount)
       .sort((a, b) => b.value - a.value);
 
     // Brand distribution (Top 10)
@@ -941,7 +1074,7 @@ export default function Dashboard() {
       .sort((a, b) => b.depreciation - a.depreciation);
 
     return result;
-  }, [filteredEquipment]);
+  }, [filteredEquipment, departmentResolver]);
 
   const renderTypeDistributionChart = (height: number) => (
     <ResponsiveContainer width="100%" height={height}>
@@ -966,18 +1099,43 @@ export default function Dashboard() {
     </ResponsiveContainer>
   );
 
-  const renderDepartmentDistributionChart = (height: number) => (
-    <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={departmentDistributionFiltered}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="name" angle={-20} textAnchor="end" interval={0} height={80} />
-        <YAxis allowDecimals={false} />
-        <Tooltip formatter={(value: number) => Number(value).toLocaleString("th-TH") } />
-        <Legend />
-        <Bar dataKey="value" name="จำนวนครุภัณฑ์" fill="#2563eb" radius={[4, 4, 0, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
-  );
+  const renderDepartmentDistributionChart = (height: number) => {
+    const colorMap = new Map<string, string>();
+    departmentDistributionFiltered.forEach((entry, index) => {
+      if (!colorMap.has(entry.code)) {
+        colorMap.set(entry.code, COLORS[index % COLORS.length]);
+      }
+    });
+
+    return (
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={departmentDistributionFiltered}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="code" angle={-20} textAnchor="end" interval={0} height={80} />
+          <YAxis allowDecimals={false} />
+          <Tooltip
+            formatter={(value: number) => Number(value).toLocaleString("th-TH") }
+            labelFormatter={(code) => {
+              const match = departmentDistributionFiltered.find((item) => item.code === code);
+              if (!match) {
+                return code;
+              }
+              return `${match.code} • ${match.name}`;
+            }}
+          />
+          <Legend />
+          <Bar dataKey="value" name="จำนวนครุภัณฑ์" radius={[4, 4, 0, 0]}>
+            {departmentDistributionFiltered.map((entry, index) => (
+              <Cell
+                key={`department-cell-${entry.code}-${index}`}
+                fill={colorMap.get(entry.code) ?? COLORS[index % COLORS.length]}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  };
 
   const renderBrandDistributionChart = (height: number) => (
     <ResponsiveContainer width="100%" height={height}>

@@ -1,11 +1,11 @@
 import { Bell, Search, User, Monitor, QrCode } from "lucide-react";
 import { Link } from "react-router-dom";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,19 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
 import { ModeToggle } from "@/components/ModeToggle";
+import { useAuth } from "@/hooks/useAuth";
 
 export function Navbar() {
   const { settings } = useOrganizationSettings();
+  const { profile, signOut } = useAuth();
   const appTitle = settings?.app_title?.trim() || settings?.name?.trim() || "ระบบครุภัณฑ์";
   const organizationSubtitle = settings?.code?.trim() || settings?.name?.trim() || "หน่วยงานราชการ";
+  const userName = profile?.full_name?.trim() || "ผู้ดูแลระบบ";
+  const userEmail = profile?.email || "admin@government.go.th";
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-border bg-gradient-header px-4 shadow-soft sm:px-6">
@@ -97,9 +105,9 @@ export function Navbar() {
           >
             <div className="flex items-center justify-start gap-2 p-2">
               <div className="flex flex-col space-y-1 leading-none">
-                <p className="font-medium">ผู้ดูแลระบบ</p>
+                <p className="font-medium">{userName}</p>
                 <p className="w-[200px] truncate text-sm text-muted-foreground">
-                  admin@government.go.th
+                  {userEmail}
                 </p>
               </div>
             </div>
@@ -113,7 +121,12 @@ export function Navbar() {
               การแจ้งเตือน
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground">
+            <DropdownMenuItem
+              className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
+              onSelect={() => {
+                void handleSignOut();
+              }}
+            >
               ออกจากระบบ
             </DropdownMenuItem>
           </DropdownMenuContent>
