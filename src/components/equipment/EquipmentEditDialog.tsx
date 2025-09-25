@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Camera, Computer, Upload, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BASE_EQUIPMENT_TYPES, type EquipmentTypeOption } from "@/data/equipmentTypes.ts";
+import { joinAssetNumber, normalizeAssetNumber } from "@/lib/asset-number";
 
 const DEFAULT_SPEC_FIELDS: Record<string, string> = {
   cpu: "",
@@ -131,9 +132,15 @@ export default function EquipmentEditDialog({
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    const assetInfo = normalizeAssetNumber(equipment.assetNumber, equipment.quantity);
+    const assetNumberBase = assetInfo.base || equipment.assetNumber || "";
+    const quantityValue = assetInfo.sequence || "1";
+
     // Ensure all string fields are never null to avoid React warnings
     setFormData({
       ...equipment,
+      assetNumber: assetNumberBase,
+      quantity: quantityValue,
       brand: equipment.brand || "",
       model: equipment.model || "",
       serialNumber: equipment.serialNumber || "",
@@ -141,7 +148,6 @@ export default function EquipmentEditDialog({
       user: equipment.user || "",
       purchaseDate: equipment.purchaseDate || "",
       warrantyEnd: equipment.warrantyEnd || "",
-      quantity: equipment.quantity || "1",
       specs: normalizeSpecs(equipment.specs)
     });
     
@@ -225,7 +231,10 @@ export default function EquipmentEditDialog({
     fetchEquipmentTypes();
   }, [open]);
 
-  const fullAssetNumber = `${formData.assetNumber}${formData.quantity ? `/${formData.quantity}` : ""}`;
+  const fullAssetNumber = joinAssetNumber(
+    formData.assetNumber,
+    formData.quantity && formData.quantity.trim().length > 0 ? formData.quantity : "1",
+  );
 
   const handleAssetNumberChange = (value: string) => {
     const inputValue = value.trim();
@@ -239,25 +248,14 @@ export default function EquipmentEditDialog({
       return;
     }
 
-    const slashIndex = inputValue.lastIndexOf("/");
-
-    if (slashIndex === -1) {
-      setFormData((prev) => ({
+    setFormData((prev) => {
+      const assetInfo = normalizeAssetNumber(inputValue, prev.quantity || "1");
+      return {
         ...prev,
-        assetNumber: inputValue,
-        quantity: prev.quantity || "1"
-      }));
-      return;
-    }
-
-    const base = inputValue.slice(0, slashIndex).trim();
-    const sequence = inputValue.slice(slashIndex + 1).trim();
-
-    setFormData((prev) => ({
-      ...prev,
-      assetNumber: base,
-      quantity: sequence || prev.quantity || "1"
-    }));
+        assetNumber: assetInfo.base || inputValue,
+        quantity: assetInfo.sequence || prev.quantity || "1",
+      };
+    });
   };
 
   const handleImageUpload = (files: FileList | null) => {
@@ -378,11 +376,29 @@ export default function EquipmentEditDialog({
         cleanedSpecs.reason = cleanedSpecs.notes;
       }
 
+      const trimmedAssetNumber = formData.assetNumber.trim();
+      const rawQuantity = formData.quantity?.toString().trim() || "1";
+
+      if (!trimmedAssetNumber) {
+        toast({
+          title: "เกิดข้อผิดพลาด",
+          description: "กรุณาระบุเลขครุภัณฑ์",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const sanitizedQuantity = /^\d+$/.test(rawQuantity) && parseInt(rawQuantity, 10) > 0
+        ? rawQuantity
+        : "1";
+
+      const combinedAssetNumber = joinAssetNumber(trimmedAssetNumber, sanitizedQuantity);
+
       // Update equipment data
       const updatedEquipment = {
         ...formData,
-        assetNumber: formData.assetNumber.trim(),
-        quantity: formData.quantity?.toString().trim() || "1",
+        assetNumber: combinedAssetNumber,
+        quantity: sanitizedQuantity,
         specs: cleanedSpecs,
         images: finalImages
       };

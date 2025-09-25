@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart } from "recharts";
 import { useAuth } from "@/hooks/useAuth";
+import { normalizeAssetNumber } from "@/lib/asset-number";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "ทุกสถานะ" },
@@ -266,12 +267,22 @@ export default function Dashboard() {
       };
       
       // Fetch all equipment for stats
-      const { data: equipmentData, error: equipmentError } = await (supabase as any)
+      const { data: equipmentRows, error: equipmentError } = await (supabase as any)
         .from('equipment')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (equipmentError) throw equipmentError;
+
+      const equipmentData = (equipmentRows || []).map((item: any) => {
+        const assetInfo = normalizeAssetNumber(item.asset_number, item.quantity);
+        return {
+          ...item,
+          asset_number: assetInfo.formatted,
+          quantity: parseInt(assetInfo.sequence, 10) || 1,
+          asset_sequence: assetInfo.sequence,
+        };
+      });
 
       // Fetch department metadata to map names with codes
       let departmentRecords: DepartmentInfo[] = [];
@@ -761,7 +772,7 @@ export default function Dashboard() {
       },
       disposed: {
         variant: "outline" as const,
-        color: "bg-muted text-muted-foreground",
+        color: "bg-disposed text-disposed-foreground",
         label: "จำหน่าย"
       },
       lost: {
@@ -1660,7 +1671,7 @@ export default function Dashboard() {
 
                       return (
                         <TableRow key={item.id} className="hover:bg-muted/50">
-                          <TableCell className="font-medium">{item.asset_number}/{item.quantity ?? 1}</TableCell>
+                          <TableCell className="font-medium">{item.asset_number}</TableCell>
                           <TableCell>
                             <div className="space-y-1">
                               <p className="font-medium text-sm">{item.name}</p>

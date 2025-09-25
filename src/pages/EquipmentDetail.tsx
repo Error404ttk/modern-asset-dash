@@ -28,6 +28,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import QRCodeDialog from "@/components/equipment/QRCodeDialog";
+import { normalizeAssetNumber } from "@/lib/asset-number";
 
 interface Equipment {
   id: string;
@@ -74,6 +75,8 @@ export default function EquipmentDetail() {
       if (error) throw error;
 
       if (data) {
+        const assetInfo = normalizeAssetNumber(data.asset_number, data.quantity);
+
         const transformedData: Equipment = {
           id: data.id,
           name: data.name,
@@ -81,13 +84,13 @@ export default function EquipmentDetail() {
           brand: data.brand || "",
           model: data.model || "",
           serialNumber: data.serial_number || "",
-          assetNumber: data.asset_number,
+          assetNumber: assetInfo.formatted,
           status: data.status,
           location: data.location || "",
           user: data.assigned_to || "",
           purchaseDate: data.purchase_date || "",
           warrantyEnd: data.warranty_end || "",
-          quantity: data.quantity?.toString() || "1",
+          quantity: assetInfo.sequence,
           images: data.images || [],
           specs: (typeof data.specs === 'object' && data.specs !== null) ? data.specs : {}
         };
@@ -112,7 +115,7 @@ export default function EquipmentDetail() {
       maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
       damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
       pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
-      disposed: { color: "bg-muted text-muted-foreground", label: "จำหน่าย" },
+      disposed: { color: "bg-disposed text-disposed-foreground", label: "จำหน่าย" },
       lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" }
     };
     
@@ -161,7 +164,7 @@ export default function EquipmentDetail() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold text-foreground">{equipment.name}</h1>
-            <p className="text-muted-foreground">เลขครุภัณฑ์: {equipment.assetNumber}/{equipment.quantity}</p>
+            <p className="text-muted-foreground">เลขครุภัณฑ์: {equipment.assetNumber}</p>
           </div>
         </div>
         

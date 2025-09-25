@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Calendar, MapPin, User, HardDrive, Cpu, Monitor, Zap, Image, ZoomIn, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
+import { normalizeAssetNumber } from "@/lib/asset-number";
 
 const SPEC_LABELS: Record<string, string> = {
   cpu: "CPU",
@@ -86,7 +87,7 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
       maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
       damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
       pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
-      disposed: { color: "bg-muted text-muted-foreground", label: "จำหน่าย" },
+      disposed: { color: "bg-disposed text-disposed-foreground", label: "จำหน่าย" },
       lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" }
     };
     
@@ -118,9 +119,8 @@ export default function EquipmentViewDialog({ open, onOpenChange, equipment }: E
   const specs = equipment && typeof equipment.specs === "object" && equipment.specs !== null && !Array.isArray(equipment.specs)
     ? (equipment.specs as Record<string, unknown>)
     : {};
-  const fullAssetNumber = equipment.quantity
-    ? `${equipment.assetNumber}/${equipment.quantity}`
-    : equipment.assetNumber;
+  const assetInfo = normalizeAssetNumber(equipment?.assetNumber, equipment?.quantity);
+  const fullAssetNumber = assetInfo.formatted;
   const reason = typeof specs.reason === "string" ? specs.reason.trim() : "";
   const notes = typeof specs.notes === "string" ? specs.notes.trim() : "";
   const reasonText = reason || notes;

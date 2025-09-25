@@ -49,6 +49,10 @@ export default {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",
         },
+        disposed: {
+          DEFAULT: "hsl(var(--disposed))",
+          foreground: "hsl(var(--disposed-foreground))",
+        },
         popover: {
           DEFAULT: "hsl(var(--popover))",
           foreground: "hsl(var(--popover-foreground))",

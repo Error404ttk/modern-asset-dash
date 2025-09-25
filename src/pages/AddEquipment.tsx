@@ -20,6 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BASE_EQUIPMENT_TYPES } from "@/data/equipmentTypes.ts";
 import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
+import { normalizeAssetNumber } from "@/lib/asset-number";
 
 export default function AddEquipment() {
   const { toast } = useToast();
@@ -35,6 +36,14 @@ export default function AddEquipment() {
   const [departments, setDepartments] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const sequencePreview = useMemo(() => {
+    const parsed = parseInt(quantity, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed.toString();
+    }
+    return "1";
+  }, [quantity]);
 
   // Load active equipment types and departments on component mount
   useEffect(() => {
@@ -213,6 +222,33 @@ export default function AddEquipment() {
     const budgetTypeValue = getTrimmedValue('budgetType');
     const acquisitionMethodValue = getTrimmedValue('acquisitionMethod');
 
+    const rawAssetNumberInput = equipmentSubType || getTrimmedValue('assetNumber');
+
+    if (!rawAssetNumberInput) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "กรุณาระบุเลขครุภัณฑ์ให้ครบถ้วน",
+        variant: "destructive",
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    const assetNumberInfo = normalizeAssetNumber(rawAssetNumberInput, quantity);
+
+    if (!assetNumberInfo.base) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: "รูปแบบเลขครุภัณฑ์ไม่ถูกต้อง",
+        variant: "destructive",
+      });
+      setIsSubmitting(false);
+      return;
+    }
+
+    const assetNumberValue = assetNumberInfo.formatted;
+    const sequenceNumber = parseInt(assetNumberInfo.sequence, 10) || 1;
+
     const equipmentData = {
       // Ensure name is always a non-empty string for insertion
       name: nameValue || getEquipmentTypeLabel(equipmentType) || "ครุภัณฑ์",
@@ -220,8 +256,8 @@ export default function AddEquipment() {
       brand: brandValue,
       model: modelValue,
       serial_number: serialNumberValue,
-      asset_number: equipmentSubType || (formData.get('assetNumber') as string),
-      quantity: parseInt(quantity) || 1,
+      asset_number: assetNumberValue,
+      quantity: sequenceNumber,
       status: (formData.get('status') as string) || 'available',
       location: getLocationLabel(formData.get('location') as string),
       assigned_to: getTrimmedValue('currentUser'),
@@ -463,12 +499,15 @@ export default function AddEquipment() {
                           defaultValue={quantity}
                           onChange={(e) => setQuantity(e.target.value)}
                           min="1"
+                          aria-label="ลำดับ"
                           required
                         />
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {equipmentSubType ? `แสดงเป็น: ${equipmentSubType}/${quantity}` : "รูปแบบ: เลขครุภัณฑ์/จำนวน"}
+                      {equipmentSubType
+                        ? `บันทึกเป็น: ${equipmentSubType}/${sequencePreview}`
+                        : "รูปแบบ: เลขครุภัณฑ์/ลำดับ (เช่น 7440-001-0001/1)"}
                     </p>
                   </div>
 

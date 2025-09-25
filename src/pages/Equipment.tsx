@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { 
   Computer, 
   Plus, 
@@ -20,6 +20,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Pagination,
   PaginationContent,
@@ -43,6 +52,7 @@ import type { Tables, Json, TablesUpdate } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
 import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
+import { normalizeAssetNumber } from "@/lib/asset-number";
 
 type DbEquipment = Tables<'equipment'>;
 
@@ -77,23 +87,27 @@ const normalizeSpecs = (specs: unknown): { [key: string]: string } => {
   return out;
 };
 
-const transformEquipment = (dbEquipment: DbEquipment): EquipmentItem => ({
-  id: dbEquipment.id,
-  name: dbEquipment.name,
-  type: dbEquipment.type,
-  brand: dbEquipment.brand || "",
-  model: dbEquipment.model || "",
-  serialNumber: dbEquipment.serial_number || "",
-  assetNumber: dbEquipment.asset_number,
-  status: dbEquipment.status,
-  location: dbEquipment.location || "",
-  user: dbEquipment.assigned_to || "",
-  purchaseDate: dbEquipment.purchase_date || "",
-  warrantyEnd: dbEquipment.warranty_end || "",
-  quantity: (dbEquipment.quantity ?? 1).toString(),
-  images: dbEquipment.images || [],
-  specs: normalizeSpecs(dbEquipment.specs)
-});
+const transformEquipment = (dbEquipment: DbEquipment): EquipmentItem => {
+  const assetInfo = normalizeAssetNumber(dbEquipment.asset_number, dbEquipment.quantity);
+
+  return {
+    id: dbEquipment.id,
+    name: dbEquipment.name,
+    type: dbEquipment.type,
+    brand: dbEquipment.brand || "",
+    model: dbEquipment.model || "",
+    serialNumber: dbEquipment.serial_number || "",
+    assetNumber: assetInfo.formatted,
+    status: dbEquipment.status,
+    location: dbEquipment.location || "",
+    user: dbEquipment.assigned_to || "",
+    purchaseDate: dbEquipment.purchase_date || "",
+    warrantyEnd: dbEquipment.warranty_end || "",
+    quantity: assetInfo.sequence,
+    images: dbEquipment.images || [],
+    specs: normalizeSpecs(dbEquipment.specs)
+  };
+};
 
 export default function Equipment() {
   const [selectedEquipment, setSelectedEquipment] = useState<EquipmentItem | null>(null);
@@ -104,6 +118,9 @@ export default function Equipment() {
   const [equipmentList, setEquipmentList] = useState<EquipmentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [assetNumberFilter, setAssetNumberFilter] = useState("");
+  const [nameFilter, setNameFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const { toast } = useToast();
   const { profile } = useAuth();
   const navigate = useNavigate();
@@ -189,6 +206,7 @@ export default function Equipment() {
           model: updatedEquipment.model,
           serial_number: updatedEquipment.serialNumber,
           asset_number: updatedEquipment.assetNumber,
+          quantity: parseInt(updatedEquipment.quantity, 10) || 1,
           status: updatedEquipment.status,
           location: updatedEquipment.location,
           assigned_to: updatedEquipment.user,
@@ -233,7 +251,7 @@ export default function Equipment() {
       maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
       damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
       pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
-      disposed: { color: "bg-muted text-muted-foreground", label: "จำหน่าย" },
+      disposed: { color: "bg-disposed text-disposed-foreground", label: "จำหน่าย" },
       lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" }
     };
     
@@ -244,7 +262,64 @@ export default function Equipment() {
     return <Badge className={config.color}>{config.label}</Badge>;
   };
 
-  const filteredEquipment = equipmentList;
+  const typeOptions = useMemo(() => {
+    const uniqueTypes = new Set<string>();
+    equipmentList.forEach((item) => {
+      const trimmed = item.type?.trim();
+      if (trimmed) {
+        uniqueTypes.add(trimmed);
+      }
+    });
+    return Array.from(uniqueTypes).sort((a, b) => a.localeCompare(b, "th"));
+  }, [equipmentList]);
+
+  const filteredEquipment = useMemo(() => {
+    const assetQuery = assetNumberFilter.trim().toLowerCase();
+    const nameQuery = nameFilter.trim().toLowerCase();
+
+    return equipmentList.filter((item) => {
+      const assetMatches =
+        assetQuery.length === 0 || item.assetNumber.toLowerCase().includes(assetQuery);
+      const nameMatches = nameQuery.length === 0 || item.name.toLowerCase().includes(nameQuery);
+      const typeMatches = typeFilter === "all" || item.type === typeFilter;
+      return assetMatches && nameMatches && typeMatches;
+    });
+  }, [equipmentList, assetNumberFilter, nameFilter, typeFilter]);
+
+  const filteredStatusCounts = useMemo(() => {
+    const counts = {
+      total: filteredEquipment.length,
+      available: 0,
+      maintenance: 0,
+      damaged: 0,
+    };
+
+    filteredEquipment.forEach((item) => {
+      switch (item.status) {
+        case "available":
+          counts.available += 1;
+          break;
+        case "maintenance":
+          counts.maintenance += 1;
+          break;
+        case "damaged":
+          counts.damaged += 1;
+          break;
+        default:
+          break;
+      }
+    });
+
+    return counts;
+  }, [filteredEquipment]);
+
+  const isFiltering = useMemo(() => {
+    return (
+      assetNumberFilter.trim().length > 0 ||
+      nameFilter.trim().length > 0 ||
+      typeFilter !== "all"
+    );
+  }, [assetNumberFilter, nameFilter, typeFilter]);
 
   // Pagination calculations
   const pageSize = 10;
@@ -291,15 +366,17 @@ export default function Equipment() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card className="bg-gradient-card shadow-soft">
           <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center space-x-2">
-              <Computer className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
-              <div>
-                <p className="text-xl sm:text-2xl font-bold text-primary">{equipmentList.length}</p>
-                <p className="text-xs sm:text-sm text-muted-foreground">รายการทั้งหมด</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                <div className="flex items-center space-x-2">
+                  <Computer className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
+                  <div>
+                    <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStatusCounts.total}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground">
+                      {isFiltering ? "รายการที่ตรงกับตัวกรอง" : "รายการทั้งหมด"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
         
         <Card className="bg-gradient-card shadow-soft">
           <CardContent className="p-3 sm:p-4">
@@ -309,7 +386,7 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-xl sm:text-2xl font-bold text-success">
-                  {equipmentList.filter(e => e.status === 'available').length}
+                  {filteredStatusCounts.available}
                 </p>
                 <p className="text-xs sm:text-sm text-muted-foreground">พร้อมใช้งาน</p>
               </div>
@@ -325,7 +402,7 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-xl sm:text-2xl font-bold text-warning">
-                  {equipmentList.filter(e => e.status === 'maintenance').length}
+                  {filteredStatusCounts.maintenance}
                 </p>
                 <p className="text-xs sm:text-sm text-muted-foreground">ซ่อมบำรุง</p>
               </div>
@@ -341,7 +418,7 @@ export default function Equipment() {
               </div>
               <div>
                 <p className="text-xl sm:text-2xl font-bold text-destructive">
-                  {equipmentList.filter(e => e.status === 'damaged').length}
+                  {filteredStatusCounts.damaged}
                 </p>
                 <p className="text-xs sm:text-sm text-muted-foreground">ชำรุด</p>
               </div>
@@ -349,6 +426,63 @@ export default function Equipment() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Filters */}
+      <Card className="shadow-soft">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base sm:text-lg">ตัวกรองรายการ</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="asset-filter">เลขครุภัณฑ์</Label>
+              <Input
+                id="asset-filter"
+                placeholder="เช่น 7440-001-0001/1"
+                value={assetNumberFilter}
+                onChange={(event) => {
+                  setAssetNumberFilter(event.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="name-filter">ชื่อครุภัณฑ์</Label>
+              <Input
+                id="name-filter"
+                placeholder="ค้นหาตามชื่อครุภัณฑ์"
+                value={nameFilter}
+                onChange={(event) => {
+                  setNameFilter(event.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="type-filter">ประเภท</Label>
+              <Select
+                value={typeFilter}
+                onValueChange={(value) => {
+                  setTypeFilter(value);
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger id="type-filter">
+                  <SelectValue placeholder="เลือกประเภท" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทั้งหมด</SelectItem>
+                  {typeOptions.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Equipment Table */}
       <Card className="shadow-soft">
@@ -394,7 +528,7 @@ export default function Equipment() {
                   pagedEquipment.map((item) => (
                     <TableRow key={item.id} className="hover:bg-muted/50">
                       <TableCell className="font-medium min-w-0">
-                        <div className="whitespace-nowrap">{item.assetNumber}/{item.quantity}</div>
+                        <div className="whitespace-nowrap">{item.assetNumber}</div>
                       </TableCell>
                       <TableCell>
                         <div>
