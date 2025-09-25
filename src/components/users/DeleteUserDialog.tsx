@@ -25,16 +25,17 @@ interface DeleteUserDialogProps {
   onOpenChange: (open: boolean) => void;
   user: User | null;
   onUserDeleted: () => void;
+  canDelete: boolean;
 }
 
-export const DeleteUserDialog = ({ open, onOpenChange, user, onUserDeleted }: DeleteUserDialogProps) => {
+export const DeleteUserDialog = ({ open, onOpenChange, user, onUserDeleted, canDelete }: DeleteUserDialogProps) => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [reason, setReason] = useState("");
   const [superAdminPassword, setSuperAdminPassword] = useState("");
 
   const handleDelete = async () => {
-    if (!user) return;
+    if (!user || !canDelete) return;
 
     if (!reason.trim()) {
       toast({
@@ -167,7 +168,7 @@ export const DeleteUserDialog = ({ open, onOpenChange, user, onUserDeleted }: De
             <Button 
               variant="destructive" 
               onClick={handleDelete}
-              disabled={loading}
+              disabled={loading || !canDelete}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               ลบผู้ใช้งาน

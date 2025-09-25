@@ -7,6 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Users, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  getRoleDisplayName,
+  sanitizeRoleAssignment,
+  type Role,
+  type RolePermissions,
+} from "@/utils/rbac";
 
 interface User {
   id: string;
@@ -15,7 +21,7 @@ interface User {
   email: string;
   department: string;
   role: string;
-  roleCode?: string;
+  roleCode?: Role;
   status: string;
   lastLogin: string;
   createdAt: string;
@@ -28,17 +34,13 @@ interface EditUserDialogProps {
   onUserUpdated: () => void;
   departmentOptions: Array<{ id: string; name: string }>;
   departmentLoadError: string | null;
-  roleOptions: Array<{ value: string; label: string }>;
+  roleOptions: Array<{ value: Role; label: string }>;
   noDepartmentValue: string;
+  permissions: RolePermissions;
+  canEditRole: boolean;
 }
 
-const ROLE_LABEL_MAP: Record<string, string> = {
-  super_admin: "ผู้ดูแลระบบสูงสุด",
-  admin: "ผู้ดูแลระบบ",
-  user: "ผู้ใช้งานทั่วไป",
-};
-
-const DEFAULT_ROLE = "user";
+const DEFAULT_ROLE: Role = "user";
 
 export const EditUserDialog = ({
   open,
@@ -49,6 +51,8 @@ export const EditUserDialog = ({
   departmentLoadError,
   roleOptions,
   noDepartmentValue,
+  permissions,
+  canEditRole,
 }: EditUserDialogProps) => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -59,7 +63,7 @@ export const EditUserDialog = ({
       user?.department && user.department !== "ไม่ระบุหน่วยงาน"
         ? user.department
         : noDepartmentValue,
-    role: user?.roleCode || DEFAULT_ROLE,
+    role: (user?.roleCode as Role | undefined) ?? DEFAULT_ROLE,
   });
 
   useEffect(() => {
@@ -71,22 +75,24 @@ export const EditUserDialog = ({
           user.department && user.department !== "ไม่ระบุหน่วยงาน"
             ? user.department
             : noDepartmentValue,
-        role: user.roleCode || DEFAULT_ROLE,
+        role: (user.roleCode as Role | undefined) ?? DEFAULT_ROLE,
       });
     }
   }, [user, noDepartmentValue, open]);
 
-  const roleOptionsWithSuperAdmin = useMemo(() => {
+  const resolvedRoleOptions = useMemo(() => {
     if (!user) return roleOptions;
     if (user.roleCode === "super_admin" && !roleOptions.some((option) => option.value === "super_admin")) {
-      return [{ value: "super_admin", label: ROLE_LABEL_MAP["super_admin"] }, ...roleOptions];
+      return [{ value: "super_admin", label: getRoleDisplayName("super_admin") }, ...roleOptions];
     }
     return roleOptions;
-  }, [user, roleOptions]);
+  }, [roleOptions, user]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
+  const canEditProfile = permissions.canEditProfile;
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user || !canEditProfile) return;
 
     const trimmedFullName = formData.fullName.trim();
     const trimmedEmail = formData.email.trim();
@@ -109,8 +115,10 @@ export const EditUserDialog = ({
       return;
     }
 
+    const roleToAssign = sanitizeRoleAssignment(permissions, formData.role as Role);
+
     setLoading(true);
-    
+
     try {
       const {
         data: { session },
@@ -126,13 +134,13 @@ export const EditUserDialog = ({
         throw new Error("ไม่พบ token สำหรับยืนยันตัวตน");
       }
 
-      const { data, error } = await supabase.functions.invoke('update-user', {
+      const { data, error } = await supabase.functions.invoke("update-user", {
         body: {
           userId: user.id,
           fullName: trimmedFullName,
           email: trimmedEmail,
           department: formData.department === noDepartmentValue ? null : formData.department,
-          role: formData.role,
+          role: roleToAssign,
         },
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -140,11 +148,33 @@ export const EditUserDialog = ({
       });
 
       if (error) {
-        throw new Error(error.message);
+        console.error("update-user edge error", { error, data });
+
+        const edgeErrorMessage = (() => {
+          if (data && typeof data === "object" && "error" in data && typeof (data as any).error === "string") {
+            return (data as any).error as string;
+          }
+
+          const context = (error as unknown as { context?: { body?: string } }).context;
+          if (context?.body) {
+            try {
+              const parsed = JSON.parse(context.body);
+              if (parsed && typeof parsed.error === "string") {
+                return parsed.error;
+              }
+            } catch (parseError) {
+              console.warn("Failed to parse update-user edge error body", parseError);
+            }
+          }
+
+          return error.message;
+        })();
+
+        throw new Error(edgeErrorMessage);
       }
 
       if (!data?.success) {
-        throw new Error(data?.error || 'ไม่สามารถบันทึกการแก้ไขได้');
+        throw new Error(data?.error || "ไม่สามารถบันทึกการแก้ไขได้");
       }
 
       toast({
@@ -175,55 +205,50 @@ export const EditUserDialog = ({
             <Users className="mr-2 h-5 w-5" />
             แก้ไขข้อมูลผู้ใช้งาน
           </DialogTitle>
-          <DialogDescription>
-            แก้ไขข้อมูลของ {user.fullName}
-          </DialogDescription>
+          <DialogDescription>แก้ไขข้อมูลของ {user.fullName}</DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="username">ชื่อผู้ใช้</Label>
-            <Input 
-              id="username"
-              value={user.username}
-              disabled
-              className="bg-muted"
-            />
+            <Input id="username" value={user.username} disabled className="bg-muted" />
             <p className="text-xs text-muted-foreground">ไม่สามารถแก้ไขชื่อผู้ใช้ได้</p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="fullName">ชื่อ-นามสกุล</Label>
-            <Input 
+            <Input
               id="fullName"
               value={formData.fullName}
-              onChange={(e) => setFormData(prev => ({ ...prev, fullName: e.target.value }))}
+              onChange={(event) => setFormData((prev) => ({ ...prev, fullName: event.target.value }))}
               placeholder="ชื่อ-นามสกุล"
               required
+              disabled={!canEditProfile}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="email">อีเมล</Label>
-            <Input 
+            <Input
               id="email"
               type="email"
               value={formData.email}
-              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              onChange={(event) => setFormData((prev) => ({ ...prev, email: event.target.value }))}
               placeholder="email@department.go.th"
               required
+              disabled={!canEditProfile}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="department">หน่วยงาน</Label>
               <Select
                 value={formData.department}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, department: value }))}
-                disabled={departmentOptions.length === 0 && !departmentLoadError}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, department: value }))}
+                disabled={!canEditProfile || (departmentOptions.length === 0 && !departmentLoadError)}
               >
-                <SelectTrigger>
+                <SelectTrigger id="department">
                   <SelectValue placeholder="เลือกหน่วยงาน" />
                 </SelectTrigger>
                 <SelectContent>
@@ -239,39 +264,39 @@ export const EditUserDialog = ({
                 <p className="text-xs text-destructive">{departmentLoadError}</p>
               )}
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="role">บทบาท</Label>
               <Select
                 value={formData.role}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, role: value }))}
+                onValueChange={(value: Role) => setFormData((prev) => ({ ...prev, role: value }))}
+                disabled={!canEditRole}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกบทบาท">
-                    {ROLE_LABEL_MAP[formData.role as keyof typeof ROLE_LABEL_MAP] || 'เลือกบทบาท'}
-                  </SelectValue>
+                <SelectTrigger id="role">
+                  <SelectValue placeholder="เลือกบทบาท" />
                 </SelectTrigger>
                 <SelectContent>
-                  {roleOptionsWithSuperAdmin.map((option) => (
+                  {resolvedRoleOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">บทบาทปัจจุบัน: {user.role}</p>
             </div>
           </div>
 
           <div className="flex justify-end space-x-2 pt-4">
-            <Button 
-              type="button" 
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={loading}
             >
               ยกเลิก
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || !canEditProfile}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               บันทึกการแก้ไข
             </Button>

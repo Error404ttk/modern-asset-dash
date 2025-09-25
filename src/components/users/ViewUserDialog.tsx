@@ -24,16 +24,10 @@ export const ViewUserDialog = ({ open, onOpenChange, user }: ViewUserDialogProps
   if (!user) return null;
 
   const getRoleBadgeVariant = (role: string) => {
-    switch (role) {
-      case "ผู้ดูแลระบบ":
-        return "destructive";
-      case "ผู้จัดการ":
-        return "default";
-      case "ช่างเทคนิค":
-        return "secondary";
-      default:
-        return "outline";
-    }
+    if (role.includes("สูงสุด")) return "destructive";
+    if (role.includes("ผู้ดูแลระบบ")) return "default";
+    if (role.includes("ช่างเทคนิค")) return "secondary";
+    return "outline";
   };
 
   const getStatusBadgeVariant = (status: string) => {

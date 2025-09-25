@@ -1,13 +1,14 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
+import { getRolePermissions, type Role } from "@/utils/rbac";
 
 interface Profile {
   id: string;
   user_id: string;
   email: string;
   full_name: string;
-  role: 'user' | 'admin' | 'super_admin';
+  role: Role;
 }
 
 interface AuthContextType {
@@ -53,7 +54,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return null;
       }
 
-      return data;
+      if (!data) return null;
+
+      const permissions = getRolePermissions(data.role as Role);
+
+      return {
+        ...data,
+        role: permissions.role,
+      } as Profile;
     } catch (error) {
       console.error('Error fetching profile:', error);
       return null;

@@ -20,6 +20,7 @@ import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { OrganizationSettingsProvider } from "@/hooks/useOrganizationSettings";
+import { ThemeProvider } from "@/components/theme-provider";
 
 const queryClient = new QueryClient();
 
@@ -64,13 +65,14 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <OrganizationSettingsProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-            <Routes>
+    <ThemeProvider>
+      <TooltipProvider>
+        <OrganizationSettingsProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+              <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/" element={
               <ProtectedRoute>
@@ -143,11 +145,12 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />
-            </Routes>
-          </AuthProvider>
-        </BrowserRouter>
-      </OrganizationSettingsProvider>
-    </TooltipProvider>
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </OrganizationSettingsProvider>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

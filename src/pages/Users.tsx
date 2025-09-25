@@ -1,79 +1,206 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Plus, Users as UsersIcon, Edit, Trash2, Shield, Eye, Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Activity,
+  Edit,
+  Eye,
+  Loader2,
+  Plus,
+  Search,
+  Shield,
+  Trash2,
+  ShieldCheck,
+  Users as UsersIcon,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ViewUserDialog } from "@/components/users/ViewUserDialog";
 import { EditUserDialog } from "@/components/users/EditUserDialog";
 import { DeleteUserDialog } from "@/components/users/DeleteUserDialog";
 import { supabase } from "@/integrations/supabase/client";
-
-const ROLE_OPTIONS = [
-  { value: "admin", label: "ผู้ดูแลระบบ" },
-  { value: "user", label: "ผู้ใช้งานทั่วไป" },
-];
+import { useAuth } from "@/hooks/useAuth";
+import {
+  canActOnRole,
+  formatJoinedDate,
+  getRoleDisplayName,
+  getRolePermissions,
+  sanitizeRoleAssignment,
+  sortRolesByPrivilege,
+  type Role,
+} from "@/utils/rbac";
+import { getCachedData, setCachedData } from "@/utils/cache";
 
 const NO_DEPARTMENT_VALUE = "__none__";
+const DEPARTMENT_CACHE_KEY = "departments-active";
+const DEPARTMENT_CACHE_TTL = 1000 * 60 * 60 * 12;
+
+interface SupabaseProfile {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  department: string | null;
+  role: Role | null;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface UserRow {
+  id: string;
+  username: string;
+  fullName: string;
+  email: string;
+  department: string;
+  role: string;
+  roleCode: Role;
+  status: string;
+  lastLogin: string;
+  createdAt: string;
+}
+
+interface DepartmentOption {
+  id: string;
+  name: string;
+}
+
+interface NewUserFormState {
+  email: string;
+  password: string;
+  fullName: string;
+  department: string;
+  role: Role;
+}
+
+const ALL_ROLE_OPTIONS: Array<{ value: Role; label: string }> = sortRolesByPrivilege([
+  "super_admin",
+  "admin",
+  "technician",
+  "user",
+]).map((role) => ({ value: role, label: getRoleDisplayName(role) }));
+
+const buildUserRow = (profile: SupabaseProfile): UserRow => {
+  const roleCode = profile.role ?? "user";
+  const email = profile.email ?? "-";
+  const username = email.includes("@") ? email.split("@")[0] : email;
+
+  return {
+    id: profile.user_id,
+    username: username || profile.user_id.slice(0, 6),
+    fullName: profile.full_name?.trim() || "ไม่ระบุชื่อ",
+    email,
+    department: profile.department?.trim() || "ไม่ระบุหน่วยงาน",
+    role: getRoleDisplayName(roleCode),
+    roleCode,
+    status: "ใช้งาน",
+    lastLogin: profile.last_login_at ? formatJoinedDate(profile.last_login_at) : "ไม่ระบุ",
+    createdAt: formatJoinedDate(profile.created_at),
+  };
+};
+
+const filterUsers = (users: UserRow[], term: string) => {
+  const keyword = term.trim().toLowerCase();
+  if (!keyword) return users;
+  return users.filter((user) =>
+    [user.fullName, user.username, user.email, user.department, user.role]
+      .join(" ")
+      .toLowerCase()
+      .includes(keyword),
+  );
+};
 
 const Users = () => {
   const { toast } = useToast();
+  const { profile } = useAuth();
+  const currentRole = profile?.role ?? "user";
+  const rolePermissions = useMemo(() => getRolePermissions(currentRole), [currentRole]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [departmentOptions, setDepartmentOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<DepartmentOption[]>([]);
   const [departmentLoadError, setDepartmentLoadError] = useState<string | null>(null);
-  const [newUserForm, setNewUserForm] = useState({
+
+  const initialRole = useMemo(() => rolePermissions.assignableRoles[0] ?? "user", [rolePermissions.assignableRoles]);
+
+  const [newUserForm, setNewUserForm] = useState<NewUserFormState>({
     email: "",
     password: "",
     fullName: "",
     department: NO_DEPARTMENT_VALUE,
-    role: 'user',
+    role: initialRole,
   });
 
-  // Fetch users from Supabase
-  const fetchUsers = async () => {
+  useEffect(() => {
+    setNewUserForm((prev) => ({
+      ...prev,
+      role: sanitizeRoleAssignment(rolePermissions, prev.role),
+    }));
+  }, [rolePermissions]);
+
+  const availableRoleOptions = useMemo(
+    () =>
+      ALL_ROLE_OPTIONS.filter((option) => rolePermissions.assignableRoles.includes(option.value)),
+    [rolePermissions.assignableRoles],
+  );
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .from("profiles")
+        .select("user_id, email, full_name, department, role, created_at")
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
 
-      // Transform data to match UI format
-      const transformedUsers = data.map(user => {
-        const email = user.email ?? '';
-        const username = email ? email.split('@')[0] : '-';
-
-        return {
-          id: user.user_id,
-          username,
-          fullName: user.full_name || 'ไม่ระบุชื่อ',
-          email,
-          department: user.department || 'ไม่ระบุหน่วยงาน',
-          role: getRoleDisplayName(user.role),
-          roleCode: user.role,
-          status: 'ใช้งาน',
-          lastLogin: 'ไม่ระบุ',
-          createdAt: new Date(user.created_at).toLocaleDateString('th-TH'),
-        };
-      });
-
-      setUsers(transformedUsers);
+      const transformed = (data ?? []).map((record) => buildUserRow(record as SupabaseProfile));
+      setUsers(transformed);
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error("Error fetching users:", error);
       toast({
         title: "เกิดข้อผิดพลาด",
         description: "ไม่สามารถโหลดข้อมูลผู้ใช้งานได้",
@@ -82,465 +209,581 @@ const Users = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     try {
       setDepartmentLoadError(null);
+      const cached = getCachedData<DepartmentOption[]>(DEPARTMENT_CACHE_KEY);
+      if (cached) {
+        setDepartmentOptions(cached);
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('departments')
-        .select('id, name')
-        .eq('active', true)
-        .order('name');
+        .from("departments")
+        .select("id, name")
+        .eq("active", true)
+        .order("name");
 
       if (error) throw error;
-      setDepartmentOptions(data || []);
-    } catch (error) {
-      console.error('Error fetching departments:', error);
-      setDepartmentLoadError('ไม่สามารถโหลดรายชื่อหน่วยงานได้');
-    }
-  };
 
-  const getRoleDisplayName = (role: string) => {
-    switch (role) {
-      case 'super_admin':
-        return 'ผู้ดูแลระบบสูงสุด';
-      case 'admin':
-        return 'ผู้ดูแลระบบ';
-      case 'user':
-        return 'ผู้ใช้งานทั่วไป';
-      default:
-        return 'ผู้ใช้งานทั่วไป';
+      const options = data ?? [];
+      setDepartmentOptions(options);
+      setCachedData(DEPARTMENT_CACHE_KEY, options, DEPARTMENT_CACHE_TTL);
+    } catch (error) {
+      console.error("Error fetching departments:", error);
+      if (departmentOptions.length === 0) {
+        setDepartmentLoadError("ไม่สามารถโหลดรายชื่อหน่วยงานได้");
+      }
     }
-  };
+  }, [departmentOptions.length]);
 
   useEffect(() => {
     fetchUsers();
+  }, [fetchUsers]);
+
+  useEffect(() => {
     fetchDepartments();
-  }, []);
+  }, [fetchDepartments]);
 
-  const getRoleBadgeVariant = (role: string) => {
-    switch (role) {
-      case "ผู้ดูแลระบบสูงสุด":
-        return "destructive";
-      case "ผู้ดูแลระบบ":
-        return "default";
-      default:
-        return "outline";
-    }
-  };
-
-  const getStatusBadgeVariant = (status: string) => {
-    return status === "ใช้งาน" ? "default" : "secondary";
-  };
-
-  const resetAddUserForm = () => {
+  const resetAddUserForm = useCallback(() => {
     setNewUserForm({
-      email: '',
-      password: '',
-      fullName: '',
+      email: "",
+      password: "",
+      fullName: "",
       department: NO_DEPARTMENT_VALUE,
-      role: 'user',
+      role: rolePermissions.assignableRoles[0] ?? "user",
     });
     setAddError(null);
-  };
+  }, [rolePermissions.assignableRoles]);
 
-  const handleAddUserSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setAddError(null);
+  const handleAddUserSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setAddError(null);
 
-    const email = newUserForm.email.trim();
-    const password = newUserForm.password.trim();
-    const fullName = newUserForm.fullName.trim();
-
-    if (!email || !password || !fullName) {
-      setAddError('กรุณากรอกอีเมล รหัสผ่าน และชื่อ-นามสกุล');
-      return;
-    }
-
-    if (password.length < 6) {
-      setAddError('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
-      return;
-    }
-
-    setAddLoading(true);
-
-    try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        throw sessionError;
+      if (!rolePermissions.canCreateUsers) {
+        toast({
+          title: "ไม่มีสิทธิ์",
+          description: "สิทธิ์ปัจจุบันไม่สามารถเพิ่มผู้ใช้งานได้",
+          variant: "destructive",
+        });
+        return;
       }
 
-      const accessToken = session?.access_token;
+      const email = newUserForm.email.trim();
+      const password = newUserForm.password.trim();
+      const fullName = newUserForm.fullName.trim();
 
-      if (!accessToken) {
-        throw new Error('ไม่พบ token สำหรับยืนยันตัวตน');
+      if (!email || !password || !fullName) {
+        setAddError("กรุณากรอกอีเมล รหัสผ่าน และชื่อ-นามสกุล");
+        return;
       }
 
-      const { data, error } = await supabase.functions.invoke('create-user', {
-        body: {
-          email,
-          password,
-          fullName,
-          department: newUserForm.department === NO_DEPARTMENT_VALUE ? null : newUserForm.department || null,
-          role: newUserForm.role,
-        },
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      if (error) {
-        throw new Error(error.message);
+      if (password.length < 6) {
+        setAddError("รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร");
+        return;
       }
 
-      if (!data?.success) {
-        throw new Error(data?.error || 'ไม่สามารถเพิ่มผู้ใช้งานได้');
+      const normalizedRole = sanitizeRoleAssignment(rolePermissions, newUserForm.role);
+
+      setAddLoading(true);
+
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        const accessToken = session?.access_token;
+
+        if (!accessToken) {
+          throw new Error("ไม่พบ token สำหรับยืนยันตัวตน");
+        }
+
+        const { data, error } = await supabase.functions.invoke("create-user", {
+          body: {
+            email,
+            password,
+            fullName,
+            department:
+              newUserForm.department === NO_DEPARTMENT_VALUE ? null : newUserForm.department || null,
+            role: normalizedRole,
+          },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (error) {
+          console.error("create-user edge error", { error, data });
+
+          const edgeErrorMessage = (() => {
+            if (data && typeof data === "object" && "error" in data && typeof (data as any).error === "string") {
+              return (data as any).error as string;
+            }
+
+            const context = (error as unknown as { context?: { body?: string } }).context;
+            if (context?.body) {
+              try {
+                const parsed = JSON.parse(context.body);
+                if (parsed && typeof parsed.error === "string") {
+                  return parsed.error;
+                }
+              } catch (parseError) {
+                console.warn("Failed to parse edge error body", parseError);
+              }
+            }
+
+            return error.message;
+          })();
+
+          throw new Error(edgeErrorMessage);
+        }
+
+        if (!data?.success) {
+          throw new Error(data?.error || "ไม่สามารถเพิ่มผู้ใช้งานได้");
+        }
+
+        toast({
+          title: "เพิ่มผู้ใช้งานสำเร็จ",
+          description: "เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว",
+        });
+
+        resetAddUserForm();
+        setIsAddDialogOpen(false);
+        await fetchUsers();
+      } catch (err) {
+        console.error("Error creating user:", err);
+        const message = err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการเพิ่มผู้ใช้งาน";
+        setAddError(message);
+        toast({
+          title: "เกิดข้อผิดพลาด",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setAddLoading(false);
       }
-
-      toast({
-        title: 'เพิ่มผู้ใช้งานสำเร็จ',
-        description: 'เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว',
-      });
-
-      resetAddUserForm();
-      setIsAddDialogOpen(false);
-      await fetchUsers();
-    } catch (err) {
-      console.error('Error creating user:', err);
-      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเพิ่มผู้ใช้งาน';
-      setAddError(message);
-      toast({
-        title: 'เกิดข้อผิดพลาด',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setAddLoading(false);
-    }
-  };
-
-  const handleViewUser = (user: any) => {
-    setSelectedUser(user);
-    setViewDialogOpen(true);
-  };
-
-  const handleEditUser = (user: any) => {
-    setSelectedUser(user);
-    setEditDialogOpen(true);
-  };
-
-  const handleDeleteUser = (user: any) => {
-    setSelectedUser(user);
-    setDeleteDialogOpen(true);
-  };
-
-  const handleToggleStatus = (userId: string, userName: string, currentStatus: string) => {
-    const newStatus = currentStatus === "ใช้งาน" ? "พักการใช้งาน" : "ใช้งาน";
-    toast({
-      title: "เปลี่ยนสถานะสำเร็จ",
-      description: `เปลี่ยนสถานะผู้ใช้งาน ${userName} เป็น ${newStatus} แล้ว`,
-    });
-  };
-
-  const handleUserUpdated = () => {
-    fetchUsers();
-  };
-
-  const handleUserDeleted = () => {
-    fetchUsers();
-  };
-
-  const filteredUsers = users.filter(user =>
-    user.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.department.toLowerCase().includes(searchTerm.toLowerCase())
+    },
+    [fetchUsers, newUserForm.department, newUserForm.email, newUserForm.fullName, newUserForm.password, resetAddUserForm, rolePermissions, toast],
   );
 
+  const handleViewUser = useCallback((user: UserRow) => {
+    setSelectedUser(user);
+    setViewDialogOpen(true);
+  }, []);
+
+  const canEditUser = useCallback(
+    (user: UserRow) => canActOnRole(rolePermissions, user.roleCode, "edit-profile"),
+    [rolePermissions],
+  );
+
+  const canEditUserRole = useCallback(
+    (user: UserRow) => rolePermissions.canEditRole && canActOnRole(rolePermissions, user.roleCode, "edit-role"),
+    [rolePermissions],
+  );
+
+  const canDeleteUser = useCallback(
+    (user: UserRow) =>
+      canActOnRole(rolePermissions, user.roleCode, "delete") && user.id !== profile?.user_id,
+    [profile?.user_id, rolePermissions],
+  );
+
+  const handleEditUser = useCallback(
+    (user: UserRow) => {
+      if (!canEditUser(user)) {
+        toast({
+          title: "ไม่มีสิทธิ์",
+          description: "สิทธิ์ปัจจุบันไม่สามารถแก้ไขผู้ใช้งานนี้ได้",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSelectedUser(user);
+      setEditDialogOpen(true);
+    },
+    [canEditUser, toast],
+  );
+
+  const handleDeleteUser = useCallback(
+    (user: UserRow) => {
+      if (!canDeleteUser(user)) {
+        toast({
+          title: "ไม่มีสิทธิ์",
+          description: "สิทธิ์ปัจจุบันไม่สามารถลบผู้ใช้งานนี้ได้",
+          variant: "destructive",
+        });
+        return;
+      }
+      setSelectedUser(user);
+      setDeleteDialogOpen(true);
+    },
+    [canDeleteUser, toast],
+  );
+
+  const handleUserUpdated = useCallback(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const handleUserDeleted = useCallback(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const filteredUsers = useMemo(() => filterUsers(users, searchTerm), [searchTerm, users]);
+  const isReadOnly =
+    !rolePermissions.canCreateUsers && !rolePermissions.canEditProfile && !rolePermissions.canDeleteUsers;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">จัดการผู้ใช้งาน</h1>
-          <p className="text-muted-foreground mt-2">จัดการบัญชีผู้ใช้งานและสิทธิ์การเข้าถึงระบบ</p>
+    <TooltipProvider>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">จัดการผู้ใช้งาน</h1>
+            <p className="text-muted-foreground mt-2">
+              ควบคุมสิทธิ์การเข้าถึงระบบและติดตามสถานะผู้ใช้งาน
+            </p>
+          </div>
+          <Dialog
+            open={isAddDialogOpen}
+            onOpenChange={(openDialog) => {
+              setIsAddDialogOpen(openDialog);
+              if (!openDialog) {
+                resetAddUserForm();
+              } else {
+                setAddError(null);
+              }
+            }}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DialogTrigger asChild>
+                  <span>
+                    <Button
+                      className="bg-primary hover:bg-primary/90"
+                      disabled={!rolePermissions.canCreateUsers}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      เพิ่มผู้ใช้งาน
+                    </Button>
+                  </span>
+                </DialogTrigger>
+              </TooltipTrigger>
+              {!rolePermissions.canCreateUsers && (
+                <TooltipContent>
+                  <p>สิทธิ์ปัจจุบันไม่อนุญาตให้เพิ่มผู้ใช้งาน</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+            <DialogContent className="sm:max-w-[600px]">
+              <DialogHeader>
+                <DialogTitle>เพิ่มผู้ใช้งานใหม่</DialogTitle>
+                <DialogDescription>กรอกข้อมูลผู้ใช้งานและกำหนดบทบาทการเข้าถึงระบบ</DialogDescription>
+              </DialogHeader>
+              <form className="grid gap-4 py-4" onSubmit={handleAddUserSubmit}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">อีเมล *</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={newUserForm.email}
+                      onChange={(event) => setNewUserForm((prev) => ({ ...prev, email: event.target.value }))}
+                      placeholder="email@department.go.th"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">รหัสผ่าน *</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={newUserForm.password}
+                      onChange={(event) => setNewUserForm((prev) => ({ ...prev, password: event.target.value }))}
+                      placeholder="อย่างน้อย 6 ตัวอักษร"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">ชื่อ-นามสกุล *</Label>
+                  <Input
+                    id="fullName"
+                    value={newUserForm.fullName}
+                    onChange={(event) => setNewUserForm((prev) => ({ ...prev, fullName: event.target.value }))}
+                    placeholder="ชื่อ-นามสกุล"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="department">หน่วยงาน</Label>
+                    <Select
+                      value={newUserForm.department}
+                      onValueChange={(value) => setNewUserForm((prev) => ({ ...prev, department: value }))}
+                      disabled={departmentOptions.length === 0 && !departmentLoadError}
+                    >
+                      <SelectTrigger id="department">
+                        <SelectValue placeholder="เลือกหน่วยงาน" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_DEPARTMENT_VALUE}>ไม่ระบุ</SelectItem>
+                        {departmentOptions.map((option) => (
+                          <SelectItem key={option.id} value={option.name}>
+                            {option.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {departmentLoadError && (
+                      <p className="text-xs text-destructive">{departmentLoadError}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="role">บทบาท</Label>
+                    <Select
+                      value={newUserForm.role}
+                      onValueChange={(value: Role) => setNewUserForm((prev) => ({ ...prev, role: value }))}
+                      disabled={!rolePermissions.canCreateUsers || availableRoleOptions.length === 0}
+                    >
+                      <SelectTrigger id="role">
+                        <SelectValue placeholder="เลือกบทบาท" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableRoleOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {addError && <p className="text-sm text-destructive">{addError}</p>}
+                <div className="flex justify-end space-x-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsAddDialogOpen(false);
+                      resetAddUserForm();
+                    }}
+                    disabled={addLoading}
+                  >
+                    ยกเลิก
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="bg-primary hover:bg-primary/90"
+                    disabled={addLoading}
+                  >
+                    {addLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    เพิ่มผู้ใช้งาน
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={(open) => { setIsAddDialogOpen(open); if (!open) { resetAddUserForm(); } else { setAddError(null); } }}>
-          <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90">
-              <Plus className="mr-2 h-4 w-4" />
-              เพิ่มผู้ใช้งาน
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>เพิ่มผู้ใช้งานใหม่</DialogTitle>
-              <DialogDescription>
-                กรอกข้อมูลผู้ใช้งานใหม่และกำหนดสิทธิ์การเข้าถึง
-              </DialogDescription>
-            </DialogHeader>
-            <form className="grid gap-4 py-4" onSubmit={handleAddUserSubmit}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">อีเมล *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={newUserForm.email}
-                    onChange={(e) => setNewUserForm((prev) => ({ ...prev, email: e.target.value }))}
-                    placeholder="email@department.go.th"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">รหัสผ่าน *</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={newUserForm.password}
-                    onChange={(e) => setNewUserForm((prev) => ({ ...prev, password: e.target.value }))}
-                    placeholder="อย่างน้อย 6 ตัวอักษร"
-                    required
-                  />
-                </div>
+
+        {isReadOnly && (
+          <Card className="border-dashed border-warning/40 bg-warning/5">
+            <CardContent className="flex items-start gap-3 p-4 text-sm text-warning-foreground">
+              <Shield className="mt-0.5 h-4 w-4" />
+              <div>
+                <p className="font-medium">โหมดแสดงผลเท่านั้น</p>
+                <p className="text-warning-foreground/80">
+                  บทบาทผู้ใช้งานทั่วไปสามารถดูข้อมูลได้ แต่ไม่สามารถสร้าง แก้ไข หรือลบผู้ใช้งาน
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="fullName">ชื่อ-นามสกุล *</Label>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="md:col-span-2">
+            <CardContent className="p-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="fullName"
-                  value={newUserForm.fullName}
-                  onChange={(e) => setNewUserForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                  placeholder="ชื่อ-นามสกุล"
-                  required
+                  placeholder="ค้นหาผู้ใช้งาน, อีเมล หรือหน่วยงาน..."
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="pl-9"
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="department">หน่วยงาน</Label>
-                  <Select
-                    value={newUserForm.department}
-                    onValueChange={(value) => setNewUserForm((prev) => ({ ...prev, department: value }))}
-                    disabled={departmentOptions.length === 0 && !departmentLoadError}
-                  >
-                    <SelectTrigger id="department">
-                      <SelectValue placeholder="เลือกหน่วยงาน" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_DEPARTMENT_VALUE}>ไม่ระบุ</SelectItem>
-                      {departmentOptions.map((option) => (
-                        <SelectItem key={option.id} value={option.name}>
-                          {option.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {departmentLoadError && (
-                    <p className="text-xs text-destructive">{departmentLoadError}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="role">บทบาท</Label>
-                  <Select
-                    value={newUserForm.role}
-                    onValueChange={(value) => setNewUserForm((prev) => ({ ...prev, role: value }))}
-                  >
-                    <SelectTrigger id="role">
-                      <SelectValue placeholder="เลือกบทบาท" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ROLE_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {addError && (
-                <p className="text-sm text-destructive">{addError}</p>
-              )}
-              <div className="flex justify-end space-x-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => { setIsAddDialogOpen(false); resetAddUserForm(); }}
-                  disabled={addLoading}
-                >
-                  ยกเลิก
-                </Button>
-                <Button
-                  type="submit"
-                  className="bg-primary hover:bg-primary/90"
-                  disabled={addLoading}
-                >
-                  {addLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  เพิ่มผู้ใช้งาน
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Search and Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="md:col-span-2">
-          <CardContent className="p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="ค้นหาผู้ใช้งาน, อีเมล หรือหน่วยงาน..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 p-4">
               <UsersIcon className="h-8 w-8 text-primary" />
-              <div className="ml-3">
+              <div>
                 <p className="text-sm text-muted-foreground">ผู้ใช้งานทั้งหมด</p>
                 <p className="text-2xl font-bold">{users.length}</p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <Shield className="h-8 w-8 text-green-600" />
-              <div className="ml-3">
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 p-4">
+              <Activity className="h-8 w-8 text-success" />
+              <div>
                 <p className="text-sm text-muted-foreground">ใช้งานปกติ</p>
                 <p className="text-2xl font-bold">
-                  {users.filter(user => user.status === "ใช้งาน").length}
+                  {users.filter((user) => user.status === "ใช้งาน").length}
                 </p>
               </div>
-            </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" /> รายการผู้ใช้งาน
+            </CardTitle>
+            <CardDescription>
+              แสดง {loading ? "..." : filteredUsers.length} ผู้ใช้งานจากทั้งหมด {users.length} คน
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" /> กำลังโหลดข้อมูลผู้ใช้งาน
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="text-center py-12">
+                <UsersIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">ไม่พบผู้ใช้งาน</h3>
+                <p className="text-muted-foreground">ไม่มีผู้ใช้งานที่ตรงกับเงื่อนไขการค้นหา</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ผู้ใช้งาน</TableHead>
+                      <TableHead>หน่วยงาน</TableHead>
+                      <TableHead>บทบาท</TableHead>
+                      <TableHead>สถานะ</TableHead>
+                      <TableHead className="whitespace-nowrap">วันที่เข้าร่วม</TableHead>
+                      <TableHead className="whitespace-nowrap">เข้าใช้ล่าสุด</TableHead>
+                      <TableHead className="text-right">การจัดการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredUsers.map((userRow) => {
+                      const editable = canEditUser(userRow);
+                      const deletable = canDeleteUser(userRow);
+
+                      return (
+                        <TableRow key={userRow.id}>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <p className="font-medium text-foreground">{userRow.fullName}</p>
+                              <p className="text-xs text-muted-foreground">@{userRow.username} • {userRow.email}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{userRow.department}</TableCell>
+                          <TableCell>
+                            <Badge variant={userRow.roleCode === "super_admin" ? "destructive" : "default"}>
+                              {userRow.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={userRow.status === "ใช้งาน" ? "default" : "secondary"}>
+                              {userRow.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{userRow.createdAt}</TableCell>
+                          <TableCell>{userRow.lastLogin}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button size="icon" variant="outline" onClick={() => handleViewUser(userRow)}>
+                                    <Eye className="h-4 w-4" />
+                                    <span className="sr-only">ดูข้อมูลผู้ใช้งาน</span>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>ดูรายละเอียด</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span>
+                                    <Button
+                                      size="icon"
+                                      variant="outline"
+                                      onClick={() => handleEditUser(userRow)}
+                                      disabled={!editable}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                      <span className="sr-only">แก้ไขผู้ใช้งาน</span>
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                {!editable && (
+                                  <TooltipContent>ไม่มีสิทธิ์แก้ไขผู้ใช้งานนี้</TooltipContent>
+                                )}
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span>
+                                    <Button
+                                      size="icon"
+                                      variant="outline"
+                                      onClick={() => handleDeleteUser(userRow)}
+                                      disabled={!deletable}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      <span className="sr-only">ลบผู้ใช้งาน</span>
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                {!deletable && (
+                                  <TooltipContent>ไม่มีสิทธิ์ลบผู้ใช้งานนี้</TooltipContent>
+                                )}
+                              </Tooltip>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        <ViewUserDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen} user={selectedUser} />
+
+        <EditUserDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          user={selectedUser}
+          onUserUpdated={handleUserUpdated}
+          departmentOptions={departmentOptions}
+          departmentLoadError={departmentLoadError}
+          roleOptions={availableRoleOptions}
+          noDepartmentValue={NO_DEPARTMENT_VALUE}
+          permissions={rolePermissions}
+          canEditRole={selectedUser ? canEditUserRole(selectedUser) : false}
+        />
+
+        <DeleteUserDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          user={selectedUser}
+          onUserDeleted={handleUserDeleted}
+          canDelete={selectedUser ? canDeleteUser(selectedUser) : false}
+        />
       </div>
-
-      {/* Users List */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <UsersIcon className="mr-2 h-5 w-5" />
-            รายการผู้ใช้งาน
-          </CardTitle>
-          <CardDescription>
-            แสดง {filteredUsers.length} ผู้ใช้งานจากทั้งหมด {users.length} คน
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {filteredUsers.map((user) => (
-              <div key={user.id} className="border rounded-lg p-4 bg-card">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                        <UsersIcon className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-medium text-foreground">{user.fullName}</h3>
-                        <p className="text-sm text-muted-foreground">@{user.username} • {user.email}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">หน่วยงาน:</span>
-                        <p className="font-medium">{user.department}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">บทบาท:</span>
-                        <Badge variant={getRoleBadgeVariant(user.role)} className="ml-1">
-                          {user.role}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">สถานะ:</span>
-                        <Badge variant={getStatusBadgeVariant(user.status)} className="ml-1">
-                          {user.status}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">เข้าใช้ล่าสุด:</span>
-                        <p className="font-medium">{user.lastLogin}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2 ml-4">
-                    <Button size="sm" variant="outline" onClick={() => handleViewUser(user)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleEditUser(user)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => handleToggleStatus(user.id, user.fullName, user.status)}
-                    >
-                      {user.status === "ใช้งาน" ? "พักใช้งาน" : "เปิดใช้งาน"}
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => handleDeleteUser(user)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {filteredUsers.length === 0 && (
-            <div className="text-center py-12">
-              <UsersIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">ไม่พบผู้ใช้งาน</h3>
-              <p className="text-muted-foreground">ไม่มีผู้ใช้งานที่ตรงกับเงื่อนไขการค้นหา</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Dialogs */}
-      <ViewUserDialog
-        open={viewDialogOpen}
-        onOpenChange={setViewDialogOpen}
-        user={selectedUser}
-      />
-      
-      <EditUserDialog
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        user={selectedUser}
-        onUserUpdated={handleUserUpdated}
-        departmentOptions={departmentOptions}
-        departmentLoadError={departmentLoadError}
-        roleOptions={ROLE_OPTIONS}
-        noDepartmentValue={NO_DEPARTMENT_VALUE}
-      />
-      
-      <DeleteUserDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        user={selectedUser}
-        onUserDeleted={handleUserDeleted}
-      />
-    </div>
+    </TooltipProvider>
   );
 };
 

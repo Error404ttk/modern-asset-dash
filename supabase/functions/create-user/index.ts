@@ -17,10 +17,11 @@ type RequestPayload = {
 
 const normalizeRole = (role?: string) => {
   if (!role) return "user";
-  const allowedRoles = new Set(["super_admin", "admin", "user"]);
+  const allowedRoles = new Set(["super_admin", "admin", "technician", "user"]);
   if (allowedRoles.has(role)) return role;
   if (role === "ผู้ดูแลระบบสูงสุด") return "super_admin";
   if (role === "ผู้ดูแลระบบ") return "admin";
+  if (role === "ช่างเทคนิค") return "technician";
   return "user";
 };
 
