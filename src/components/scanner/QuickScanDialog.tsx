@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,8 @@ const DEFAULT_FORMATS = [
   "upc_a",
   "upc_e",
   "data_matrix",
+  "aztec",
+  "codabar",
 ];
 
 interface QuickScanDialogProps {
@@ -47,6 +49,9 @@ export function QuickScanDialog({
   const fallbackReaderRef = useRef<any>(null);
   const fallbackControlsRef = useRef<{ stop: () => void } | null>(null);
   const fallbackActiveRef = useRef(false);
+  const fallbackWaitTimeoutRef = useRef<number | null>(null);
+  const detectorWaitTimeoutRef = useRef<number | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
 
   const [supportsDetector, setSupportsDetector] = useState(false);
   const [supportsMediaDevices, setSupportsMediaDevices] = useState(false);
@@ -54,6 +59,23 @@ export function QuickScanDialog({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [usingEnvironment, setUsingEnvironment] = useState(true);
   const [fallbackLoading, setFallbackLoading] = useState(false);
+  const [zoomState, setZoomState] = useState<{
+    min: number;
+    max: number;
+    step: number;
+    value: number;
+  } | null>(null);
+
+  const zoomDisplay = useMemo(() => {
+    if (!zoomState) {
+      return { decimals: 1, formatted: "1.0" };
+    }
+    const decimals = zoomState.step >= 1 ? 0 : zoomState.step >= 0.1 ? 1 : 2;
+    return {
+      decimals,
+      formatted: zoomState.value.toFixed(decimals),
+    };
+  }, [zoomState]);
 
   const clearDetectionLoop = useCallback(() => {
     if (detectTimeoutRef.current) {
@@ -64,7 +86,22 @@ export function QuickScanDialog({
 
   const stopCamera = useCallback(() => {
     clearDetectionLoop();
+    if (detectorWaitTimeoutRef.current) {
+      window.clearTimeout(detectorWaitTimeoutRef.current);
+      detectorWaitTimeoutRef.current = null;
+    }
+    if (fallbackWaitTimeoutRef.current) {
+      window.clearTimeout(fallbackWaitTimeoutRef.current);
+      fallbackWaitTimeoutRef.current = null;
+    }
     detectorRef.current = null;
+    if (trackRef.current) {
+      try {
+        trackRef.current.stop();
+      } catch {}
+      trackRef.current = null;
+    }
+    setZoomState(null);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -109,6 +146,79 @@ export function QuickScanDialog({
       onOpenChange(false);
     },
     [onDetected, onOpenChange, stopCamera],
+  );
+
+  const configureZoomFromStream = useCallback((stream: MediaStream) => {
+    try {
+      const track = stream.getVideoTracks()[0];
+      if (!track) {
+        setZoomState(null);
+        trackRef.current = null;
+        return;
+      }
+
+      trackRef.current = track;
+
+      if (typeof track.getCapabilities !== "function") {
+        setZoomState(null);
+        return;
+      }
+
+      const capabilities = track.getCapabilities();
+      const zoomCap = (capabilities as MediaTrackCapabilities & { zoom?: any }).zoom as
+        | { min?: number; max?: number; step?: number }
+        | undefined;
+
+      if (!zoomCap || typeof zoomCap.min !== "number" || typeof zoomCap.max !== "number") {
+        setZoomState(null);
+        return;
+      }
+
+      const min = zoomCap.min ?? 1;
+      const max = zoomCap.max ?? min;
+      let step = zoomCap.step ?? 0.1;
+      if (!step || step <= 0) {
+        step = 0.1;
+      }
+
+      let current = min;
+      if (typeof track.getSettings === "function") {
+        const settings = track.getSettings() as MediaTrackSettings & { zoom?: number };
+        if (typeof settings.zoom === "number") {
+          current = settings.zoom;
+        }
+      }
+      current = Math.min(Math.max(current, min), max);
+
+      setZoomState({ min, max, step, value: current });
+    } catch (error) {
+      console.warn("Zoom capability unavailable", error);
+      setZoomState(null);
+      trackRef.current = null;
+    }
+  }, []);
+
+  const applyZoom = useCallback(
+    async (value: number): Promise<boolean> => {
+      const track = trackRef.current;
+      if (!track || typeof track.applyConstraints !== "function") {
+        return false;
+      }
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: value }] });
+        return true;
+      } catch (primaryError) {
+        try {
+          await track.applyConstraints({ zoom: value });
+          return true;
+        } catch (fallbackError) {
+          console.warn("Zoom apply failed", primaryError, fallbackError);
+          setCameraError("ไม่สามารถปรับซูมได้");
+          return false;
+        }
+      }
+    },
+    [setCameraError],
   );
 
   const detectOnce = useCallback(async (): Promise<boolean> => {
@@ -164,6 +274,13 @@ export function QuickScanDialog({
   }, [clearDetectionLoop, detectOnce, supportsDetector]);
 
   const startDetectorCamera = useCallback(async () => {
+    if (!videoRef.current) {
+      detectorWaitTimeoutRef.current = window.setTimeout(() => {
+        startDetectorCamera();
+      }, 60);
+      return;
+    }
+
     stopCamera();
     setCameraError(null);
     setLoadingCamera(true);
@@ -184,6 +301,7 @@ export function QuickScanDialog({
         await videoRef.current.play();
       }
 
+      configureZoomFromStream(stream);
       setLoadingCamera(false);
       queueDetection();
     } catch (err: any) {
@@ -198,18 +316,19 @@ export function QuickScanDialog({
         setCameraError("เปิดกล้องไม่สำเร็จ");
       }
     }
-  }, [queueDetection, stopCamera, usingEnvironment]);
+  }, [configureZoomFromStream, queueDetection, stopCamera, usingEnvironment]);
 
   const startFallbackScanner = useCallback(async () => {
+    if (!videoRef.current) {
+      fallbackWaitTimeoutRef.current = window.setTimeout(() => {
+        startFallbackScanner();
+      }, 60);
+      return;
+    }
+
     stopCamera();
     setCameraError(null);
     setFallbackLoading(true);
-
-    if (!videoRef.current) {
-      setCameraError("ไม่พบวิดีโอสำหรับแสดงผล");
-      setFallbackLoading(false);
-      return;
-    }
 
     try {
       // Dynamically load ZXing reader for browsers without BarcodeDetector (e.g., iOS Safari)
@@ -239,6 +358,19 @@ export function QuickScanDialog({
       );
 
       fallbackControlsRef.current = controls;
+      const attachZoom = () => {
+        if (!videoRef.current) {
+          return;
+        }
+        const currentStream = videoRef.current.srcObject as MediaStream | null;
+        if (currentStream) {
+          streamRef.current = currentStream;
+          configureZoomFromStream(currentStream);
+        } else {
+          window.setTimeout(attachZoom, 120);
+        }
+      };
+      window.setTimeout(attachZoom, 120);
       setFallbackLoading(false);
     } catch (err: any) {
       console.error("Fallback scanner error", err);
@@ -249,7 +381,7 @@ export function QuickScanDialog({
         setCameraError("ไม่สามารถเปิดการสแกนได้");
       }
     }
-  }, [handleDetected, stopCamera]);
+  }, [configureZoomFromStream, handleDetected, stopCamera]);
 
   const startCamera = useCallback(async () => {
     if (supportsDetector) {
@@ -322,6 +454,35 @@ export function QuickScanDialog({
             <Alert variant="destructive">
               <AlertDescription>{cameraError}</AlertDescription>
             </Alert>
+          )}
+
+          {zoomState && zoomState.max > zoomState.min && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">ซูมกล้อง</div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={zoomState.min}
+                  max={zoomState.max}
+                  step={zoomState.step}
+                  value={zoomState.value}
+                  onChange={async (event) => {
+                    const next = Number(event.target.value);
+                    const previous = zoomState.value;
+                    setZoomState((prev) => (prev ? { ...prev, value: next } : prev));
+                    setCameraError(null);
+                    const success = await applyZoom(next);
+                    if (!success) {
+                      setZoomState((prev) => (prev ? { ...prev, value: previous } : prev));
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <span className="w-12 text-right text-sm text-muted-foreground">
+                  {zoomDisplay.formatted}x
+                </span>
+              </div>
+            </div>
           )}
 
           <div className="flex flex-wrap gap-2">
