@@ -1,4 +1,4 @@
-import { Home, Computer, Plus, FileText, ArrowLeftRight, History, Users, Settings, Monitor, QrCode, LogOut } from "lucide-react";
+import { Home, Computer, Plus, ArrowLeftRight, History, Users, Settings, Monitor, QrCode, LogOut, Printer } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar, SidebarFooter } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,6 +16,10 @@ const menuItems = [{
   title: "สแกน QR",
   url: "/scan",
   icon: QrCode
+}, {
+  title: "พิมพ์สติ๊กเกอร์",
+  url: "/sticker-print",
+  icon: Printer
 }, {
   title: "เพิ่มครุภัณฑ์",
   url: "/equipment/add",

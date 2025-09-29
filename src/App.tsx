@@ -19,6 +19,7 @@ import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import StickerPrint from "./pages/StickerPrint";
 import { OrganizationSettingsProvider } from "@/hooks/useOrganizationSettings";
 
 const queryClient = new QueryClient();
@@ -138,6 +139,16 @@ const App = () => (
                   <ProtectedRoute>
                     <AppLayout>
                       <Scan />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sticker-print"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <StickerPrint />
                     </AppLayout>
                   </ProtectedRoute>
                 }

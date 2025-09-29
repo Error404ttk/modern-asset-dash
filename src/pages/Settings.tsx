@@ -17,6 +17,7 @@ import { EquipmentTypeDetailDialog, EquipmentTypeDetail } from "@/components/set
 import { DeleteConfirmDialog } from "@/components/settings/DeleteConfirmDialog";
 import { VendorDialog } from "@/components/settings/VendorDialog";
 import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
+import { DEFAULT_STICKER_WIDTH_MM, DEFAULT_STICKER_HEIGHT_MM, clampStickerWidth, clampStickerHeight } from "@/lib/sticker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface Department {
@@ -54,6 +55,8 @@ type OrganizationFormState = {
   auto_backup: boolean;
   session_timeout: number;
   app_title: string;
+  sticker_width_mm: number;
+  sticker_height_mm: number;
 };
 
 const DEFAULT_APP_TITLE = "ระบบครุภัณฑ์";
@@ -68,6 +71,8 @@ const createDefaultOrgForm = (): OrganizationFormState => ({
   auto_backup: true,
   session_timeout: 30,
   app_title: DEFAULT_APP_TITLE,
+  sticker_width_mm: DEFAULT_STICKER_WIDTH_MM,
+  sticker_height_mm: DEFAULT_STICKER_HEIGHT_MM,
 });
 
 const Settings = () => {
@@ -165,6 +170,9 @@ const Settings = () => {
       setFaviconFile(null);
       setFaviconCleared(false);
       setFaviconPreview(orgSettings.favicon_url ?? null);
+      const rawStickerWidth = Number((orgSettings as Record<string, unknown> | null)?.['sticker_width_mm']);
+      const rawStickerHeight = Number((orgSettings as Record<string, unknown> | null)?.['sticker_height_mm']);
+
       setOrgForm({
         name: orgSettings.name,
         code: orgSettings.code,
@@ -175,6 +183,8 @@ const Settings = () => {
         auto_backup: orgSettings.auto_backup ?? true,
         session_timeout: orgSettings.session_timeout ?? 30,
         app_title: orgSettings.app_title ?? orgSettings.name ?? DEFAULT_APP_TITLE,
+        sticker_width_mm: clampStickerWidth(rawStickerWidth),
+        sticker_height_mm: clampStickerHeight(rawStickerHeight),
       });
     } else {
       setOrgForm(createDefaultOrgForm());
@@ -350,6 +360,8 @@ const Settings = () => {
 
       const normalizedSessionTimeout = Math.min(Math.max(orgForm.session_timeout, 5), 480);
       const normalizedName = orgForm.name.trim() || DEFAULT_APP_TITLE;
+      const normalizedStickerWidth = clampStickerWidth(orgForm.sticker_width_mm);
+      const normalizedStickerHeight = clampStickerHeight(orgForm.sticker_height_mm);
       const updates: Record<string, any> = {
         name: normalizedName,
         code: orgForm.code.trim(),
@@ -359,6 +371,8 @@ const Settings = () => {
         email_notifications: orgForm.email_notifications,
         auto_backup: orgForm.auto_backup,
         session_timeout: normalizedSessionTimeout,
+        sticker_width_mm: normalizedStickerWidth,
+        sticker_height_mm: normalizedStickerHeight,
       };
 
       if (brandingSupported) {
@@ -424,9 +438,13 @@ const Settings = () => {
         setBrandingSupported(false);
       }
 
-      const description = error?.code === 'PGRST204'
+      let description = error?.code === 'PGRST204'
         ? 'ระบบยังไม่พบคอลัมน์ app_title ในฐานข้อมูล จึงไม่สามารถบันทึกการตั้งค่าการแสดงผลได้ กรุณาอัปเดตฐานข้อมูลแล้วลองใหม่อีกครั้ง'
         : error.message;
+
+      if (typeof error?.message === 'string' && error.message.includes('sticker_')) {
+        description = 'ระบบยังไม่พบคอลัมน์ sticker_width_mm/sticker_height_mm ในฐานข้อมูล กรุณาอัปเดตสคีมาของ Supabase ก่อนใช้งานฟีเจอร์กำหนดขนาดสติ๊กเกอร์';
+      }
 
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -1084,6 +1102,44 @@ const Settings = () => {
                   />
                   <p className="text-sm text-muted-foreground">
                     ระยะเวลาที่ผู้ใช้จะถูกออกจากระบบอัตโนมัติ (5-480 นาที)
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <Label>ขนาดสติ๊กเกอร์ (มิลลิเมตร)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      ใช้กับหน้าพิมพ์สติ๊กเกอร์ QR Code เพื่อให้แสดงตามขนาดจริง
+                    </p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="stickerWidth">ความกว้าง</Label>
+                      <Input
+                        id="stickerWidth"
+                        type="number"
+                        min="20"
+                        max="200"
+                        step="0.1"
+                        value={orgForm.sticker_width_mm}
+                        onChange={(e) => setOrgForm({ ...orgForm, sticker_width_mm: parseFloat(e.target.value) || DEFAULT_STICKER_WIDTH_MM })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="stickerHeight">ความสูง</Label>
+                      <Input
+                        id="stickerHeight"
+                        type="number"
+                        min="10"
+                        max="120"
+                        step="0.1"
+                        value={orgForm.sticker_height_mm}
+                        onChange={(e) => setOrgForm({ ...orgForm, sticker_height_mm: parseFloat(e.target.value) || DEFAULT_STICKER_HEIGHT_MM })}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    ค่าเริ่มต้นคือ 70 x 25 มม. สามารถกำหนดทศนิยมได้ เพื่อให้พอดีกับกระดาษสติ๊กเกอร์ของคุณ
                   </p>
                 </div>
 

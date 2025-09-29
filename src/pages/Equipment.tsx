@@ -11,7 +11,10 @@ import {
   Trash2,
   Building2,
   ArrowLeftRight,
-  AlertTriangle
+  AlertTriangle,
+  Download,
+  FileSpreadsheet,
+  FileText
 } from "lucide-react";
 import QRCodeDialog from "@/components/equipment/QRCodeDialog";
 import EquipmentViewDialog from "@/components/equipment/EquipmentViewDialog";
@@ -23,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -30,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Pagination,
   PaginationContent,
@@ -54,6 +59,41 @@ import { useToast } from "@/hooks/use-toast";
 import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
 import { normalizeAssetNumber } from "@/lib/asset-number";
+import { format as formatDate, parseISO, isValid } from "date-fns";
+import { th as thaiLocale } from "date-fns/locale";
+
+const XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm" as string;
+const PDFMAKE_URL = "https://cdn.jsdelivr.net/npm/pdfmake@0.2.10/build/pdfmake.min.js?module" as string;
+const PDFMAKE_FONTS_URL = "https://cdn.jsdelivr.net/npm/pdfmake@0.2.10/build/vfs_fonts.js?module" as string;
+
+const loadXlsxModule = (() => {
+  let promise: Promise<any> | null = null;
+  return () => {
+    if (!promise && typeof window !== "undefined") {
+      promise = import(/* @vite-ignore */ (XLSX_URL as string));
+    }
+    return promise ?? Promise.reject(new Error("XLSX is only available in the browser"));
+  };
+})();
+
+const loadPdfMakeModule = (() => {
+  let promise: Promise<{ pdfMake: any }> | null = null;
+  return async () => {
+    if (!promise && typeof window !== "undefined") {
+      promise = (async () => {
+        const pdfMakeModule = await import(/* @vite-ignore */ (PDFMAKE_URL as string));
+        const fontsModule = await import(/* @vite-ignore */ (PDFMAKE_FONTS_URL as string));
+        const pdfMake = (pdfMakeModule as any).default ?? pdfMakeModule;
+        const vfsCandidate = (fontsModule as any).pdfMake?.vfs ?? (fontsModule as any).default?.vfs;
+        if (vfsCandidate) {
+          pdfMake.vfs = vfsCandidate;
+        }
+        return { pdfMake };
+      })();
+    }
+    return promise ?? Promise.reject(new Error("pdfmake is only available in the browser"));
+  };
+})();
 
 type DbEquipment = Tables<'equipment'>;
 
@@ -75,6 +115,21 @@ interface EquipmentItem {
   specs: { [key: string]: string };
 }
 
+interface ExportRow {
+  assetNumber: string;
+  name: string;
+  type: string;
+  department: string;
+  statusLabel: string;
+  location: string;
+  serialNumber: string;
+  brand: string;
+  model: string;
+  priceValue: number | null;
+  purchaseDateIso: string;
+  purchaseDateDisplay: string;
+}
+
 // Normalize specs (Json) to a string map for UI safety
 const normalizeSpecs = (specs: unknown): { [key: string]: string } => {
   const out: { [key: string]: string } = {};
@@ -87,6 +142,75 @@ const normalizeSpecs = (specs: unknown): { [key: string]: string } => {
   if (!out.reason && out.notes) out.reason = out.notes;
   return out;
 };
+
+const STATUS_VARIANTS: Record<string, { color: string; label: string }> = {
+  available: { color: "bg-success text-success-foreground", label: "พร้อมใช้งาน" },
+  borrowed: { color: "bg-primary text-primary-foreground", label: "ถูกยืม" },
+  maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
+  damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
+  pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
+  disposed: { color: "bg-disposed text-disposed-foreground", label: "จำหน่าย" },
+  lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" },
+};
+
+const EXPORT_FORMAT_OPTIONS = [
+  {
+    value: "excel" as const,
+    label: "Excel (.xlsx)",
+    description: "ส่งออกเป็นไฟล์สเปรดชีตสำหรับจัดการหรือวิเคราะห์ต่อ",
+    icon: FileSpreadsheet,
+  },
+  {
+    value: "pdf" as const,
+    label: "PDF (.pdf)",
+    description: "ส่งออกเป็นไฟล์พร้อมพิมพ์หรือส่งต่อ",
+    icon: FileText,
+  },
+];
+
+const getStatusLabelText = (status: string) => STATUS_VARIANTS[status]?.label ?? status;
+
+const parsePriceValue = (raw: unknown): number | null => {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const numeric = parseFloat(raw.replace(/[^0-9.,-]/g, "").replace(/,/g, ""));
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+};
+
+const getDepartmentRaw = (item: EquipmentItem) =>
+  typeof item.specs?.department === "string" ? item.specs.department.trim() : "";
+
+const getDepartmentLabel = (item: EquipmentItem) => {
+  const value = getDepartmentRaw(item);
+  return value || "ไม่ระบุหน่วยงาน";
+};
+
+const getPurchaseDateInfo = (value: string) => {
+  if (!value) {
+    return { iso: "", display: "-", year: null as string | null };
+  }
+  const parsedIso = parseISO(value);
+  const parsed = isValid(parsedIso) ? parsedIso : new Date(value);
+  if (!isValid(parsed)) {
+    return { iso: value, display: value, year: null };
+  }
+  return {
+    iso: formatDate(parsed, "yyyy-MM-dd"),
+    display: formatDate(parsed, "dd MMM yyyy", { locale: thaiLocale }),
+    year: parsed.getFullYear().toString(),
+  };
+};
+
+const slugifyForFile = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50) || "all";
 
 const transformEquipment = (dbEquipment: DbEquipment): EquipmentItem => {
   const assetInfo = normalizeAssetNumber(dbEquipment.asset_number, dbEquipment.quantity);
@@ -123,6 +247,11 @@ export default function Equipment() {
   const [nameFilter, setNameFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"excel" | "pdf">("excel");
+  const [exportScope, setExportScope] = useState<"all" | "filtered" | "type" | "department" | "year">("all");
+  const [exportFilterValue, setExportFilterValue] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
   const { profile, user } = useAuth();
   const navigate = useNavigate();
@@ -399,19 +528,9 @@ export default function Equipment() {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants = {
-      available: { color: "bg-success text-success-foreground", label: "พร้อมใช้งาน" },
-      borrowed: { color: "bg-primary text-primary-foreground", label: "ถูกยืม" },
-      maintenance: { color: "bg-warning text-warning-foreground", label: "ซ่อมบำรุง" },
-      damaged: { color: "bg-destructive text-destructive-foreground", label: "ชำรุด" },
-      pending_disposal: { color: "bg-secondary text-secondary-foreground", label: "รอจำหน่าย" },
-      disposed: { color: "bg-disposed text-disposed-foreground", label: "จำหน่าย" },
-      lost: { color: "bg-destructive text-destructive-foreground", label: "สูญหาย" }
-    };
-    
-    const config = variants[status as keyof typeof variants] || {
-      color: "bg-muted text-muted-foreground", 
-      label: status
+    const config = STATUS_VARIANTS[status] ?? {
+      color: "bg-muted text-muted-foreground",
+      label: status,
     };
     return <Badge className={config.color}>{config.label}</Badge>;
   };
@@ -456,6 +575,223 @@ export default function Equipment() {
     return Array.from(departments).sort((a, b) => a.localeCompare(b, "th"));
   }, [equipmentList]);
 
+  const yearOptions = useMemo(() => {
+    const years = new Set<string>();
+    equipmentList.forEach((item) => {
+      const { year } = getPurchaseDateInfo(item.purchaseDate);
+      if (year) {
+        years.add(year);
+      }
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a, "th"));
+  }, [equipmentList]);
+
+  const collectExportRows = useCallback(() => {
+    let source: EquipmentItem[] = [];
+    let labelSuffix = "all";
+
+    switch (exportScope) {
+      case "all":
+        source = equipmentList;
+        labelSuffix = "all";
+        break;
+      case "filtered":
+        source = filteredEquipment;
+        labelSuffix = "filtered";
+        break;
+      case "type":
+        if (!exportFilterValue) {
+          return { rows: [] as ExportRow[], labelSuffix: "type", requiresValue: true };
+        }
+        source = equipmentList.filter((item) => item.type === exportFilterValue);
+        labelSuffix = `type-${slugifyForFile(exportFilterValue)}`;
+        break;
+      case "department":
+        if (!exportFilterValue) {
+          return { rows: [] as ExportRow[], labelSuffix: "department", requiresValue: true };
+        }
+        source = equipmentList.filter((item) => {
+          const raw = getDepartmentRaw(item);
+          if (exportFilterValue === "__none__") {
+            return raw.length === 0;
+          }
+          return raw === exportFilterValue;
+        });
+        labelSuffix = `department-${slugifyForFile(exportFilterValue === "__none__" ? "none" : exportFilterValue)}`;
+        break;
+      case "year":
+        if (!exportFilterValue) {
+          return { rows: [] as ExportRow[], labelSuffix: "year", requiresValue: true };
+        }
+        source = equipmentList.filter((item) => getPurchaseDateInfo(item.purchaseDate).year === exportFilterValue);
+        labelSuffix = `year-${slugifyForFile(exportFilterValue)}`;
+        break;
+      default:
+        source = equipmentList;
+        labelSuffix = "all";
+    }
+
+    const rows: ExportRow[] = source.map((item) => {
+      const priceValue = parsePriceValue(item.specs?.price);
+      const dateInfo = getPurchaseDateInfo(item.purchaseDate);
+
+      return {
+        assetNumber: item.assetNumber,
+        name: item.name,
+        type: item.type || "",
+        department: getDepartmentLabel(item),
+        statusLabel: getStatusLabelText(item.status),
+        location: item.location || "",
+        serialNumber: item.serialNumber || "",
+        brand: item.brand || "",
+        model: item.model || "",
+        priceValue,
+        purchaseDateIso: dateInfo.iso,
+        purchaseDateDisplay: dateInfo.display,
+      };
+    });
+
+    return { rows, labelSuffix, requiresValue: false };
+  }, [equipmentList, filteredEquipment, exportFilterValue, exportScope]);
+
+  const handleExportData = useCallback(async () => {
+    const { rows, labelSuffix, requiresValue } = collectExportRows();
+
+    if (requiresValue) {
+      toast({
+        title: "กรุณาเลือกข้อมูล",
+        description: "โปรดเลือกตัวเลือกให้ครบก่อนส่งออก",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (rows.length === 0) {
+      toast({
+        title: "ไม่พบข้อมูล",
+        description: "ไม่มีข้อมูลตรงตามเงื่อนไขสำหรับการส่งออก",
+      });
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const timestamp = formatDate(new Date(), "yyyyMMdd-HHmm");
+      const baseFileName = `equipment-${labelSuffix}-${timestamp}`;
+
+      if (exportFormat === "excel") {
+        const XLSX = await loadXlsxModule();
+        const worksheetData = rows.map((row) => ({
+          เลขครุภัณฑ์: row.assetNumber,
+          ชื่อครุภัณฑ์: row.name,
+          ประเภท: row.type || "-",
+          หน่วยงาน: row.department,
+          สถานะ: row.statusLabel,
+          สถานที่ตั้ง: row.location,
+          ยี่ห้อ: row.brand,
+          รุ่น: row.model,
+          เลขซีเรียล: row.serialNumber,
+          ราคา: row.priceValue ?? "",
+          วันรับเข้า: row.purchaseDateIso,
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+        XLSX.utils.book_append_sheet(workbook, worksheet, "ครุภัณฑ์");
+        XLSX.writeFile(workbook, `${baseFileName}.xlsx`);
+      } else {
+        const { pdfMake } = await loadPdfMakeModule();
+
+        const scopeDescription = (() => {
+          switch (exportScope) {
+            case "filtered":
+              return "ข้อมูลตามตัวกรองปัจจุบัน";
+            case "type":
+              return `เฉพาะประเภท ${exportFilterValue}`;
+            case "department":
+              return exportFilterValue === "__none__"
+                ? "เฉพาะหน่วยงานที่ไม่ระบุ"
+                : `เฉพาะหน่วยงาน ${exportFilterValue}`;
+            case "year":
+              return `เฉพาะปี ${exportFilterValue}`;
+            default:
+              return "ข้อมูลทั้งหมด";
+          }
+        })();
+
+        const tableBody = [
+          [
+            "เลขครุภัณฑ์",
+            "ชื่อครุภัณฑ์",
+            "ประเภท",
+            "หน่วยงาน",
+            "สถานะ",
+            "วันรับเข้า",
+            "ราคา (บาท)",
+          ],
+          ...rows.map((row) => [
+            row.assetNumber,
+            row.name,
+            row.type || "-",
+            row.department,
+            row.statusLabel,
+            row.purchaseDateDisplay,
+            row.priceValue !== null
+              ? Number(row.priceValue).toLocaleString("th-TH", { minimumFractionDigits: 0 })
+              : "-",
+          ]),
+        ];
+
+        const docDefinition = {
+          content: [
+            { text: "รายงานข้อมูลครุภัณฑ์", style: "header" },
+            { text: scopeDescription, style: "subheader", margin: [0, 0, 0, 8] },
+            {
+              text: `จำนวน ${rows.length.toLocaleString("th-TH")} รายการ`,
+              style: "meta",
+              margin: [0, 0, 0, 12],
+            },
+            {
+              table: {
+                headerRows: 1,
+                widths: [80, "*", 70, 80, 60, 60, 60],
+                body: tableBody,
+              },
+              layout: "lightHorizontalLines",
+              fontSize: 9,
+            },
+          ],
+          styles: {
+            header: { fontSize: 16, bold: true },
+            subheader: { fontSize: 11, color: "#555" },
+            meta: { fontSize: 10, color: "#333" },
+          },
+          defaultStyle: { font: "Roboto" },
+          pageOrientation: "landscape",
+          pageMargins: [24, 24, 24, 32],
+        };
+
+        pdfMake.createPdf(docDefinition).download(`${baseFileName}.pdf`);
+      }
+
+      toast({
+        title: "ส่งออกสำเร็จ",
+        description: `บันทึกไฟล์ ${exportFormat === "excel" ? "Excel" : "PDF"} เรียบร้อยแล้ว`,
+      });
+      setExportDialogOpen(false);
+    } catch (error) {
+      console.error("Export failed", error);
+      toast({
+        title: "ส่งออกไม่สำเร็จ",
+        description: "โปรดลองอีกครั้งหรือติดต่อผู้ดูแลระบบ",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [collectExportRows, exportFilterValue, exportFormat, exportScope, toast]);
+
+  const exportPreview = useMemo(() => collectExportRows(), [collectExportRows]);
   const filteredStatusCounts = useMemo(() => {
     const counts = {
       total: filteredEquipment.length,
@@ -521,6 +857,10 @@ export default function Equipment() {
   const endIndex = startIndex + pageSize;
   const pagedEquipment = filteredEquipment.slice(startIndex, endIndex);
 
+  const exportRequiresValue = exportScope === "type" || exportScope === "department" || exportScope === "year";
+  const exportCount = exportPreview.rows.length;
+  const exportHasSelection = !exportRequiresValue || exportFilterValue.length > 0;
+
   // Reset to first page if data changes or current page exceeds total pages
   useEffect(() => {
     setCurrentPage(1);
@@ -541,6 +881,19 @@ export default function Equipment() {
           <p className="text-sm sm:text-base text-muted-foreground">จัดการและติดตามครุภัณฑ์คอมพิวเตอร์</p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => {
+              setExportFormat("excel");
+              setExportFilterValue("");
+              setExportScope(isFiltering ? "filtered" : "all");
+              setExportDialogOpen(true);
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            ส่งออกข้อมูล
+          </Button>
           <Link to="/scan" className="w-full sm:w-auto">
             <Button variant="outline" className="w-full sm:w-auto">
               <QrCode className="h-4 w-4 mr-2" /> สแกน QR
@@ -979,6 +1332,208 @@ export default function Equipment() {
       </Card>
 
       {/* Dialogs */}
+      <Dialog
+        open={exportDialogOpen}
+        onOpenChange={(open) => {
+          if (isExporting) return;
+          setExportDialogOpen(open);
+          if (!open) {
+            setExportFilterValue("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>ส่งออกข้อมูลครุภัณฑ์</DialogTitle>
+            <DialogDescription>
+              เลือกรูปแบบไฟล์และขอบเขตข้อมูลที่ต้องการดาวน์โหลด
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            <div>
+              <Label className="text-sm font-medium text-foreground">รูปแบบไฟล์</Label>
+              <RadioGroup
+                value={exportFormat}
+                onValueChange={(value) => setExportFormat(value as "excel" | "pdf")}
+                className="mt-3 grid gap-3 sm:grid-cols-2"
+              >
+                {EXPORT_FORMAT_OPTIONS.map((option) => {
+                  const Icon = option.icon;
+                  const active = exportFormat === option.value;
+                  return (
+                    <Label
+                      key={option.value}
+                      htmlFor={`export-format-${option.value}`}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition",
+                        active ? "border-primary bg-primary/5" : "hover:border-primary/60"
+                      )}
+                    >
+                      <RadioGroupItem
+                        id={`export-format-${option.value}`}
+                        value={option.value}
+                        className="mt-1"
+                      />
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Icon className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-medium text-foreground">{option.label}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{option.description}</p>
+                      </div>
+                    </Label>
+                  );
+                })}
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium text-foreground">ขอบเขตข้อมูล</Label>
+                {exportScope === "filtered" && (
+                  <span className="text-xs text-muted-foreground">ใช้ตัวกรองที่หน้าจอปัจจุบัน</span>
+                )}
+              </div>
+              <Select
+                value={exportScope}
+                onValueChange={(value) => {
+                  setExportScope(value as typeof exportScope);
+                  setExportFilterValue("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกขอบเขตข้อมูล" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทั้งหมด</SelectItem>
+                  <SelectItem value="filtered">ตามตัวกรองปัจจุบัน</SelectItem>
+                  <SelectItem value="type">เลือกตามประเภท</SelectItem>
+                  <SelectItem value="department">เลือกตามหน่วยงาน</SelectItem>
+                  <SelectItem value="year">เลือกตามปีที่รับเข้า</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {exportRequiresValue && (
+                <div className="space-y-2">
+                  {exportScope === "type" && (
+                    typeOptions.length > 0 ? (
+                      <Select
+                        value={exportFilterValue}
+                        onValueChange={setExportFilterValue}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="เลือกประเภทครุภัณฑ์" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {typeOptions.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              {type}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        ยังไม่มีข้อมูลประเภทครุภัณฑ์ในระบบ
+                      </p>
+                    )
+                  )}
+
+                  {exportScope === "department" && (
+                    departmentOptions.length > 0 ? (
+                      <Select
+                        value={exportFilterValue}
+                        onValueChange={setExportFilterValue}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="เลือกหน่วยงาน" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">ไม่ระบุหน่วยงาน</SelectItem>
+                          {departmentOptions.map((dept) => (
+                            <SelectItem key={dept} value={dept}>
+                              {dept}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        ยังไม่มีการระบุหน่วยงานในข้อมูลครุภัณฑ์
+                      </p>
+                    )
+                  )}
+
+                  {exportScope === "year" && (
+                    yearOptions.length > 0 ? (
+                      <Select
+                        value={exportFilterValue}
+                        onValueChange={setExportFilterValue}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="เลือกปีที่รับเข้า" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {yearOptions.map((year) => (
+                            <SelectItem key={year} value={year}>
+                              {year}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        ยังไม่มีข้อมูลปีที่รับเข้าครุภัณฑ์
+                      </p>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-3 text-sm">
+              <p className="text-muted-foreground">
+                จำนวนข้อมูลที่เลือก:
+                <span className="ml-1 font-medium text-foreground">
+                  {exportCount.toLocaleString("th-TH")}
+                </span>
+                รายการ
+              </p>
+              {!exportHasSelection && exportRequiresValue ? (
+                <p className="mt-1 text-xs text-destructive">
+                  กรุณาเลือก{exportScope === "type" ? "ประเภท" : exportScope === "department" ? "หน่วยงาน" : "ปี"}ก่อนส่งออก
+                </p>
+              ) : exportCount === 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</p>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportDialogOpen(false)} disabled={isExporting}>
+              ยกเลิก
+            </Button>
+            <Button
+              onClick={handleExportData}
+              disabled={isExporting || !exportHasSelection || exportCount === 0}
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังส่งออก...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  ส่งออก
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {(() => {
         console.log('Rendering dialogs. selectedEquipment:', !!selectedEquipment, 'qrDialogOpen:', qrDialogOpen);
         return null;
