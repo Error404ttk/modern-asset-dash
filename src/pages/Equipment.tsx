@@ -122,6 +122,7 @@ export default function Equipment() {
   const [assetNumberFilter, setAssetNumberFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
   const { toast } = useToast();
   const { profile, user } = useAuth();
   const navigate = useNavigate();
@@ -435,9 +436,25 @@ export default function Equipment() {
         assetQuery.length === 0 || item.assetNumber.toLowerCase().includes(assetQuery);
       const nameMatches = nameQuery.length === 0 || item.name.toLowerCase().includes(nameQuery);
       const typeMatches = typeFilter === "all" || item.type === typeFilter;
-      return assetMatches && nameMatches && typeMatches;
+      const departmentValue =
+        typeof item.specs?.department === "string" ? item.specs.department.trim() : "";
+      const departmentMatches =
+        departmentFilter === "all" || departmentValue === departmentFilter || (departmentFilter === "__none__" && !departmentValue);
+      return assetMatches && nameMatches && typeMatches && departmentMatches;
     });
-  }, [equipmentList, assetNumberFilter, nameFilter, typeFilter]);
+  }, [equipmentList, assetNumberFilter, nameFilter, typeFilter, departmentFilter]);
+
+  const departmentOptions = useMemo(() => {
+    const departments = new Set<string>();
+    equipmentList.forEach((item) => {
+      const value =
+        typeof item.specs?.department === "string" ? item.specs.department.trim() : "";
+      if (value) {
+        departments.add(value);
+      }
+    });
+    return Array.from(departments).sort((a, b) => a.localeCompare(b, "th"));
+  }, [equipmentList]);
 
   const filteredStatusCounts = useMemo(() => {
     const counts = {
@@ -449,6 +466,7 @@ export default function Equipment() {
       pending_disposal: 0,
       disposed: 0,
       lost: 0,
+      warrantyExpired: 0,
     };
 
     filteredEquipment.forEach((item) => {
@@ -477,6 +495,11 @@ export default function Equipment() {
         default:
           break;
       }
+
+      const warrantyInfo = getWarrantyStatusInfo(item.warrantyEnd || null);
+      if (warrantyInfo?.status === "expired") {
+        counts.warrantyExpired += 1;
+      }
     });
 
     return counts;
@@ -486,9 +509,10 @@ export default function Equipment() {
     return (
       assetNumberFilter.trim().length > 0 ||
       nameFilter.trim().length > 0 ||
-      typeFilter !== "all"
+      typeFilter !== "all" ||
+      departmentFilter !== "all"
     );
-  }, [assetNumberFilter, nameFilter, typeFilter]);
+  }, [assetNumberFilter, nameFilter, typeFilter, departmentFilter]);
 
   // Pagination calculations
   const pageSize = 10;
@@ -658,6 +682,22 @@ export default function Equipment() {
             </div>
           </CardContent>
         </Card>
+
+        <Card className="bg-gradient-card shadow-soft">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center space-x-2">
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-warning/10 rounded-lg flex items-center justify-center">
+                <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-xl sm:text-2xl font-bold text-warning">
+                  {filteredStatusCounts.warrantyExpired}
+                </p>
+                <p className="text-xs sm:text-sm text-muted-foreground">หมดประกัน</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -666,7 +706,7 @@ export default function Equipment() {
           <CardTitle className="text-base sm:text-lg">ตัวกรองรายการ</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="asset-filter">เลขครุภัณฑ์</Label>
               <Input
@@ -708,6 +748,29 @@ export default function Equipment() {
                   {typeOptions.map((type) => (
                     <SelectItem key={type} value={type}>
                       {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="department-filter">หน่วยงาน</Label>
+              <Select
+                value={departmentFilter}
+                onValueChange={(value) => {
+                  setDepartmentFilter(value);
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger id="department-filter">
+                  <SelectValue placeholder="เลือกหน่วยงาน" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทั้งหมด</SelectItem>
+                  <SelectItem value="__none__">ไม่ระบุ</SelectItem>
+                  {departmentOptions.map((department) => (
+                    <SelectItem key={department} value={department}>
+                      {department}
                     </SelectItem>
                   ))}
                 </SelectContent>
