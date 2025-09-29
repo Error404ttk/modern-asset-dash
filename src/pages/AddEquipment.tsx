@@ -23,6 +23,14 @@ import { cn } from "@/lib/utils";
 import { normalizeAssetNumber } from "@/lib/asset-number";
 import QuickScanDialog from "@/components/scanner/QuickScanDialog";
 
+type Vendor = {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  active: boolean;
+};
+
 export default function AddEquipment() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -35,18 +43,48 @@ export default function AddEquipment() {
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [activeEquipmentTypes, setActiveEquipmentTypes] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [latestAssetNumber, setLatestAssetNumber] = useState<string | null>(null);
   const [checkingLatestAsset, setCheckingLatestAsset] = useState(false);
   const [modelValue, setModelValue] = useState("");
   const [serialNumberValue, setSerialNumberValue] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerTarget, setScannerTarget] = useState<"model" | "serial" | null>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined);
+  const [vendorName, setVendorName] = useState("");
+  const [vendorPhone, setVendorPhone] = useState("");
+  const [vendorAddress, setVendorAddress] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const openScanner = (target: "model" | "serial") => {
     setScannerTarget(target);
     setScannerOpen(true);
+  };
+
+  const handleVendorSelect = (value: string) => {
+    if (value === '__manual__') {
+      setSelectedVendorId(undefined);
+      setVendorName("");
+      setVendorPhone("");
+      setVendorAddress("");
+      return;
+    }
+
+    setSelectedVendorId(value);
+    const selectedVendor = vendors.find((vendor) => vendor.id === value);
+    if (selectedVendor) {
+      setVendorName(selectedVendor.name);
+      setVendorPhone(selectedVendor.phone ?? "");
+      setVendorAddress(selectedVendor.address ?? "");
+    }
+  };
+
+  const handleClearVendorSelection = () => {
+    setSelectedVendorId(undefined);
+    setVendorName("");
+    setVendorPhone("");
+    setVendorAddress("");
   };
 
   const handleScanDetected = (value: string) => {
@@ -130,6 +168,16 @@ export default function AddEquipment() {
 
         if (departmentsData) {
           setDepartments(departmentsData);
+        }
+
+        const { data: vendorsData } = await supabase
+          .from('vendors')
+          .select('*')
+          .eq('active', true)
+          .order('name');
+
+        if (vendorsData) {
+          setVendors(vendorsData);
         }
       } catch (error) {
         console.error('Error loading data:', error);
@@ -313,6 +361,9 @@ export default function AddEquipment() {
     const purchaseDateValue = getTrimmedValue('purchaseDate');
     const budgetTypeValue = getTrimmedValue('budgetType');
     const acquisitionMethodValue = getTrimmedValue('acquisitionMethod');
+    const vendorNameValue = getTrimmedValue('vendorName');
+    const vendorPhoneValue = getTrimmedValue('vendorPhone');
+    const vendorAddressValue = getTrimmedValue('vendorAddress');
 
     const rawAssetNumberInput = equipmentSubType || getTrimmedValue('assetNumber');
 
@@ -361,7 +412,11 @@ export default function AddEquipment() {
         budgetType: budgetTypeValue,
         acquisitionMethod: acquisitionMethodValue,
         department: getTrimmedValue('department')
-      }
+      },
+      vendor_id: selectedVendorId || null,
+      vendor_name: vendorNameValue ?? null,
+      vendor_phone: vendorPhoneValue ?? null,
+      vendor_address: vendorAddressValue ?? null,
     };
 
     try {
@@ -686,6 +741,78 @@ export default function AddEquipment() {
                         </AlertDescription>
                       </Alert>
                     )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="vendorSelect">ผู้ขาย/ผู้รับจ้าง/ผู้บริจาค</Label>
+                    <div className="flex gap-2">
+                      <Select value={selectedVendorId} onValueChange={handleVendorSelect}>
+                        <SelectTrigger id="vendorSelect">
+                          <SelectValue placeholder="เลือกผู้ขายจากระบบ หรือกรอกข้อมูลเอง" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background border border-border shadow-lg z-50">
+                          <SelectItem value="__manual__">กรอกข้อมูลเอง</SelectItem>
+                          {vendors.map((vendor) => (
+                            <SelectItem key={vendor.id} value={vendor.id}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{vendor.name}</span>
+                                {vendor.phone ? (
+                                  <span className="text-xs text-muted-foreground">โทรศัพท์: {vendor.phone}</span>
+                                ) : null}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedVendorId ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-10 px-3 text-sm"
+                          onClick={handleClearVendorSelection}
+                        >
+                          ล้าง
+                        </Button>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      เลือกจากข้อมูลที่ตั้งค่าไว้ หรือเลือก "กรอกข้อมูลเอง" เพื่อพิมพ์ข้อมูลติดต่อใหม่
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="vendorName">ชื่อผู้ขาย/ผู้รับจ้าง/ผู้บริจาค</Label>
+                      <Input
+                        id="vendorName"
+                        name="vendorName"
+                        value={vendorName}
+                        onChange={(event) => setVendorName(event.target.value)}
+                        placeholder="กรอกชื่อผู้ขาย/ผู้รับจ้าง/ผู้บริจาค"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="vendorPhone">โทรศัพท์</Label>
+                      <Input
+                        id="vendorPhone"
+                        name="vendorPhone"
+                        value={vendorPhone}
+                        onChange={(event) => setVendorPhone(event.target.value)}
+                        placeholder="หมายเลขโทรศัพท์"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="vendorAddress">ที่อยู่</Label>
+                    <Textarea
+                      id="vendorAddress"
+                      name="vendorAddress"
+                      value={vendorAddress}
+                      onChange={(event) => setVendorAddress(event.target.value)}
+                      placeholder="ที่อยู่ของผู้ขาย/ผู้รับจ้าง/ผู้บริจาค"
+                      rows={3}
+                    />
                   </div>
 
                   <div className="space-y-2">

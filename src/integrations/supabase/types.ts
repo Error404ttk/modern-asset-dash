@@ -171,6 +171,10 @@ export type Database = {
           specs: Json | null
           status: string
           type: string
+          vendor_address: string | null
+          vendor_id: string | null
+          vendor_name: string | null
+          vendor_phone: string | null
           updated_at: string
           warranty_end: string | null
         }
@@ -190,6 +194,10 @@ export type Database = {
           specs?: Json | null
           status?: string
           type: string
+          vendor_address?: string | null
+          vendor_id?: string | null
+          vendor_name?: string | null
+          vendor_phone?: string | null
           updated_at?: string
           warranty_end?: string | null
         }
@@ -209,10 +217,22 @@ export type Database = {
           specs?: Json | null
           status?: string
           type?: string
+          vendor_address?: string | null
+          vendor_id?: string | null
+          vendor_name?: string | null
+          vendor_phone?: string | null
           updated_at?: string
           warranty_end?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "equipment_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       equipment_types: {
         Row: {
@@ -332,6 +352,36 @@ export type Database = {
           name?: string
           phone?: string | null
           session_timeout?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      vendors: {
+        Row: {
+          active: boolean
+          address: string | null
+          created_at: string
+          id: string
+          name: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          phone?: string | null
           updated_at?: string
         }
         Relationships: []

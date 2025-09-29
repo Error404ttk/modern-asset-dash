@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
-import { ModeToggle } from "@/components/ModeToggle";
 import { useAuth } from "@/hooks/useAuth";
 
 export function Navbar() {
@@ -65,7 +64,6 @@ export function Navbar() {
 
       {/* Right side */}
       <div className="flex flex-none items-center gap-4">
-        <ModeToggle />
         {/* Scan QR */}
         <Link to="/scan" className="hidden sm:block">
           <Button

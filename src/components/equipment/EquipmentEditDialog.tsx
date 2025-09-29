@@ -243,29 +243,49 @@ export default function EquipmentEditDialog({
     fetchEquipmentTypes();
   }, [open]);
 
-  const fullAssetNumber = joinAssetNumber(
-    formData.assetNumber,
-    formData.quantity && formData.quantity.trim().length > 0 ? formData.quantity : "1",
-  );
+  const handleAssetNumberBaseChange = (value: string) => {
+    const rawValue = value.trim();
 
-  const handleAssetNumberChange = (value: string) => {
-    const inputValue = value.trim();
-
-    if (inputValue.length === 0) {
+    if (rawValue.includes('/')) {
+      const assetInfo = normalizeAssetNumber(rawValue, formData.quantity || "1");
       setFormData((prev) => ({
         ...prev,
-        assetNumber: "",
-        quantity: ""
+        assetNumber: assetInfo.base,
+        quantity: assetInfo.sequence,
       }));
       return;
     }
 
+    setFormData((prev) => ({
+      ...prev,
+      assetNumber: rawValue,
+    }));
+  };
+
+  const handleAssetNumberBaseBlur = () => {
+    setFormData((prev) => ({
+      ...prev,
+      assetNumber: prev.assetNumber.trim(),
+    }));
+  };
+
+  const handleQuantityChange = (value: string) => {
+    const cleaned = value.replace(/[^0-9]/g, "");
+    setFormData((prev) => ({
+      ...prev,
+      quantity: cleaned,
+    }));
+  };
+
+  const handleQuantityBlur = () => {
     setFormData((prev) => {
-      const assetInfo = normalizeAssetNumber(inputValue, prev.quantity || "1");
+      const raw = prev.quantity ?? "";
+      const normalized = /^\d+$/.test(raw) && parseInt(raw, 10) > 0
+        ? parseInt(raw, 10).toString()
+        : "1";
       return {
         ...prev,
-        assetNumber: assetInfo.base || inputValue,
-        quantity: assetInfo.sequence || prev.quantity || "1",
+        quantity: normalized,
       };
     });
   };
@@ -395,7 +415,7 @@ export default function EquipmentEditDialog({
         toast({
           title: "เกิดข้อผิดพลาด",
           description: "กรุณาระบุเลขครุภัณฑ์",
-          variant: "destructive",
+          variant: "destructive"
         });
         return;
       }
@@ -590,14 +610,55 @@ export default function EquipmentEditDialog({
                     onChange={(e) => handleInputChange('serialNumber', e.target.value)}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="assetNumber">เลขครุภัณฑ์</Label>
-                  <Input
-                    id="assetNumber"
-                    value={fullAssetNumber}
-                    onChange={(e) => handleAssetNumberChange(e.target.value)}
-                    required
-                  />
+                <div className="md:col-span-2">
+                  <Label htmlFor="assetNumberBase">เลขครุภัณฑ์</Label>
+                  <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                    <div className="flex-1">
+                      <Label
+                        htmlFor="assetNumberBase"
+                        className="text-xs font-medium text-muted-foreground"
+                      >
+                        รหัสหลัก
+                      </Label>
+                      <Input
+                        id="assetNumberBase"
+                        value={formData.assetNumber}
+                        onChange={(e) => handleAssetNumberBaseChange(e.target.value)}
+                        onBlur={handleAssetNumberBaseBlur}
+                        placeholder="เช่น 7440-001-0001"
+                        className="mt-1"
+                        required
+                      />
+                    </div>
+                    <div className="flex items-center justify-center text-muted-foreground sm:pt-6">/</div>
+                    <div className="sm:w-28">
+                      <Label
+                        htmlFor="assetNumberSequence"
+                        className="text-xs font-medium text-muted-foreground"
+                      >
+                        ลำดับ
+                      </Label>
+                      <Input
+                        id="assetNumberSequence"
+                        type="number"
+                        min="1"
+                        value={formData.quantity}
+                        onChange={(e) => handleQuantityChange(e.target.value)}
+                        onBlur={handleQuantityBlur}
+                        placeholder="1"
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    ระบบจะบันทึกเป็น "
+                    <span className="font-medium">
+                      {(formData.assetNumber || 'เลขครุภัณฑ์').trim()}
+                      /
+                      {(formData.quantity || '1').trim() || '1'}
+                    </span>
+                    "
+                  </p>
                 </div>
               </div>
             </CardContent>

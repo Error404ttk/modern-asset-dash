@@ -8,13 +8,14 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Settings as SettingsIcon, Building, Tag, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle, ListChecks } from "lucide-react";
+import { Settings as SettingsIcon, Building, Tag, Store, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle, ListChecks } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { DepartmentDialog } from "@/components/settings/DepartmentDialog";
 import { EquipmentTypeDialog } from "@/components/settings/EquipmentTypeDialog";
 import { EquipmentTypeDetailDialog, EquipmentTypeDetail } from "@/components/settings/EquipmentTypeDetailDialog";
 import { DeleteConfirmDialog } from "@/components/settings/DeleteConfirmDialog";
+import { VendorDialog } from "@/components/settings/VendorDialog";
 import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -33,6 +34,14 @@ interface EquipmentType {
   description: string | null;
   active: boolean;
   details: EquipmentTypeDetail[];
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  active: boolean;
 }
 
 type OrganizationFormState = {
@@ -68,6 +77,7 @@ const Settings = () => {
   const [activeTab, setActiveTab] = useState("organization");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoPreviewObjectUrl, setLogoPreviewObjectUrl] = useState<string | null>(null);
@@ -82,6 +92,7 @@ const Settings = () => {
   // Dialog states
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isEquipmentTypeDialogOpen, setIsEquipmentTypeDialogOpen] = useState(false);
+  const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEquipmentDetailDialogOpen, setIsEquipmentDetailDialogOpen] = useState(false);
   const [isDetailDeleteDialogOpen, setIsDetailDeleteDialogOpen] = useState(false);
@@ -89,7 +100,8 @@ const Settings = () => {
   // Edit states
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [editingEquipmentType, setEditingEquipmentType] = useState<EquipmentType | null>(null);
-  const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'equipmentType', item: any } | null>(null);
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'equipmentType' | 'vendor', item: any } | null>(null);
   const [detailDialogState, setDetailDialogState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail | null } | null>(null);
   const [detailDeleteState, setDetailDeleteState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail } | null>(null);
 
@@ -230,6 +242,15 @@ const Settings = () => {
       });
 
       setEquipmentTypes(mappedTypes);
+
+      const { data: vendorData, error: vendorError } = await supabase
+        .from('vendors')
+        .select('*')
+        .order('name');
+
+      if (vendorError) throw vendorError;
+
+      setVendors(vendorData || []);
     } catch (error: any) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -427,6 +448,11 @@ const Settings = () => {
     setIsEquipmentTypeDialogOpen(true);
   };
 
+  const handleEditVendor = (vendor: Vendor) => {
+    setEditingVendor(vendor);
+    setIsVendorDialogOpen(true);
+  };
+
   const handleDeleteDepartment = (department: Department) => {
     setDeletingItem({ type: 'department', item: department });
     setIsDeleteDialogOpen(true);
@@ -434,6 +460,11 @@ const Settings = () => {
 
   const handleDeleteEquipmentType = (equipmentType: EquipmentType) => {
     setDeletingItem({ type: 'equipmentType', item: equipmentType });
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteVendor = (vendor: Vendor) => {
+    setDeletingItem({ type: 'vendor', item: vendor });
     setIsDeleteDialogOpen(true);
   };
 
@@ -473,6 +504,30 @@ const Settings = () => {
       toast({
         title: "อัปเดตสำเร็จ",
         description: `${equipmentType.active ? 'พักใช้งาน' : 'เปิดใช้งาน'}ประเภทครุภัณฑ์เรียบร้อยแล้ว`,
+      });
+
+      loadData();
+    } catch (error: any) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleVendorStatus = async (vendor: Vendor) => {
+    try {
+      const { error } = await supabase
+        .from('vendors')
+        .update({ active: !vendor.active })
+        .eq('id', vendor.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "อัปเดตสำเร็จ",
+        description: `${vendor.active ? 'พักใช้งาน' : 'เปิดใช้งาน'}ข้อมูลผู้ขายเรียบร้อยแล้ว`,
       });
 
       loadData();
@@ -558,8 +613,12 @@ const Settings = () => {
 
     try {
       // Call delete edge function based on type
-      const functionName = deletingItem.type === 'department' ? 'delete-department' : 'delete-equipment-type';
-      
+      const functionName = deletingItem.type === 'department'
+        ? 'delete-department'
+        : deletingItem.type === 'equipmentType'
+          ? 'delete-equipment-type'
+          : 'delete-vendor';
+
       const { data, error } = await supabase.functions.invoke(functionName, {
         body: {
           id: deletingItem.item.id,
@@ -576,7 +635,7 @@ const Settings = () => {
 
       toast({
         title: "ลบสำเร็จ",
-        description: `ลบ${deletingItem.type === 'department' ? 'หน่วยงาน' : 'ประเภทครุภัณฑ์'}เรียบร้อยแล้ว`,
+        description: `ลบ${deletingItem.type === 'department' ? 'หน่วยงาน' : deletingItem.type === 'equipmentType' ? 'ประเภทครุภัณฑ์' : 'ข้อมูลผู้ขาย'}เรียบร้อยแล้ว`,
       });
 
       loadData();
@@ -593,11 +652,20 @@ const Settings = () => {
   const handleDialogClose = () => {
     setEditingDepartment(null);
     setEditingEquipmentType(null);
+    setEditingVendor(null);
     setDeletingItem(null);
     setDetailDialogState(null);
     setDetailDeleteState(null);
     setIsEquipmentDetailDialogOpen(false);
     setIsDetailDeleteDialogOpen(false);
+    setIsVendorDialogOpen(false);
+  };
+
+  const getDeletingLabel = (type?: 'department' | 'equipmentType' | 'vendor') => {
+    if (type === 'department') return 'หน่วยงาน';
+    if (type === 'equipmentType') return 'ประเภทครุภัณฑ์';
+    if (type === 'vendor') return 'ข้อมูลผู้ขาย';
+    return 'รายการ';
   };
 
   if (loading || orgSettingsLoading) {
@@ -619,10 +687,11 @@ const Settings = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="organization">ข้อมูลองค์กร</TabsTrigger>
           <TabsTrigger value="departments">หน่วยงาน</TabsTrigger>
           <TabsTrigger value="equipment-types">ประเภทครุภัณฑ์</TabsTrigger>
+          <TabsTrigger value="vendors">ผู้ขาย/ผู้รับจ้าง</TabsTrigger>
           <TabsTrigger value="system">ระบบ</TabsTrigger>
         </TabsList>
 
@@ -887,6 +956,82 @@ const Settings = () => {
           </Card>
         </TabsContent>
 
+        {/* Vendors Tab */}
+        <TabsContent value="vendors">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center">
+                    <Store className="mr-2 h-5 w-5" />
+                    จัดการผู้ขาย/ผู้รับจ้าง/ผู้บริจาค
+                  </CardTitle>
+                  <CardDescription>
+                    เพิ่ม แก้ไข หรือลบข้อมูลติดต่อของผู้ขาย/ผู้รับจ้าง/ผู้บริจาค
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => {
+                    setEditingVendor(null);
+                    setIsVendorDialogOpen(true);
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  เพิ่มผู้ขาย
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {vendors.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                  ยังไม่มีข้อมูลผู้ขาย/ผู้รับจ้าง/ผู้บริจาคในระบบ
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {vendors.map((vendor) => (
+                    <div key={vendor.id} className="rounded-lg border bg-card p-4">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-3">
+                          <div className="flex items-start space-x-3">
+                            <Store className="mt-1 h-5 w-5 text-muted-foreground" />
+                            <div>
+                              <h3 className="font-medium text-foreground">{vendor.name}</h3>
+                              {vendor.phone ? (
+                                <p className="text-sm text-muted-foreground">โทรศัพท์: {vendor.phone}</p>
+                              ) : null}
+                            </div>
+                          </div>
+                          {vendor.address ? (
+                            <p className="text-sm text-muted-foreground whitespace-pre-line sm:pl-[32px]">
+                              {vendor.address}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+                          <Badge variant={vendor.active ? "default" : "secondary"}>
+                            {vendor.active ? "ใช้งาน" : "ไม่ใช้งาน"}
+                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleToggleVendorStatus(vendor)}>
+                              {vendor.active ? "พักใช้งาน" : "ใช้งาน"}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleEditVendor(vendor)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleDeleteVendor(vendor)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* System Tab */}
         <TabsContent value="system">
           <div className="space-y-6">
@@ -1071,6 +1216,16 @@ const Settings = () => {
         onSuccess={loadData}
       />
 
+      <VendorDialog
+        open={isVendorDialogOpen}
+        onOpenChange={(open) => {
+          setIsVendorDialogOpen(open);
+          if (!open) handleDialogClose();
+        }}
+        vendor={editingVendor}
+        onSuccess={loadData}
+      />
+
       <EquipmentTypeDetailDialog
         open={isEquipmentDetailDialogOpen}
         onOpenChange={(open) => {
@@ -1090,8 +1245,8 @@ const Settings = () => {
           setIsDeleteDialogOpen(open);
           if (!open) handleDialogClose();
         }}
-        title={`ยืนยันการลบ${deletingItem?.type === 'department' ? 'หน่วยงาน' : 'ประเภทครุภัณฑ์'}`}
-        description={`คุณต้องการลบ${deletingItem?.type === 'department' ? 'หน่วยงาน' : 'ประเภทครุภัณฑ์'}นี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้`}
+        title={`ยืนยันการลบ${getDeletingLabel(deletingItem?.type)}`}
+        description={`คุณต้องการลบ${getDeletingLabel(deletingItem?.type)}นี้หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้`}
         itemName={deletingItem?.item?.name || ''}
         onConfirm={handleConfirmDelete}
       />
