@@ -44,11 +44,16 @@ export function QuickScanDialog({
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<BarcodeDetector | null>(null);
   const detectTimeoutRef = useRef<number | null>(null);
+  const fallbackReaderRef = useRef<any>(null);
+  const fallbackControlsRef = useRef<{ stop: () => void } | null>(null);
+  const fallbackActiveRef = useRef(false);
 
   const [supportsDetector, setSupportsDetector] = useState(false);
+  const [supportsMediaDevices, setSupportsMediaDevices] = useState(false);
   const [loadingCamera, setLoadingCamera] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [usingEnvironment, setUsingEnvironment] = useState(true);
+  const [fallbackLoading, setFallbackLoading] = useState(false);
 
   const clearDetectionLoop = useCallback(() => {
     if (detectTimeoutRef.current) {
@@ -64,7 +69,35 @@ export function QuickScanDialog({
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+      } catch {}
+      videoRef.current.removeAttribute("srcObject");
+      videoRef.current.removeAttribute("src");
+      try {
+        videoRef.current.load();
+      } catch {}
+    }
+    if (fallbackControlsRef.current) {
+      try {
+        fallbackControlsRef.current.stop();
+      } catch (err) {
+        console.warn("Error stopping fallback controls", err);
+      }
+      fallbackControlsRef.current = null;
+    }
+    if (fallbackReaderRef.current) {
+      try {
+        fallbackReaderRef.current.reset?.();
+      } catch (err) {
+        console.warn("Error resetting fallback reader", err);
+      }
+      fallbackReaderRef.current = null;
+    }
+    fallbackActiveRef.current = false;
     setLoadingCamera(false);
+    setFallbackLoading(false);
   }, [clearDetectionLoop]);
 
   const handleDetected = useCallback(
@@ -130,12 +163,7 @@ export function QuickScanDialog({
     detectTimeoutRef.current = window.setTimeout(tick, 250);
   }, [clearDetectionLoop, detectOnce, supportsDetector]);
 
-  const startCamera = useCallback(async () => {
-    if (!supportsDetector) {
-      setCameraError("เบราว์เซอร์นี้ยังไม่รองรับการสแกนด้วยกล้อง");
-      return;
-    }
-
+  const startDetectorCamera = useCallback(async () => {
     stopCamera();
     setCameraError(null);
     setLoadingCamera(true);
@@ -170,10 +198,77 @@ export function QuickScanDialog({
         setCameraError("เปิดกล้องไม่สำเร็จ");
       }
     }
-  }, [queueDetection, stopCamera, supportsDetector, usingEnvironment]);
+  }, [queueDetection, stopCamera, usingEnvironment]);
+
+  const startFallbackScanner = useCallback(async () => {
+    stopCamera();
+    setCameraError(null);
+    setFallbackLoading(true);
+
+    if (!videoRef.current) {
+      setCameraError("ไม่พบวิดีโอสำหรับแสดงผล");
+      setFallbackLoading(false);
+      return;
+    }
+
+    try {
+      // Dynamically load ZXing reader for browsers without BarcodeDetector (e.g., iOS Safari)
+      // @vite-ignore
+      const zxing = await import("https://esm.sh/@zxing/browser@0.1.5");
+      const reader = new zxing.BrowserMultiFormatReader();
+      fallbackReaderRef.current = reader;
+      fallbackActiveRef.current = true;
+
+      const controls = await reader.decodeFromVideoDevice(
+        undefined,
+        videoRef.current,
+        (result: any, err: any) => {
+          if (!fallbackActiveRef.current) {
+            return;
+          }
+          if (result) {
+            const text = result.getText ? result.getText() : String(result.text || "");
+            if (text) {
+              handleDetected(text);
+            }
+          }
+          if (err && err.name !== "NotFoundException") {
+            console.warn("ZXing detection error", err);
+          }
+        },
+      );
+
+      fallbackControlsRef.current = controls;
+      setFallbackLoading(false);
+    } catch (err: any) {
+      console.error("Fallback scanner error", err);
+      stopCamera();
+      if (err?.message?.includes("Could not start video source")) {
+        setCameraError("ไม่สามารถเปิดกล้องได้ กรุณาตรวจสอบการอนุญาต");
+      } else {
+        setCameraError("ไม่สามารถเปิดการสแกนได้");
+      }
+    }
+  }, [handleDetected, stopCamera]);
+
+  const startCamera = useCallback(async () => {
+    if (supportsDetector) {
+      await startDetectorCamera();
+      return;
+    }
+
+    if (!supportsMediaDevices) {
+      setCameraError("อุปกรณ์นี้ไม่รองรับการใช้งานกล้อง");
+      return;
+    }
+
+    await startFallbackScanner();
+  }, [startDetectorCamera, startFallbackScanner, supportsDetector, supportsMediaDevices]);
 
   useEffect(() => {
-    setSupportsDetector(typeof window !== "undefined" && typeof window.BarcodeDetector !== "undefined");
+    const hasDetector = typeof window !== "undefined" && typeof window.BarcodeDetector !== "undefined";
+    setSupportsDetector(hasDetector);
+    setSupportsMediaDevices(typeof navigator !== "undefined" && !!navigator.mediaDevices);
   }, []);
 
   useEffect(() => {
@@ -208,17 +303,17 @@ export function QuickScanDialog({
 
         <div className="space-y-4">
           <div className="relative aspect-video overflow-hidden rounded-md border bg-muted">
-            {supportsDetector ? (
-              <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                เบราว์เซอร์นี้ยังไม่รองรับ BarcodeDetector API โปรดอัปเดตเบราว์เซอร์หรือกรอกข้อมูลด้วยตนเอง
+            <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
+
+            {(loadingCamera || fallbackLoading) && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             )}
 
-            {loadingCamera && supportsDetector && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/70">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            {!supportsDetector && (
+              <div className="absolute inset-x-0 bottom-0 rounded-t-md bg-background/70 p-2 text-center text-xs text-muted-foreground">
+                โหมดสแกนสำหรับสมาร์ตโฟน: ใช้กล้องหน้า/หลังตามค่าเริ่มต้นของอุปกรณ์
               </div>
             )}
           </div>
@@ -230,7 +325,12 @@ export function QuickScanDialog({
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={handleRetry} disabled={loadingCamera || !supportsDetector}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRetry}
+              disabled={loadingCamera || fallbackLoading || !supportsMediaDevices}
+            >
               <RefreshCw className="mr-2 h-4 w-4" />
               รีเฟรชกล้อง
             </Button>
@@ -238,7 +338,7 @@ export function QuickScanDialog({
               type="button"
               variant="outline"
               onClick={handleToggleCamera}
-              disabled={loadingCamera || !supportsDetector}
+              disabled={loadingCamera || fallbackLoading || !supportsMediaDevices || !supportsDetector}
             >
               {usingEnvironment ? (
                 <>
