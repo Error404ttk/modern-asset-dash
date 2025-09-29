@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Save, ArrowLeft, Upload, Computer, Monitor, Loader2, Camera, X, Info } from "lucide-react";
+import { Save, ArrowLeft, Upload, Computer, Monitor, Loader2, Camera, X, Info, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import { BASE_EQUIPMENT_TYPES } from "@/data/equipmentTypes.ts";
 import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
 import { normalizeAssetNumber } from "@/lib/asset-number";
+import QuickScanDialog from "@/components/scanner/QuickScanDialog";
 
 export default function AddEquipment() {
   const { toast } = useToast();
@@ -36,8 +37,38 @@ export default function AddEquipment() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [latestAssetNumber, setLatestAssetNumber] = useState<string | null>(null);
   const [checkingLatestAsset, setCheckingLatestAsset] = useState(false);
+  const [modelValue, setModelValue] = useState("");
+  const [serialNumberValue, setSerialNumberValue] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState<"model" | "serial" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const openScanner = (target: "model" | "serial") => {
+    setScannerTarget(target);
+    setScannerOpen(true);
+  };
+
+  const handleScanDetected = (value: string) => {
+    const cleaned = value.trim();
+    if (!cleaned) return;
+
+    if (scannerTarget === "model") {
+      setModelValue(cleaned);
+      toast({
+        title: "สแกนสำเร็จ",
+        description: "กรอกรุ่น/โมเดลจากรหัสที่สแกนแล้ว",
+      });
+    } else if (scannerTarget === "serial") {
+      setSerialNumberValue(cleaned);
+      toast({
+        title: "สแกนสำเร็จ",
+        description: "กรอก Serial Number จากรหัสที่สแกนแล้ว",
+      });
+    }
+
+    setScannerTarget(null);
+  };
 
   const sequencePreview = useMemo(() => {
     const parsed = parseInt(quantity, 10);
@@ -543,20 +574,46 @@ export default function AddEquipment() {
 
                   <div className="space-y-2">
                     <Label htmlFor="model">รุ่น/โมเดล</Label>
-                    <Input
-                      id="model"
-                      name="model"
-                      placeholder="เช่น OptiPlex 7090, LaserJet Pro"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id="model"
+                        name="model"
+                        placeholder="เช่น OptiPlex 7090, LaserJet Pro"
+                        value={modelValue}
+                        onChange={(event) => setModelValue(event.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => openScanner("model")}
+                        aria-label="สแกนรุ่นหรือโมเดล"
+                      >
+                        <QrCode className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="serialNumber">Serial Number</Label>
-                    <Input
-                      id="serialNumber"
-                      name="serialNumber"
-                      placeholder="เช่น DELL7090001"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id="serialNumber"
+                        name="serialNumber"
+                        placeholder="เช่น DELL7090001"
+                        value={serialNumberValue}
+                        onChange={(event) => setSerialNumberValue(event.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => openScanner("serial")}
+                        aria-label="สแกน Serial Number"
+                      >
+                        <QrCode className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -989,6 +1046,18 @@ export default function AddEquipment() {
           </Button>
         </div>
       </form>
+      <QuickScanDialog
+        open={scannerOpen}
+        onOpenChange={(open) => {
+          setScannerOpen(open);
+          if (!open) {
+            setScannerTarget(null);
+          }
+        }}
+        onDetected={handleScanDetected}
+        title={scannerTarget === "serial" ? "สแกน Serial Number" : "สแกนรุ่น/โมเดล"}
+        description="จัดวางรหัสให้อยู่ในกรอบของกล้องเพื่อให้ระบบอ่านอัตโนมัติ"
+      />
     </div>
   );
 }
