@@ -10,7 +10,8 @@ import {
   Loader2,
   Trash2,
   Building2,
-  ArrowLeftRight
+  ArrowLeftRight,
+  AlertTriangle
 } from "lucide-react";
 import QRCodeDialog from "@/components/equipment/QRCodeDialog";
 import EquipmentViewDialog from "@/components/equipment/EquipmentViewDialog";
@@ -444,6 +445,10 @@ export default function Equipment() {
       available: 0,
       maintenance: 0,
       damaged: 0,
+      borrowed: 0,
+      pending_disposal: 0,
+      disposed: 0,
+      lost: 0,
     };
 
     filteredEquipment.forEach((item) => {
@@ -456,6 +461,18 @@ export default function Equipment() {
           break;
         case "damaged":
           counts.damaged += 1;
+          break;
+        case "borrowed":
+          counts.borrowed += 1;
+          break;
+        case "pending_disposal":
+          counts.pending_disposal += 1;
+          break;
+        case "disposed":
+          counts.disposed += 1;
+          break;
+        case "lost":
+          counts.lost += 1;
           break;
         default:
           break;
@@ -515,7 +532,7 @@ export default function Equipment() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
         <Card className="bg-gradient-card shadow-soft">
           <CardContent className="p-3 sm:p-4">
                 <div className="flex items-center space-x-2">
@@ -573,6 +590,70 @@ export default function Equipment() {
                   {filteredStatusCounts.damaged}
                 </p>
                 <p className="text-xs sm:text-sm text-muted-foreground">ชำรุด</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center space-x-2">
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                <ArrowLeftRight className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xl sm:text-2xl font-bold text-primary">
+                  {filteredStatusCounts.borrowed}
+                </p>
+                <p className="text-xs sm:text-sm text-muted-foreground">ถูกยืม</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center space-x-2">
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-secondary/10 rounded-lg flex items-center justify-center">
+                <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 text-secondary" />
+              </div>
+              <div>
+                <p className="text-xl sm:text-2xl font-bold text-secondary">
+                  {filteredStatusCounts.pending_disposal}
+                </p>
+                <p className="text-xs sm:text-sm text-muted-foreground">รอจำหน่าย</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center space-x-2">
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-disposed/10 rounded-lg flex items-center justify-center">
+                <Trash2 className="h-4 w-4 sm:h-5 sm:w-5 text-disposed" />
+              </div>
+              <div>
+                <p className="text-xl sm:text-2xl font-bold text-disposed">
+                  {filteredStatusCounts.disposed}
+                </p>
+                <p className="text-xs sm:text-sm text-muted-foreground">จำหน่าย</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-card shadow-soft">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center space-x-2">
+              <div className="h-6 w-6 sm:h-8 sm:w-8 bg-destructive/10 rounded-lg flex items-center justify-center">
+                <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-destructive" />
+              </div>
+              <div>
+                <p className="text-xl sm:text-2xl font-bold text-destructive">
+                  {filteredStatusCounts.lost}
+                </p>
+                <p className="text-xs sm:text-sm text-muted-foreground">สูญหาย</p>
               </div>
             </div>
           </CardContent>
