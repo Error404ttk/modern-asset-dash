@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/table";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import type { Tables, Json, TablesUpdate } from "@/integrations/supabase/types";
+import type { Tables, Json, TablesUpdate, TablesInsert } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
 import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
@@ -122,7 +122,7 @@ export default function Equipment() {
   const [nameFilter, setNameFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const { toast } = useToast();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const navigate = useNavigate();
 
   // Fetch equipment data from Supabase
@@ -195,25 +195,58 @@ export default function Equipment() {
   };
 
   // Accept the dialog's Equipment shape (structurally compatible with EquipmentItem)
+  const normalizeOptional = (value: string | null | undefined) => {
+    const trimmed = value?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : null;
+  };
+
   const handleSaveEdit = (updatedEquipment: EquipmentItem) => {
     (async () => {
+      const previousEquipment =
+        equipmentList.find((item) => item.id === updatedEquipment.id) || selectedEquipment;
+      const previousStatus = previousEquipment?.status?.trim().toLowerCase();
+
       try {
+        const sanitizedName = updatedEquipment.name.trim();
+        const sanitizedType = updatedEquipment.type.trim();
+        const sanitizedAssetNumber = updatedEquipment.assetNumber.trim();
+        const sanitizedStatusRaw = updatedEquipment.status.trim();
+        const sanitizedStatus = sanitizedStatusRaw.toLowerCase();
+        const sanitizedQuantity = parseInt(updatedEquipment.quantity, 10) || 1;
+
+        if (!sanitizedName || !sanitizedType || !sanitizedAssetNumber || !sanitizedStatus) {
+          toast({
+            title: "เกิดข้อผิดพลาด",
+            description: "ข้อมูลไม่ครบถ้วน กรุณาตรวจสอบอีกครั้ง",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const brandNormalized = normalizeOptional(updatedEquipment.brand);
+        const modelNormalized = normalizeOptional(updatedEquipment.model);
+        const serialNormalized = normalizeOptional(updatedEquipment.serialNumber);
+        const locationNormalized = normalizeOptional(updatedEquipment.location);
+        const assignedToNormalized = normalizeOptional(updatedEquipment.user);
+        const purchaseDateNormalized = normalizeOptional(updatedEquipment.purchaseDate);
+        const warrantyEndNormalized = normalizeOptional(updatedEquipment.warrantyEnd);
+
         // Transform back to database format
         const dbUpdate: TablesUpdate<'equipment'> = {
-          name: updatedEquipment.name,
-          type: updatedEquipment.type,
-          brand: updatedEquipment.brand,
-          model: updatedEquipment.model,
-          serial_number: updatedEquipment.serialNumber,
-          asset_number: updatedEquipment.assetNumber,
-          quantity: parseInt(updatedEquipment.quantity, 10) || 1,
-          status: updatedEquipment.status,
-          location: updatedEquipment.location,
-          assigned_to: updatedEquipment.user,
-          purchase_date: updatedEquipment.purchaseDate,
-          warranty_end: updatedEquipment.warrantyEnd,
+          name: sanitizedName,
+          type: sanitizedType,
+          brand: brandNormalized,
+          model: modelNormalized,
+          serial_number: serialNormalized,
+          asset_number: sanitizedAssetNumber,
+          quantity: sanitizedQuantity,
+          status: sanitizedStatus,
+          location: locationNormalized,
+          assigned_to: assignedToNormalized,
+          purchase_date: purchaseDateNormalized,
+          warranty_end: warrantyEndNormalized,
           images: updatedEquipment.images ?? [],
-          specs: (updatedEquipment.specs as unknown as Json)
+          specs: (updatedEquipment.specs as unknown as Json),
         };
 
         const { error } = await supabase
@@ -223,11 +256,126 @@ export default function Equipment() {
 
         if (error) throw error;
 
+        const departmentRaw =
+          typeof updatedEquipment.specs?.department === 'string'
+            ? updatedEquipment.specs.department.trim()
+            : '';
+        const departmentForRecord = departmentRaw.length > 0 ? departmentRaw : null;
+        const equipmentNotes =
+          typeof updatedEquipment.specs?.notes === 'string'
+            ? updatedEquipment.specs.notes.trim()
+            : '';
+
+        const ensureBorrowTransaction = async () => {
+          const { data: activeRecords, error: activeError } = await supabase
+            .from('borrow_transactions')
+            .select('id')
+            .eq('equipment_id', updatedEquipment.id)
+            .in('status', ['borrowed', 'overdue'])
+            .limit(1);
+
+          if (activeError) throw activeError;
+          if (activeRecords && activeRecords.length > 0) return;
+
+          const borrowerName = assignedToNormalized ?? '';
+          const borrowerDisplay = borrowerName || 'ไม่ระบุผู้ยืม';
+          const borrowerUserId = user?.id ?? profile?.user_id;
+
+          if (!borrowerUserId) {
+            throw new Error('ไม่พบข้อมูลผู้ใช้งานสำหรับบันทึกรายการยืม');
+          }
+
+          const autoNoteSegments = [
+            'สร้างจากการอัพเดทสถานะที่หน้า "รายการครุภัณฑ์"',
+            equipmentNotes ? `หมายเหตุครุภัณฑ์: ${equipmentNotes}` : null,
+          ].filter(Boolean);
+
+          const borrowPayload: TablesInsert<'borrow_transactions'> = {
+            equipment_id: updatedEquipment.id,
+            borrower_name: borrowerDisplay,
+            borrower_contact: null,
+            department: departmentForRecord,
+            borrowed_at: new Date().toISOString(),
+            expected_return_at: null,
+            notes: autoNoteSegments.join('\n') || null,
+            status: 'borrowed',
+            user_id: borrowerUserId,
+          };
+
+          const { error: borrowError } = await supabase
+            .from('borrow_transactions')
+            .insert([borrowPayload]);
+
+          if (borrowError) throw borrowError;
+        };
+
+        const finalizeBorrowTransactions = async () => {
+          const { data: activeRecords, error: activeError } = await supabase
+            .from('borrow_transactions')
+            .select('id')
+            .eq('equipment_id', updatedEquipment.id)
+            .in('status', ['borrowed', 'overdue']);
+
+          if (activeError) throw activeError;
+          if (!activeRecords || activeRecords.length === 0) return;
+
+          const nowIso = new Date().toISOString();
+          const returnCondition =
+            sanitizedStatus === 'damaged'
+              ? 'damaged'
+              : sanitizedStatus === 'lost'
+              ? 'lost'
+              : 'normal';
+
+          const transactionUpdate: TablesUpdate<'borrow_transactions'> = {
+            status: 'returned',
+            returned_at: nowIso,
+            return_condition: returnCondition,
+          };
+
+          const { error: closeError } = await supabase
+            .from('borrow_transactions')
+            .update(transactionUpdate)
+            .in(
+              'id',
+              activeRecords.map((record) => record.id),
+            );
+
+          if (closeError) throw closeError;
+        };
+
+        if (sanitizedStatus === 'borrowed' && previousStatus !== 'borrowed' && previousStatus !== 'overdue') {
+          await ensureBorrowTransaction();
+        } else if (
+          previousStatus &&
+          (previousStatus === 'borrowed' || previousStatus === 'overdue') &&
+          sanitizedStatus !== 'borrowed'
+        ) {
+          await finalizeBorrowTransactions();
+        }
+
+        const updatedEquipmentForState: EquipmentItem = {
+          ...updatedEquipment,
+          name: sanitizedName,
+          type: sanitizedType,
+          brand: brandNormalized ?? '',
+          model: modelNormalized ?? '',
+          serialNumber: serialNormalized ?? '',
+          assetNumber: sanitizedAssetNumber,
+          quantity: sanitizedQuantity.toString(),
+          status: sanitizedStatus,
+          location: locationNormalized ?? '',
+          user: assignedToNormalized ?? '',
+          purchaseDate: purchaseDateNormalized ?? '',
+          warrantyEnd: warrantyEndNormalized ?? '',
+        };
+
         // Update local state
-        setEquipmentList(prev => 
-          prev.map(item => 
-            item.id === updatedEquipment.id ? updatedEquipment : item
-          )
+        setEquipmentList((prev) =>
+          prev.map((item) => (item.id === updatedEquipment.id ? updatedEquipmentForState : item)),
+        );
+        setSelectedEquipment((prev) =>
+          prev && prev.id === updatedEquipment.id ? updatedEquipmentForState : prev,
         );
 
         toast({
@@ -235,9 +383,13 @@ export default function Equipment() {
           description: "อัพเดทข้อมูลครุภัณฑ์เรียบร้อยแล้ว",
         });
       } catch (error: unknown) {
+        console.error('Error updating equipment:', error);
         toast({
           title: "เกิดข้อผิดพลาด",
-          description: "ไม่สามารถอัพเดทข้อมูลได้",
+          description:
+            error instanceof Error && error.message
+              ? `ไม่สามารถอัพเดทข้อมูลได้: ${error.message}`
+              : "ไม่สามารถอัพเดทข้อมูลได้",
           variant: "destructive",
         });
       }
