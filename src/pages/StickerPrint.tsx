@@ -424,25 +424,57 @@ export default function StickerPrint() {
   const sizeLabel = useMemo(() => `${formatMillimeter(stickerWidthMm)} x ${formatMillimeter(stickerHeightMm)} mm`, [stickerWidthMm, stickerHeightMm]);
   const isContinuous = layoutMode === "continuous";
   const gapValueMm = Number.isFinite(labelGapMm) ? Math.max(labelGapMm, 0) : 0;
+  const printStepHeightMm = stickerHeightMm + gapValueMm;
 
   const continuousPrintStyles = useMemo(() => {
     if (!isContinuous) return "";
     return `@media print {
       @page {
-        size: auto;
+        size: ${stickerWidthMm}mm ${printStepHeightMm}mm;
         margin: 0;
+      }
+
+      html, body {
+        width: ${stickerWidthMm}mm;
+        margin: 0;
+        padding: 0;
+      }
+
+      .sticker-preview-card,
+      .sticker-preview-content {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+      }
+
+      .sticker-preview-card {
+        width: ${stickerWidthMm}mm !important;
+      }
+
+      .sticker-preview-content {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        padding: 0 !important;
+        gap: ${gapValueMm}mm !important;
       }
 
       .sticker-group-continuous {
         gap: ${gapValueMm}mm !important;
+        padding: 0 !important;
+        width: 100% !important;
+        align-items: center !important;
       }
 
       .sticker-group-continuous .sticker-item {
         page-break-inside: avoid;
         margin: 0 !important;
+        width: ${stickerWidthMm}mm !important;
+        height: ${stickerHeightMm}mm !important;
       }
     }`;
-  }, [isContinuous, gapValueMm]);
+  }, [gapValueMm, isContinuous, printStepHeightMm, stickerHeightMm, stickerWidthMm]);
 
   const handlePrint = () => {
     if (!printableCount) return;
@@ -659,8 +691,8 @@ export default function StickerPrint() {
           </Card>
         </div>
 
-        <Card className="overflow-hidden">
-          <CardHeader className="flex flex-col gap-4 border-b border-border bg-muted/40 print:hidden sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <Card className="overflow-hidden sticker-preview-card">
+          <CardHeader className="flex flex-col gap-4 border-b border-border bg-muted/40 print:hidden sm:flex-row sm:items-center sm:justify-between sm:gap-6 sticker-preview-header">
             <div>
               <CardTitle>ตัวอย่างสติ๊กเกอร์</CardTitle>
               <CardDescription>
@@ -691,7 +723,7 @@ export default function StickerPrint() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="bg-white">
+          <CardContent className="bg-white sticker-preview-content">
             {loading ? (
               <div className="flex h-[320px] items-center justify-center text-muted-foreground">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
