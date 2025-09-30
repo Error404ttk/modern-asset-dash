@@ -1,4 +1,4 @@
-import { type ComponentType, useCallback, useEffect, useMemo, useState } from "react";
+import { type ComponentType, type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { Loader2, Printer, RefreshCcw, LayoutGrid, Layers3, Building2, CheckSquare } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 import { DEFAULT_STICKER_WIDTH_MM, DEFAULT_STICKER_HEIGHT_MM, clampStickerWidth, clampStickerHeight } from "@/lib/sticker";
 import { format, isValid, parseISO } from "date-fns";
 import { th as thaiLocale } from "date-fns/locale";
+
+type LayoutMode = "sheet" | "continuous";
 
 interface StickerEquipment {
   id: string;
@@ -131,11 +133,20 @@ interface StickerPreviewProps {
   qrSrc?: string;
   widthMm: number;
   heightMm: number;
+  className?: string;
+  style?: CSSProperties;
 }
 
 const formatMillimeter = (value: number) => (Number.isFinite(value) && value % 1 !== 0 ? value.toFixed(1) : Math.round(value).toString());
 
-function StickerPreview({ equipment, qrSrc, widthMm, heightMm }: StickerPreviewProps) {
+function StickerPreview({
+  equipment,
+  qrSrc,
+  widthMm,
+  heightMm,
+  className,
+  style
+}: StickerPreviewProps) {
   const baseWidth = DEFAULT_STICKER_WIDTH_MM;
   const baseHeight = DEFAULT_STICKER_HEIGHT_MM;
   const widthRatio = widthMm / baseWidth;
@@ -151,8 +162,13 @@ function StickerPreview({ equipment, qrSrc, widthMm, heightMm }: StickerPreviewP
 
   return (
     <div
-      className="flex h-full w-full flex-col rounded-xl border border-slate-200 bg-white shadow-sm transition print:shadow-none"
-      style={{ width: `${widthMm}mm`, height: `${heightMm}mm`, padding: `${paddingY}mm ${paddingX}mm` }}
+      className={cn("flex h-full w-full flex-col rounded-xl border border-slate-200 bg-white shadow-sm transition print:shadow-none", className)}
+      style={{
+        width: `${widthMm}mm`,
+        height: `${heightMm}mm`,
+        padding: `${paddingY}mm ${paddingX}mm`,
+        ...style
+      }}
     >
       <div className="flex h-full flex-1 items-center" style={{ gap: `${gapBetween}mm` }}>
         <div className="flex h-full items-center">
@@ -208,6 +224,8 @@ export default function StickerPrint() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [qrCache, setQrCache] = useState<Record<string, string>>({});
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("sheet");
+  const [labelGapMm, setLabelGapMm] = useState(2);
 
   const fetchEquipment = useCallback(async () => {
     try {
@@ -404,6 +422,27 @@ export default function StickerPrint() {
   }, [settings]);
 
   const sizeLabel = useMemo(() => `${formatMillimeter(stickerWidthMm)} x ${formatMillimeter(stickerHeightMm)} mm`, [stickerWidthMm, stickerHeightMm]);
+  const isContinuous = layoutMode === "continuous";
+  const gapValueMm = Number.isFinite(labelGapMm) ? Math.max(labelGapMm, 0) : 0;
+
+  const continuousPrintStyles = useMemo(() => {
+    if (!isContinuous) return "";
+    return `@media print {
+      @page {
+        size: auto;
+        margin: 0;
+      }
+
+      .sticker-group-continuous {
+        gap: ${gapValueMm}mm !important;
+      }
+
+      .sticker-group-continuous .sticker-item {
+        page-break-inside: avoid;
+        margin: 0 !important;
+      }
+    }`;
+  }, [isContinuous, gapValueMm]);
 
   const handlePrint = () => {
     if (!printableCount) return;
@@ -460,6 +499,63 @@ export default function StickerPrint() {
                   );
                 })}
               </RadioGroup>
+
+              <div className="mt-6 space-y-3">
+                <div>
+                  <Label className="text-sm font-medium text-foreground">โหมดเครื่องพิมพ์</Label>
+                  <p className="text-xs text-muted-foreground">เลือกรูปแบบการพิมพ์ตามชนิดเครื่องพิมพ์ที่ใช้งาน</p>
+                </div>
+                <RadioGroup value={layoutMode} onValueChange={(value) => setLayoutMode(value as LayoutMode)} className="grid gap-3 sm:grid-cols-2">
+                  <Label
+                    htmlFor="layout-sheet"
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition",
+                      !isContinuous ? "border-primary bg-primary/5" : "hover:border-primary/60"
+                    )}
+                  >
+                    <RadioGroupItem id="layout-sheet" value="sheet" className="mt-1" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-slate-900">กระดาษแผ่น (A4 / Letter)</p>
+                      <p className="text-xs text-muted-foreground">จัดเรียงเป็นตาราง เหมาะกับเครื่องพิมพ์ทั่วไปหรือกระดาษสติ๊กเกอร์แบบแผ่น</p>
+                    </div>
+                  </Label>
+
+                  <Label
+                    htmlFor="layout-continuous"
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition",
+                      isContinuous ? "border-primary bg-primary/5" : "hover:border-primary/60"
+                    )}
+                  >
+                    <RadioGroupItem id="layout-continuous" value="continuous" className="mt-1" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-slate-900">สติ๊กเกอร์ต่อเนื่อง / เครื่องพิมพ์ TSC</p>
+                      <p className="text-xs text-muted-foreground">เรียงสติ๊กเกอร์เป็นคอลัมน์เดียว พร้อมปรับระยะสำหรับเครื่องพิมพ์ต่อเนื่อง เช่น TSC TTP-244 Plus</p>
+                    </div>
+                  </Label>
+                </RadioGroup>
+
+                {isContinuous && (
+                  <div className="space-y-2">
+                    <Label htmlFor="label-gap">ระยะห่างระหว่างสติ๊กเกอร์ (มิลลิเมตร)</Label>
+                    <Input
+                      id="label-gap"
+                      type="number"
+                      min="0"
+                      max="20"
+                      step="0.5"
+                      value={labelGapMm}
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        setLabelGapMm(Number.isNaN(next) ? 0 : Math.max(next, 0));
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      ปรับให้ตรงกับระยะช่องว่างของสติ๊กเกอร์บนม้วน (ค่าที่แนะนำสำหรับ TSC TTP-244 Plus คือ 2-3 มม.)
+                    </p>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -572,6 +668,11 @@ export default function StickerPrint() {
                   ? `พร้อมพิมพ์ ${printableCount} รายการ`
                   : "เลือกครุภัณฑ์หรือเปลี่ยนรูปแบบการพิมพ์เพื่อดูตัวอย่าง"}
               </CardDescription>
+              {isContinuous && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  แนะนำให้ตั้งค่าเครื่องพิมพ์เป็นโหมด Gap 2-3 มม. และปิดการย่อ/ขยายหน้ากระดาษเพื่อให้ความยาวของสติ๊กเกอร์ตรงกับของจริง
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -619,7 +720,14 @@ export default function StickerPrint() {
                         </Badge>
                       </div>
                     )}
-                    <div className="grid grid-cols-1 gap-4 print:grid-cols-2 print:gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div
+                      className={cn(
+                        isContinuous
+                          ? "sticker-group-continuous flex flex-col"
+                          : "grid grid-cols-1 gap-4 print:grid-cols-2 print:gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                      )}
+                      style={isContinuous ? { gap: `${gapValueMm}mm` } : undefined}
+                    >
                       {group.items.map((item) => (
                         <StickerPreview
                           key={item.id}
@@ -627,6 +735,7 @@ export default function StickerPrint() {
                           qrSrc={qrCache[item.id]}
                           widthMm={stickerWidthMm}
                           heightMm={stickerHeightMm}
+                          className="sticker-item"
                         />
                       ))}
                     </div>
@@ -637,6 +746,7 @@ export default function StickerPrint() {
           </CardContent>
         </Card>
       </div>
+      {isContinuous && <style>{continuousPrintStyles}</style>}
     </div>
   );
 }
