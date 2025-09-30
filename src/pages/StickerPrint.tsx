@@ -426,6 +426,45 @@ export default function StickerPrint() {
   const gapValueMm = Number.isFinite(labelGapMm) ? Math.max(labelGapMm, 0) : 0;
   const printStepHeightMm = stickerHeightMm + gapValueMm;
 
+  const basePrintStyles = useMemo(
+    () => `@media print {
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff !important;
+      }
+
+      #root {
+        background: #ffffff !important;
+      }
+
+      .sticker-print-container {
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      .sticker-preview-card,
+      .sticker-preview-content {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+      }
+
+      .sticker-preview-card {
+        padding: 0 !important;
+      }
+
+      .sticker-preview-content {
+        padding: 0 !important;
+      }
+
+      .sticker-print-container .sticker-item {
+        margin: 0 auto;
+      }
+    }`,
+    []
+  );
+
   const continuousPrintStyles = useMemo(() => {
     if (!isContinuous) return "";
     return `@media print {
@@ -482,7 +521,7 @@ export default function StickerPrint() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 sticker-print-container print:space-y-4">
       <div className="flex flex-col gap-3 print:hidden sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">พิมพ์สติ๊กเกอร์ครุภัณฑ์</h1>
@@ -691,7 +730,7 @@ export default function StickerPrint() {
           </Card>
         </div>
 
-        <Card className="overflow-hidden sticker-preview-card">
+        <Card className="overflow-hidden sticker-preview-card print:border-none print:bg-transparent print:shadow-none">
           <CardHeader className="flex flex-col gap-4 border-b border-border bg-muted/40 print:hidden sm:flex-row sm:items-center sm:justify-between sm:gap-6 sticker-preview-header">
             <div>
               <CardTitle>ตัวอย่างสติ๊กเกอร์</CardTitle>
@@ -723,7 +762,7 @@ export default function StickerPrint() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="bg-white sticker-preview-content">
+          <CardContent className="bg-white sticker-preview-content print:bg-transparent print:p-0">
             {loading ? (
               <div className="flex h-[320px] items-center justify-center text-muted-foreground">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -778,6 +817,7 @@ export default function StickerPrint() {
           </CardContent>
         </Card>
       </div>
+      <style>{basePrintStyles}</style>
       {isContinuous && <style>{continuousPrintStyles}</style>}
     </div>
   );
