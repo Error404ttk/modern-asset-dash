@@ -743,7 +743,7 @@ export default function StickerPrint() {
                 {stickerGroups.map((group, index) => (
                   <div key={group.title ?? `group-${index}`} className="break-inside-avoid">
                     {group.title && (
-                      <div className="mb-3 flex items-center gap-3 print:mb-2">
+                      <div className="mb-3 flex items-center gap-3 print:mb-2 print:hidden">
                         <span className="text-sm font-semibold uppercase tracking-wide text-primary">
                           {group.title}
                         </span>
