@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,6 +24,77 @@ import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
 import { normalizeAssetNumber } from "@/lib/asset-number";
 import QuickScanDialog from "@/components/scanner/QuickScanDialog";
+
+const STATUS_VARIANTS: Record<string, { label: string; className: string }> = {
+  available: { label: "พร้อมใช้งาน", className: "border border-emerald-200 bg-emerald-100 text-emerald-700" },
+  borrowed: { label: "ถูกยืม", className: "border border-blue-200 bg-blue-100 text-blue-700" },
+  maintenance: { label: "ซ่อมบำรุง", className: "border border-amber-200 bg-amber-100 text-amber-700" },
+  damaged: { label: "ชำรุด", className: "border border-rose-200 bg-rose-100 text-rose-700" },
+  pending_disposal: { label: "รอจำหน่าย", className: "border border-slate-200 bg-slate-100 text-slate-700" },
+  disposed: { label: "จำหน่าย", className: "border border-purple-200 bg-purple-100 text-purple-700" },
+  lost: { label: "สูญหาย", className: "border border-rose-200 bg-rose-100 text-rose-700" },
+};
+
+const getStatusDisplay = (status: string | null | undefined) => {
+  if (!status) {
+    return {
+      label: "-",
+      className: "border border-muted-foreground/20 bg-muted/60 text-muted-foreground",
+    };
+  }
+
+  const normalized = status.trim().toLowerCase();
+  if (!normalized) {
+    return {
+      label: "-",
+      className: "border border-muted-foreground/20 bg-muted/60 text-muted-foreground",
+    };
+  }
+
+  return (
+    STATUS_VARIANTS[normalized] || {
+      label: status,
+      className: "border border-muted-foreground/20 bg-muted/60 text-muted-foreground",
+    }
+  );
+};
+
+type AssetRecord = {
+  assetNumber: string;
+  basePrefix: string;
+  sequence: number | null;
+  name: string | null;
+  status: string | null;
+  department: string | null;
+  location: string | null;
+};
+
+const compareAssetRecords = (a: AssetRecord, b: AssetRecord) => {
+  const baseA = a.basePrefix || a.assetNumber;
+  const baseB = b.basePrefix || b.assetNumber;
+
+  const baseCompare = baseA.localeCompare(baseB, 'th', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+
+  if (baseCompare !== 0) return baseCompare;
+
+  const seqA = a.sequence;
+  const seqB = b.sequence;
+
+  if (seqA !== null && seqB !== null && seqA !== seqB) {
+    return seqA - seqB;
+  }
+
+  if (seqA !== null && seqB === null) return -1;
+  if (seqA === null && seqB !== null) return 1;
+
+  return a.assetNumber.localeCompare(b.assetNumber, 'th', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+};
 
 type Vendor = {
   id: string;
@@ -44,8 +117,9 @@ export default function AddEquipment() {
   const [activeEquipmentTypes, setActiveEquipmentTypes] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [latestAssetNumber, setLatestAssetNumber] = useState<string | null>(null);
+  const [assetRecords, setAssetRecords] = useState<AssetRecord[]>([]);
   const [checkingLatestAsset, setCheckingLatestAsset] = useState(false);
+  const [isAssetDialogOpen, setIsAssetDialogOpen] = useState(false);
   const [modelValue, setModelValue] = useState("");
   const [serialNumberValue, setSerialNumberValue] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -230,30 +304,34 @@ export default function AddEquipment() {
           // Map database equipment types to the format expected by the UI
           const mappedTypes = equipmentTypesData.map(dbType => {
             // Prefer exact code match; if not found, fall back to strict label equality
-            const matchingType =
-              baseEquipmentTypes.find(t => t.code === dbType.code) ||
-              baseEquipmentTypes.find(t => t.label === dbType.name);
+          const matchingType =
+            baseEquipmentTypes.find(t => t.code === dbType.code) ||
+            baseEquipmentTypes.find(t => t.label === dbType.name);
 
-            const details = (dbType.equipment_type_details || []) as Array<{
+          const details = (dbType.equipment_type_details || []) as Array<{
               id: string;
               name: string;
               code: string;
               active: boolean;
             }>;
 
-            const activeDetails = details
-              .filter(detail => detail.active)
-              .sort((a, b) => a.code.localeCompare(b.code, 'th'))
-              .map(detail => ({ value: detail.code, label: detail.name }));
+          const activeDetails = details
+            .filter(detail => detail.active)
+            .sort((a, b) => a.code.localeCompare(b.code, 'th'))
+            .map(detail => ({ value: detail.code, label: detail.name }));
 
-            return {
-              value: dbType.code.toLowerCase(),
-              label: dbType.name,
-              icon: matchingType?.icon || Computer,
-              code: dbType.code,
-              subTypes: activeDetails.length > 0 ? activeDetails : (matchingType?.subTypes || [])
-            };
-          });
+          const fallbackSubTypes = (matchingType?.subTypes && matchingType.subTypes.length > 0)
+            ? matchingType.subTypes
+            : [{ value: dbType.code, label: dbType.name }];
+
+          return {
+            value: dbType.code.toLowerCase(),
+            label: dbType.name,
+            icon: matchingType?.icon || Computer,
+            code: dbType.code,
+            subTypes: activeDetails.length > 0 ? activeDetails : fallbackSubTypes
+          };
+        });
 
           setActiveEquipmentTypes(mappedTypes);
         }
@@ -288,36 +366,115 @@ export default function AddEquipment() {
 
   useEffect(() => {
     if (!equipmentSubType) {
-      setLatestAssetNumber(null);
+      setAssetRecords([]);
       setCheckingLatestAsset(false);
+      setIsAssetDialogOpen(false);
       return;
     }
 
     let isActive = true;
 
-    const fetchLatestAsset = async () => {
+    const fetchAssetNumbers = async () => {
       try {
         setCheckingLatestAsset(true);
-        const { data, error } = await supabase
+        const prefixCandidates = new Set<string>();
+        const normalizedSubType = equipmentSubType.trim();
+        if (normalizedSubType) {
+          prefixCandidates.add(normalizedSubType);
+          const lastDash = normalizedSubType.lastIndexOf('-');
+          if (lastDash !== -1) {
+            const basePrefix = normalizedSubType.slice(0, lastDash);
+            if (basePrefix) {
+              prefixCandidates.add(basePrefix);
+            }
+          }
+        }
+
+        const prefixes = Array.from(prefixCandidates);
+
+        let query = supabase
           .from('equipment')
-          .select('asset_number, created_at')
-          .ilike('asset_number', `${equipmentSubType}/%`)
-          .order('created_at', { ascending: false })
-          .limit(1);
+          .select('asset_number, name, status, location, specs')
+          .order('asset_number', { ascending: true });
+
+        if (prefixes.length > 0) {
+          const orFilter = prefixes
+            .flatMap((prefix) => {
+              const escapedPrefix = prefix.replace(/,/g, '\\,');
+              return [
+                `asset_number.ilike.${escapedPrefix}/%`,
+                `asset_number.ilike.${escapedPrefix}-%`,
+              ];
+            })
+            .join(',');
+
+          if (orFilter.length > 0) {
+            query = query.or(orFilter);
+          }
+        }
+
+        const { data, error } = await query;
 
         if (error) throw error;
-
         if (!isActive) return;
 
-        if (data && data.length > 0 && typeof data[0].asset_number === 'string') {
-          setLatestAssetNumber(data[0].asset_number);
-        } else {
-          setLatestAssetNumber(null);
+        const records = (data || [])
+          .map((item) => {
+            if (typeof item.asset_number !== 'string') return null;
+            const assetNumber = item.asset_number.trim();
+            if (!assetNumber) return null;
+
+            const [baseRaw = '', sequenceRaw = ''] = assetNumber.split('/');
+            const basePrefix = baseRaw.trim();
+            let sequence: number | null = null;
+
+            if (sequenceRaw) {
+              const trimmedSequence = sequenceRaw.trim();
+              if (/^\d+$/.test(trimmedSequence)) {
+                sequence = parseInt(trimmedSequence, 10);
+              }
+            }
+
+            const rawSpecs = (item as { specs?: Record<string, unknown> }).specs;
+            const departmentFromSpecs = rawSpecs && typeof rawSpecs['department'] === 'string'
+              ? (rawSpecs['department'] as string).trim()
+              : '';
+            const departmentColumn = (item as { department?: string | null }).department;
+
+            return {
+              assetNumber,
+              basePrefix,
+              sequence,
+              name: typeof item.name === 'string' && item.name.trim().length > 0 ? item.name.trim() : null,
+              status: typeof item.status === 'string' && item.status.trim().length > 0 ? item.status.trim() : null,
+              department: typeof departmentColumn === 'string' && departmentColumn.trim().length > 0
+                ? departmentColumn.trim()
+                : departmentFromSpecs || null,
+              location: typeof item.location === 'string' && item.location.trim().length > 0 ? item.location.trim() : null,
+            } satisfies AssetRecord;
+          })
+          .filter((value): value is AssetRecord => value !== null);
+
+        const filteredRecords = records.filter((record) => {
+          const baseValue = record.basePrefix || record.assetNumber;
+          return prefixes.some((prefix) => baseValue.startsWith(prefix));
+        });
+
+        const uniqueRecords = new Map<string, AssetRecord>();
+        for (const record of filteredRecords) {
+          if (!uniqueRecords.has(record.assetNumber)) {
+            uniqueRecords.set(record.assetNumber, record);
+          }
         }
+
+        const sortedRecords = Array.from(uniqueRecords.values()).sort(compareAssetRecords);
+        setAssetRecords(sortedRecords);
+        setIsAssetDialogOpen(true);
       } catch (error) {
         if (isActive) {
-          console.error('Error fetching latest asset number:', error);
-          setLatestAssetNumber(null);
+          console.error('Error fetching asset numbers:', error);
+          setAssetRecords([]);
+          setIsAssetDialogOpen(false);
         }
       } finally {
         if (isActive) {
@@ -326,7 +483,7 @@ export default function AddEquipment() {
       }
     };
 
-    fetchLatestAsset();
+    fetchAssetNumbers();
 
     return () => {
       isActive = false;
@@ -696,6 +853,11 @@ export default function AddEquipment() {
     });
   }, [equipmentType, activeEquipmentTypes]);
 
+  const selectedSubType = useMemo(() => {
+    if (!equipmentSubType) return null;
+    return subTypeOptions.find((subType) => subType.value === equipmentSubType) || null;
+  }, [equipmentSubType, subTypeOptions]);
+
   const warrantyStatus = useMemo(() => {
     if (!warrantyEnd) return null;
     return getWarrantyStatusInfo(warrantyEnd);
@@ -784,18 +946,36 @@ export default function AddEquipment() {
                           </SelectContent>
                         </Select>
                         {equipmentSubType ? (
-                          <Alert className="border-primary/30 bg-primary/10 text-primary">
-                            <div className="flex items-start space-x-3">
-                              <Info className="mt-1 h-4 w-4" />
-                              <AlertDescription className="text-sm leading-relaxed text-primary">
-                                {checkingLatestAsset
-                                  ? "กำลังตรวจสอบเลขครุภัณฑ์ล่าสุด..."
-                                  : latestAssetNumber
-                                    ? `เลขครุภัณฑ์ล่าสุดของรายละเอียดนี้คือ ${latestAssetNumber}`
+                          <div className="space-y-2">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full justify-center gap-2 sm:w-auto"
+                                onClick={() => setIsAssetDialogOpen(true)}
+                                disabled={checkingLatestAsset}
+                              >
+                                {checkingLatestAsset ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span>กำลังโหลดเลขครุภัณฑ์...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Info className="h-4 w-4" />
+                                    <span>ดูเลขครุภัณฑ์ทั้งหมด</span>
+                                  </>
+                                )}
+                              </Button>
+                              {!checkingLatestAsset ? (
+                                <p className="text-sm text-muted-foreground sm:ml-1">
+                                  {assetRecords.length > 0
+                                    ? `พบ ${assetRecords.length} เลขครุภัณฑ์สำหรับรายละเอียดนี้`
                                     : "ยังไม่มีข้อมูลเลขครุภัณฑ์สำหรับรายละเอียดนี้"}
-                              </AlertDescription>
+                                </p>
+                              ) : null}
                             </div>
-                          </Alert>
+                          </div>
                         ) : null}
                       </div>
                     ) : (
@@ -1363,6 +1543,88 @@ export default function AddEquipment() {
           </Button>
         </div>
       </form>
+      <Dialog open={isAssetDialogOpen && !!equipmentSubType} onOpenChange={setIsAssetDialogOpen}>
+        <DialogContent className="max-w-lg sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>เลขครุภัณฑ์ทั้งหมด</DialogTitle>
+            <DialogDescription>
+              {selectedSubType
+                ? `${selectedSubType.value} • ${selectedSubType.label}`
+                : equipmentSubType
+                  ? `รายละเอียด: ${equipmentSubType}`
+                  : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {checkingLatestAsset ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>กำลังดึงข้อมูลเลขครุภัณฑ์...</span>
+            </div>
+          ) : assetRecords.length > 0 ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                ทั้งหมด {assetRecords.length} รายการ
+              </p>
+              <ScrollArea className="max-h-[360px] rounded-md border border-border/70">
+                <div className="divide-y divide-border/70">
+                  {assetRecords.map((record) => {
+                    const statusDisplay = getStatusDisplay(record.status);
+
+                    return (
+                      <div key={record.assetNumber} className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-semibold text-foreground">{record.assetNumber}</span>
+                            <span
+                              className={cn(
+                                "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                statusDisplay.className,
+                              )}
+                            >
+                              {statusDisplay.label}
+                            </span>
+                          </div>
+                          <dl className="grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
+                            <div className="flex flex-col">
+                              <dt className="font-medium text-foreground">ชื่อครุภัณฑ์</dt>
+                              <dd>{record.name || '-'}</dd>
+                            </div>
+                            <div className="flex flex-col">
+                              <dt className="font-medium text-foreground">หน่วยงาน</dt>
+                              <dd>{record.department || '-'}</dd>
+                            </div>
+                            <div className="flex flex-col">
+                              <dt className="font-medium text-foreground">สถานะ</dt>
+                              <dd>
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                    statusDisplay.className,
+                                  )}
+                                >
+                                  {statusDisplay.label}
+                                </span>
+                              </dd>
+                            </div>
+                            <div className="flex flex-col">
+                              <dt className="font-medium text-foreground">สถานที่</dt>
+                              <dd>{record.location || '-'}</dd>
+                            </div>
+                          </dl>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            </>
+          ) : (
+            <p className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+              ยังไม่มีข้อมูลเลขครุภัณฑ์สำหรับรายละเอียดนี้
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
       <QuickScanDialog
         open={scannerOpen}
         onOpenChange={(open) => {
