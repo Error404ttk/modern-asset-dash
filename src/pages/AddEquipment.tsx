@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Save, ArrowLeft, Upload, Computer, Monitor, Loader2, Camera, X, Info, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,8 +54,11 @@ export default function AddEquipment() {
   const [vendorName, setVendorName] = useState("");
   const [vendorPhone, setVendorPhone] = useState("");
   const [vendorAddress, setVendorAddress] = useState("");
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const FORM_STORAGE_KEY = "add-equipment-draft";
 
   const openScanner = (target: "model" | "serial") => {
     setScannerTarget(target);
@@ -115,6 +118,102 @@ export default function AddEquipment() {
     }
     return "1";
   }, [quantity]);
+
+  useEffect(() => {
+    const savedRaw = localStorage.getItem(FORM_STORAGE_KEY);
+    if (!savedRaw) {
+      setHasRestoredDraft(true);
+      return;
+    }
+
+    try {
+      const saved = JSON.parse(savedRaw) as {
+        fields?: Record<string, string>;
+        state?: {
+          equipmentType?: string;
+          equipmentSubType?: string;
+          quantity?: string;
+          warrantyEnd?: string;
+          modelValue?: string;
+          serialNumberValue?: string;
+          vendorName?: string;
+          vendorPhone?: string;
+          vendorAddress?: string;
+          selectedVendorId?: string;
+        };
+      };
+
+      if (saved.state) {
+        if (typeof saved.state.equipmentType === "string") {
+          setEquipmentType(saved.state.equipmentType);
+        }
+        if (typeof saved.state.equipmentSubType === "string") {
+          setEquipmentSubType(saved.state.equipmentSubType);
+        }
+        if (typeof saved.state.quantity === "string") {
+          setQuantity(saved.state.quantity);
+        }
+        if (typeof saved.state.warrantyEnd === "string") {
+          setWarrantyEnd(saved.state.warrantyEnd);
+        }
+        if (typeof saved.state.modelValue === "string") {
+          setModelValue(saved.state.modelValue);
+        }
+        if (typeof saved.state.serialNumberValue === "string") {
+          setSerialNumberValue(saved.state.serialNumberValue);
+        }
+        if (typeof saved.state.vendorName === "string") {
+          setVendorName(saved.state.vendorName);
+        }
+        if (typeof saved.state.vendorPhone === "string") {
+          setVendorPhone(saved.state.vendorPhone);
+        }
+        if (typeof saved.state.vendorAddress === "string") {
+          setVendorAddress(saved.state.vendorAddress);
+        }
+        if (typeof saved.state.selectedVendorId === "string") {
+          setSelectedVendorId(saved.state.selectedVendorId || undefined);
+        }
+      }
+
+      if (saved.fields) {
+        requestAnimationFrame(() => {
+          const form = formRef.current;
+          if (!form) {
+            setHasRestoredDraft(true);
+            return;
+          }
+          Object.entries(saved.fields as Record<string, string>).forEach(([name, value]) => {
+            const field = form.elements.namedItem(name);
+            if (!field) return;
+            if (field instanceof HTMLInputElement) {
+              if (field.type === "file") return;
+              if (field.type === "checkbox") {
+                field.checked = value === "true";
+                return;
+              }
+              if (field.type === "radio") {
+                field.checked = field.value === value;
+                return;
+              }
+            }
+            if (field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) {
+              field.value = value;
+              field.dispatchEvent(new Event("input", { bubbles: true }));
+              field.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+          setHasRestoredDraft(true);
+        });
+        return;
+      }
+
+      setHasRestoredDraft(true);
+    } catch (error) {
+      console.error("Failed to restore add equipment draft", error);
+      setHasRestoredDraft(true);
+    }
+  }, []);
 
   // Load active equipment types and departments on component mount
   useEffect(() => {
@@ -233,6 +332,91 @@ export default function AddEquipment() {
       isActive = false;
     };
   }, [equipmentSubType]);
+
+  const persistDraft = useCallback(() => {
+    if (!hasRestoredDraft) return;
+    const form = formRef.current;
+    if (!form) return;
+
+    const fields: Record<string, string> = {};
+    const elements = Array.from(form.elements) as Array<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
+    elements.forEach((element) => {
+      if (!element.name) return;
+      if (element instanceof HTMLInputElement) {
+        if (element.type === "file") return;
+        if (element.type === "checkbox") {
+          fields[element.name] = element.checked ? "true" : "false";
+          return;
+        }
+        if (element.type === "radio") {
+          if (element.checked) {
+            fields[element.name] = element.value;
+          }
+          return;
+        }
+      }
+
+      fields[element.name] = element.value;
+    });
+
+    const payload = {
+      fields,
+      state: {
+        equipmentType,
+        equipmentSubType,
+        quantity,
+        warrantyEnd,
+        modelValue,
+        serialNumberValue,
+        vendorName,
+        vendorPhone,
+        vendorAddress,
+        selectedVendorId: selectedVendorId ?? "",
+      },
+    };
+
+    try {
+      localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.error("Failed to persist add equipment draft", error);
+    }
+  }, [
+    equipmentType,
+    equipmentSubType,
+    hasRestoredDraft,
+    modelValue,
+    quantity,
+    selectedVendorId,
+    serialNumberValue,
+    vendorAddress,
+    vendorName,
+    vendorPhone,
+    warrantyEnd,
+  ]);
+
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form) return;
+
+    const handleMutate = () => {
+      persistDraft();
+    };
+
+    const listenerOptions = { capture: true } as const;
+
+    form.addEventListener("input", handleMutate, listenerOptions);
+    form.addEventListener("change", handleMutate, listenerOptions);
+
+    return () => {
+      form.removeEventListener("input", handleMutate, listenerOptions);
+      form.removeEventListener("change", handleMutate, listenerOptions);
+    };
+  }, [persistDraft]);
+
+  useEffect(() => {
+    if (!hasRestoredDraft) return;
+    persistDraft();
+  }, [hasRestoredDraft, persistDraft]);
 
   const handleImageUpload = (files: FileList | null) => {
     if (!files) return;
@@ -447,6 +631,8 @@ export default function AddEquipment() {
         description: "ข้อมูลครุภัณฑ์ได้ถูกบันทึกเรียบร้อยแล้ว",
       });
 
+      localStorage.removeItem(FORM_STORAGE_KEY);
+
       // Navigate back to equipment list
       navigate('/equipment');
     } catch (error: any) {
@@ -518,22 +704,26 @@ export default function AddEquipment() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <Link to="/equipment">
-            <Button variant="ghost" size="sm" className="hover:bg-muted">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hover:bg-muted w-full sm:w-auto"
+            >
               <ArrowLeft className="h-4 w-4 mr-2" />
               กลับ
             </Button>
           </Link>
-          <div>
+          <div className="sm:flex-1">
             <h1 className="text-3xl font-bold text-foreground">เพิ่มครุภัณฑ์ใหม่</h1>
             <p className="text-muted-foreground">บันทึกข้อมูลครุภัณฑ์คอมพิวเตอร์</p>
           </div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-6">
             {/* Basic Information */}
@@ -629,7 +819,7 @@ export default function AddEquipment() {
 
                   <div className="space-y-2">
                     <Label htmlFor="model">รุ่น/โมเดล</Label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <Input
                         id="model"
                         name="model"
@@ -640,7 +830,7 @@ export default function AddEquipment() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="shrink-0"
+                        className="w-full sm:w-11 sm:px-0"
                         onClick={() => openScanner("model")}
                         aria-label="สแกนรุ่นหรือโมเดล"
                       >
@@ -651,7 +841,7 @@ export default function AddEquipment() {
 
                   <div className="space-y-2">
                     <Label htmlFor="serialNumber">Serial Number</Label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <Input
                         id="serialNumber"
                         name="serialNumber"
@@ -662,7 +852,7 @@ export default function AddEquipment() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="shrink-0"
+                        className="w-full sm:w-11 sm:px-0"
                         onClick={() => openScanner("serial")}
                         aria-label="สแกน Serial Number"
                       >
@@ -673,8 +863,8 @@ export default function AddEquipment() {
 
                   <div className="space-y-2">
                     <Label htmlFor="assetNumber">เลขครุภัณฑ์</Label>
-                    <div className="flex space-x-2">
-                      <div className="flex-1">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="w-full sm:flex-1">
                         <Input
                           id="assetNumber"
                           name="assetNumber"
@@ -683,16 +873,16 @@ export default function AddEquipment() {
                           readOnly={!!equipmentSubType}
                         />
                       </div>
-                      <div className="flex items-center">
-                        <span className="mx-2 text-muted-foreground">/</span>
+                      <div className="flex items-center justify-center text-muted-foreground sm:px-2">
+                        /
                       </div>
-                      <div className="w-20">
+                      <div className="w-full sm:w-24">
                         <Input
                           id="quantity"
                           name="quantity"
                           type="number"
                           placeholder="1"
-                          defaultValue={quantity}
+                          value={quantity}
                           onChange={(e) => setQuantity(e.target.value)}
                           min="1"
                           aria-label="ลำดับ"
@@ -745,9 +935,9 @@ export default function AddEquipment() {
 
                   <div className="space-y-2">
                     <Label htmlFor="vendorSelect">ผู้ขาย/ผู้รับจ้าง/ผู้บริจาค</Label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
                       <Select value={selectedVendorId} onValueChange={handleVendorSelect}>
-                        <SelectTrigger id="vendorSelect">
+                        <SelectTrigger id="vendorSelect" className="w-full">
                           <SelectValue placeholder="เลือกผู้ขายจากระบบ หรือกรอกข้อมูลเอง" />
                         </SelectTrigger>
                         <SelectContent className="bg-background border border-border shadow-lg z-50">
@@ -768,7 +958,7 @@ export default function AddEquipment() {
                         <Button
                           type="button"
                           variant="ghost"
-                          className="h-10 px-3 text-sm"
+                          className="h-10 px-3 text-sm w-full sm:w-auto"
                           onClick={handleClearVendorSelection}
                         >
                           ล้าง
@@ -1078,13 +1268,13 @@ export default function AddEquipment() {
                   </p>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={selectedImages.length >= 3}
-                    className="flex items-center space-x-2"
+                    className="flex w-full items-center justify-center space-x-2 sm:w-auto"
                   >
                     <Upload className="h-4 w-4" />
                     <span>เลือกรูปภาพ</span>
@@ -1094,7 +1284,7 @@ export default function AddEquipment() {
                     variant="outline"
                     onClick={() => cameraInputRef.current?.click()}
                     disabled={selectedImages.length >= 3}
-                    className="flex items-center space-x-2"
+                    className="flex w-full items-center justify-center space-x-2 sm:w-auto"
                   >
                     <Camera className="h-4 w-4" />
                     <span>ถ่ายรูป</span>
@@ -1124,7 +1314,7 @@ export default function AddEquipment() {
                 </p>
 
                 {imagePreviews.length > 0 && (
-                  <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {imagePreviews.map((preview, index) => (
                       <div key={index} className="relative">
                         <div className="aspect-square overflow-hidden rounded-lg border bg-muted">
@@ -1153,16 +1343,16 @@ export default function AddEquipment() {
         </div>
 
         {/* Submit Buttons */}
-        <div className="flex justify-end space-x-4">
-          <Link to="/equipment">
-            <Button variant="outline" type="button">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-4">
+          <Link to="/equipment" className="w-full sm:w-auto">
+            <Button variant="outline" type="button" className="w-full">
               ยกเลิก
             </Button>
           </Link>
           <Button 
             type="submit" 
             disabled={isSubmitting}
-            className="bg-gradient-primary hover:opacity-90 shadow-soft"
+            className="w-full bg-gradient-primary shadow-soft hover:opacity-90 sm:w-auto"
           >
             {isSubmitting ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />

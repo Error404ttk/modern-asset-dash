@@ -151,34 +151,34 @@ export default function EquipmentDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <Button 
             variant="ghost" 
             size="sm" 
             onClick={() => navigate('/equipment')}
-            className="hover:bg-muted"
+            className="hover:bg-muted w-full sm:w-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             กลับ
           </Button>
-          <div>
+          <div className="sm:flex-1">
             <h1 className="text-3xl font-bold text-foreground">{equipment.name}</h1>
             <p className="text-muted-foreground">เลขครุภัณฑ์: {equipment.assetNumber}</p>
           </div>
         </div>
         
-        <div className="flex space-x-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
           <Button 
             variant="outline" 
             onClick={() => setQrDialogOpen(true)}
-            className="hover:bg-muted"
+            className="hover:bg-muted w-full sm:w-auto"
           >
             <QrCode className="h-4 w-4 mr-2" />
             QR Code
           </Button>
-          <Link to={`/equipment/edit/${equipment.id}`}>
-            <Button variant="outline" className="hover:bg-muted">
+          <Link to={`/equipment/edit/${equipment.id}`} className="w-full sm:w-auto">
+            <Button variant="outline" className="hover:bg-muted w-full">
               <Edit className="h-4 w-4 mr-2" />
               แก้ไข
             </Button>
