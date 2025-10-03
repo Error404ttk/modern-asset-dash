@@ -735,7 +735,7 @@ export default function AddEquipment() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="equipmentName">ชื่อครุภัณฑ์</Label>
                     <Input
@@ -970,7 +970,7 @@ export default function AddEquipment() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="vendorName">ชื่อผู้ขาย/ผู้รับจ้าง/ผู้บริจาค</Label>
                       <Input
@@ -1024,7 +1024,7 @@ export default function AddEquipment() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="price">ราคาครุภัณฑ์ (บาท)</Label>
                     <Input
@@ -1085,7 +1085,7 @@ export default function AddEquipment() {
                   </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="cpu">CPU</Label>
                   <Input 
@@ -1201,7 +1201,7 @@ export default function AddEquipment() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="department">หน่วยงานที่รับผิดชอบ *</Label>
                     <Select name="department" required>
