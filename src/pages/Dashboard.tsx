@@ -227,12 +227,12 @@ export default function Dashboard() {
     ? `ยินดีต้อนรับ, ${displayName} ${roleLabel}!`
     : "ยินดีต้อนรับสู่แดชบอร์ด!";
 
-  const normalizeSpecValue = (specs: any, keys: string[]): string => {
+  const getSpecValue = (specs: any, keys: string[]): string => {
     if (!specs) return "";
     for (const key of keys) {
       if (specs[key] !== undefined && specs[key] !== null) {
         const value = String(specs[key]).trim();
-        if (value.length > 0) {
+        if (value.length > 0 && value !== "__none__") {
           return value;
         }
       }
@@ -870,7 +870,7 @@ export default function Dashboard() {
       for (const key of keys) {
         if (specs[key] !== undefined && specs[key] !== null) {
           const value = String(specs[key]).trim();
-          if (value.length > 0) return value;
+          if (value.length > 0 && value !== "__none__") return value;
         }
       }
       return "";

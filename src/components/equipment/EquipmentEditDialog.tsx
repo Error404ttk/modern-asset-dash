@@ -25,6 +25,7 @@ import { Camera, Computer, Upload, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BASE_EQUIPMENT_TYPES, type EquipmentTypeOption } from "@/data/equipmentTypes.ts";
 import { joinAssetNumber, normalizeAssetNumber } from "@/lib/asset-number";
+import { TECHNICAL_SPEC_TYPES, type TechnicalSpecType } from "@/data/technicalSpecs";
 
 const DEFAULT_SPEC_FIELDS: Record<string, string> = {
   cpu: "",
@@ -128,6 +129,7 @@ export default function EquipmentEditDialog({
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [availableEquipmentTypes, setAvailableEquipmentTypes] = useState<EquipmentTypeOption[]>(BASE_EQUIPMENT_TYPES);
+  const [technicalSpecsData, setTechnicalSpecsData] = useState<Record<string, any[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -241,6 +243,35 @@ export default function EquipmentEditDialog({
     };
 
     fetchEquipmentTypes();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const fetchTechnicalSpecs = async () => {
+      try {
+        const specs: Record<string, any[]> = {};
+
+        for (const specType of TECHNICAL_SPEC_TYPES) {
+          const { data, error } = await (supabase as any)
+            .from(specType.tableName)
+            .select('*')
+            .eq('active', true)
+            .order('name', { ascending: true });
+
+          if (error) throw error;
+
+          specs[specType.id] = data || [];
+        }
+
+        setTechnicalSpecsData(specs);
+      } catch (error) {
+        console.error('Error loading technical specs:', error);
+        setTechnicalSpecsData({});
+      }
+    };
+
+    fetchTechnicalSpecs();
   }, [open]);
 
   const handleAssetNumberBaseChange = (value: string) => {
@@ -397,7 +428,7 @@ export default function EquipmentEditDialog({
       const cleanedSpecsEntries = Object.entries(formData.specs || {})
         .map(([key, value]) => {
           const trimmed = value?.toString().trim();
-          return trimmed ? [key, trimmed] : null;
+          return trimmed && trimmed !== NONE_SPEC_VALUE ? [key, trimmed] : null;
         })
         .filter((entry): entry is [string, string] => Boolean(entry));
 
@@ -464,13 +495,13 @@ export default function EquipmentEditDialog({
     setFormData(prev => {
       const updatedSpecs = {
         ...prev.specs,
-        [specKey]: value,
+        [specKey]: value === NONE_SPEC_VALUE ? "" : value,
       } as Record<string, string>;
 
       if (specKey === "reason") {
-        updatedSpecs.notes = value;
+        updatedSpecs.notes = value === NONE_SPEC_VALUE ? "" : value;
       } else if (specKey === "notes") {
-        updatedSpecs.reason = value;
+        updatedSpecs.reason = value === NONE_SPEC_VALUE ? "" : value;
       }
 
       return {
@@ -516,12 +547,14 @@ export default function EquipmentEditDialog({
     return options;
   }, [combinedEquipmentTypes, formData.type]);
 
+  const NONE_DEPARTMENT_VALUE = "__none__";
+  const NONE_SPEC_VALUE = "__none__";
+
   const departmentValue = typeof formData.specs?.department === "string" ? formData.specs.department || "" : "";
   const departmentOptions = departments
     .map((dept) => (typeof dept?.name === "string" ? dept.name : ""))
     .filter((name): name is string => Boolean(name));
   const hasDepartmentInOptions = departmentValue ? departmentOptions.includes(departmentValue) : false;
-  const NONE_DEPARTMENT_VALUE = "__none__";
   const selectDepartmentValue = departmentValue ? departmentValue : NONE_DEPARTMENT_VALUE;
   const additionalSpecKeys = Object.keys(formData.specs || {}).filter(
     (key) => key !== "department" && !Object.prototype.hasOwnProperty.call(DEFAULT_SPEC_FIELDS, key)
@@ -788,20 +821,318 @@ export default function EquipmentEditDialog({
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {COMPUTER_SPEC_FIELDS.map(({ key, label, placeholder, type }) => (
-                  <div key={key}>
-                    <Label htmlFor={key}>{label}</Label>
-                    <Input
-                      id={key}
-                      type={type ?? "text"}
-                      value={formData.specs?.[key] ?? ""}
-                      onChange={(e) => handleSpecChange(key, e.target.value)}
-                      placeholder={placeholder}
-                      min={type === "number" ? 0 : undefined}
-                      step={type === "number" ? "1" : undefined}
-                    />
-                  </div>
-                ))}
+                <div>
+                  <Label htmlFor="cpu">CPU</Label>
+                  {technicalSpecsData.cpu && technicalSpecsData.cpu.length > 0 ? (
+                    <Select
+                      value={formData.specs?.cpu === "" ? NONE_SPEC_VALUE : (formData.specs?.cpu || "")}
+                      onValueChange={(value) => handleSpecChange('cpu', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือก CPU" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                        {(() => {
+                          if (!technicalSpecsData.cpu || technicalSpecsData.cpu.length === 0) return null;
+
+                          try {
+                            const validCpuItems = technicalSpecsData.cpu
+                              .filter((cpu: any) => {
+                                if (!cpu || typeof cpu !== 'object') return false;
+                                if (!cpu.active || !('name' in cpu)) return false;
+                                const name = cpu.name;
+                                if (typeof name !== 'string') return false;
+                                const trimmedName = name.trim();
+                                return trimmedName !== '' && trimmedName.length > 0;
+                              })
+                              .map((cpu: any, index: number) => {
+                                const name = cpu.name;
+                                if (typeof name !== 'string') return null;
+                                const trimmedName = name.trim();
+                                if (!trimmedName || trimmedName === '') return null;
+
+                                return (
+                                  <SelectItem key={cpu.id || `cpu-${index}`} value={trimmedName}>
+                                    {trimmedName} {cpu.brand && `(${cpu.brand})`}
+                                  </SelectItem>
+                                );
+                              })
+                              .filter((item): item is JSX.Element => item !== null);
+
+                            return validCpuItems.length > 0 ? validCpuItems : null;
+                          } catch (error) {
+                            console.error('Error rendering CPU items:', error);
+                            return null;
+                          }
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        id="cpu"
+                        value={formData.specs?.cpu || ""}
+                        onChange={(e) => handleSpecChange('cpu', e.target.value)}
+                        placeholder="เช่น Intel Core i5-11500"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        ไม่พบข้อมูล CPU ในฐานข้อมูล กรุณาเพิ่มข้อมูลในส่วนตั้งค่าระบบก่อน
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="ramGb">RAM (GB)</Label>
+                  {technicalSpecsData.ram && technicalSpecsData.ram.length > 0 ? (
+                    <Select
+                      value={formData.specs?.ramGb === "" ? NONE_SPEC_VALUE : (formData.specs?.ramGb || "")}
+                      onValueChange={(value) => handleSpecChange('ramGb', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือก RAM" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                        {(() => {
+                          if (!technicalSpecsData.ram || technicalSpecsData.ram.length === 0) return null;
+
+                          try {
+                            const validRamItems = technicalSpecsData.ram
+                              .filter((ram: any) => {
+                                if (!ram || typeof ram !== 'object') return false;
+                                if (!ram.active || !('name' in ram)) return false;
+                                const name = ram.name;
+                                if (typeof name !== 'string') return false;
+                                const trimmedName = name.trim();
+                                return trimmedName !== '' && trimmedName.length > 0;
+                              })
+                              .map((ram: any, index: number) => {
+                                const name = ram.name;
+                                if (typeof name !== 'string') return null;
+                                const trimmedName = name.trim();
+                                if (!trimmedName || trimmedName === '') return null;
+
+                                return (
+                                  <SelectItem key={ram.id || `ram-${index}`} value={`${ram.capacity_gb}GB`}>
+                                    {trimmedName} ({ram.capacity_gb}GB {ram.type})
+                                  </SelectItem>
+                                );
+                              })
+                              .filter((item): item is JSX.Element => item !== null);
+
+                            return validRamItems.length > 0 ? validRamItems : null;
+                          } catch (error) {
+                            console.error('Error rendering RAM items:', error);
+                            return null;
+                          }
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        id="ramGb"
+                        type="number"
+                        value={formData.specs?.ramGb || ""}
+                        onChange={(e) => handleSpecChange('ramGb', e.target.value)}
+                        placeholder="เช่น 16"
+                        min="0"
+                        step="1"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        ไม่พบข้อมูล RAM ในฐานข้อมูล กรุณาเพิ่มข้อมูลในส่วนตั้งค่าระบบก่อน
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="harddisk">Harddisk</Label>
+                  {technicalSpecsData.harddisk && technicalSpecsData.harddisk.length > 0 ? (
+                    <Select
+                      value={formData.specs?.harddisk === "" ? NONE_SPEC_VALUE : (formData.specs?.harddisk || "")}
+                      onValueChange={(value) => handleSpecChange('harddisk', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือก Harddisk" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                        {(() => {
+                          if (!technicalSpecsData.harddisk || technicalSpecsData.harddisk.length === 0) return null;
+
+                          try {
+                            const validHarddiskItems = technicalSpecsData.harddisk
+                              .filter((disk: any) => {
+                                if (!disk || typeof disk !== 'object') return false;
+                                if (!disk.active || !('name' in disk)) return false;
+                                const name = disk.name;
+                                if (typeof name !== 'string') return false;
+                                const trimmedName = name.trim();
+                                return trimmedName !== '' && trimmedName.length > 0;
+                              })
+                              .map((disk: any, index: number) => {
+                                const name = disk.name;
+                                if (typeof name !== 'string') return null;
+                                const trimmedName = name.trim();
+                                if (!trimmedName || trimmedName === '') return null;
+
+                                return (
+                                  <SelectItem key={disk.id || `harddisk-${index}`} value={trimmedName}>
+                                    {trimmedName} ({disk.capacity_gb}GB {disk.type})
+                                  </SelectItem>
+                                );
+                              })
+                              .filter((item): item is JSX.Element => item !== null);
+
+                            return validHarddiskItems.length > 0 ? validHarddiskItems : null;
+                          } catch (error) {
+                            console.error('Error rendering Harddisk items:', error);
+                            return null;
+                          }
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        id="harddisk"
+                        value={formData.specs?.harddisk || ""}
+                        onChange={(e) => handleSpecChange('harddisk', e.target.value)}
+                        placeholder="เช่น HDD 1TB"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        ไม่พบข้อมูล Harddisk ในฐานข้อมูล กรุณาเพิ่มข้อมูลในส่วนตั้งค่าระบบก่อน
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="operatingSystem">Operating System</Label>
+                  {technicalSpecsData.os && technicalSpecsData.os.length > 0 ? (
+                    <Select
+                      value={formData.specs?.operatingSystem === "" ? NONE_SPEC_VALUE : (formData.specs?.operatingSystem || "")}
+                      onValueChange={(value) => handleSpecChange('operatingSystem', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือก OS" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                        {(() => {
+                          if (!technicalSpecsData.os || technicalSpecsData.os.length === 0) return null;
+
+                          try {
+                            const validOsItems = technicalSpecsData.os
+                              .filter((os: any) => {
+                                if (!os || typeof os !== 'object') return false;
+                                if (!os.active || !('name' in os)) return false;
+                                const name = os.name;
+                                if (typeof name !== 'string') return false;
+                                const trimmedName = name.trim();
+                                return trimmedName !== '' && trimmedName.length > 0;
+                              })
+                              .map((os: any, index: number) => {
+                                const name = os.name;
+                                if (typeof name !== 'string') return null;
+                                const trimmedName = name.trim();
+                                if (!trimmedName || trimmedName === '') return null;
+
+                                return (
+                                  <SelectItem key={os.id || `os-${index}`} value={trimmedName}>
+                                    {trimmedName} {os.version && `(${os.version})`}
+                                  </SelectItem>
+                                );
+                              })
+                              .filter((item): item is JSX.Element => item !== null);
+
+                            return validOsItems.length > 0 ? validOsItems : null;
+                          } catch (error) {
+                            console.error('Error rendering OS items:', error);
+                            return null;
+                          }
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        id="operatingSystem"
+                        value={formData.specs?.operatingSystem || ""}
+                        onChange={(e) => handleSpecChange('operatingSystem', e.target.value)}
+                        placeholder="เช่น Windows 11 Pro"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        ไม่พบข้อมูล OS ในฐานข้อมูล กรุณาเพิ่มข้อมูลในส่วนตั้งค่าระบบก่อน
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="officeSuite">Office</Label>
+                  {technicalSpecsData.office && technicalSpecsData.office.length > 0 ? (
+                    <Select
+                      value={formData.specs?.officeSuite === "" ? NONE_SPEC_VALUE : (formData.specs?.officeSuite || "")}
+                      onValueChange={(value) => handleSpecChange('officeSuite', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือก Office" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                        {(() => {
+                          if (!technicalSpecsData.office || technicalSpecsData.office.length === 0) return null;
+
+                          try {
+                            const validOfficeItems = technicalSpecsData.office
+                              .filter((office: any) => {
+                                if (!office || typeof office !== 'object') return false;
+                                if (!office.active || !('name' in office)) return false;
+                                const name = office.name;
+                                if (typeof name !== 'string') return false;
+                                const trimmedName = name.trim();
+                                return trimmedName !== '' && trimmedName.length > 0;
+                              })
+                              .map((office: any, index: number) => {
+                                const name = office.name;
+                                if (typeof name !== 'string') return null;
+                                const trimmedName = name.trim();
+                                if (!trimmedName || trimmedName === '') return null;
+
+                                return (
+                                  <SelectItem key={office.id || `office-${index}`} value={trimmedName}>
+                                    {trimmedName} {office.version && `(${office.version})`}
+                                  </SelectItem>
+                                );
+                              })
+                              .filter((item): item is JSX.Element => item !== null);
+
+                            return validOfficeItems.length > 0 ? validOfficeItems : null;
+                          } catch (error) {
+                            console.error('Error rendering Office items:', error);
+                            return null;
+                          }
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        id="officeSuite"
+                        value={formData.specs?.officeSuite || ""}
+                        onChange={(e) => handleSpecChange('officeSuite', e.target.value)}
+                        placeholder="เช่น Microsoft 365"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        ไม่พบข้อมูล Office ในฐานข้อมูล กรุณาเพิ่มข้อมูลในส่วนตั้งค่าระบบก่อน
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <Separator />

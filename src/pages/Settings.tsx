@@ -8,7 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Settings as SettingsIcon, Building, Tag, Store, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle, ListChecks } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Settings as SettingsIcon, Building, Tag, Store, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle, ListChecks, Cpu, HardDrive, MemoryStick, Monitor, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { DepartmentDialog } from "@/components/settings/DepartmentDialog";
@@ -18,7 +19,8 @@ import { DeleteConfirmDialog } from "@/components/settings/DeleteConfirmDialog";
 import { VendorDialog } from "@/components/settings/VendorDialog";
 import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
 import { DEFAULT_STICKER_WIDTH_MM, DEFAULT_STICKER_HEIGHT_MM, clampStickerWidth, clampStickerHeight } from "@/lib/sticker";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { TechnicalSpecDialog } from "@/components/settings/TechnicalSpecDialog";
+import { TECHNICAL_SPEC_TYPES, TechnicalSpecType } from "@/data/technicalSpecs";
 
 interface Department {
   id: string;
@@ -93,6 +95,14 @@ const Settings = () => {
   const [faviconCleared, setFaviconCleared] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [brandingSupported, setBrandingSupported] = useState(true);
+  const [isDetailDeleteDialogOpen, setIsDetailDeleteDialogOpen] = useState(false);
+  const [technicalSpecs, setTechnicalSpecs] = useState<Record<string, any[]>>({
+    cpu: [],
+    ram: [],
+    harddisk: [],
+    os: [],
+    office: []
+  });
 
   // Dialog states
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
@@ -100,13 +110,27 @@ const Settings = () => {
   const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEquipmentDetailDialogOpen, setIsEquipmentDetailDialogOpen] = useState(false);
-  const [isDetailDeleteDialogOpen, setIsDetailDeleteDialogOpen] = useState(false);
+  // Technical specs dialog states
+  const [isTechnicalSpecDialogOpen, setIsTechnicalSpecDialogOpen] = useState(false);
+  const [currentSpecType, setCurrentSpecType] = useState<TechnicalSpecType | null>(null);
+  const [editingSpecRecord, setEditingSpecRecord] = useState<any>(null);
   
   // Edit states
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [editingEquipmentType, setEditingEquipmentType] = useState<EquipmentType | null>(null);
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
-  const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'equipmentType' | 'vendor', item: any } | null>(null);
+  interface TechnicalSpecItem {
+    id: string;
+    name: string;
+    active: boolean;
+    specType: TechnicalSpecType;
+    [key: string]: any;
+  }
+
+  const [deletingItem, setDeletingItem] = useState<{ 
+    type: 'department' | 'equipmentType' | 'vendor' | 'technicalSpec', 
+    item: Department | EquipmentType | Vendor | TechnicalSpecItem 
+  } | null>(null);
   const [detailDialogState, setDetailDialogState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail | null } | null>(null);
   const [detailDeleteState, setDetailDeleteState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail } | null>(null);
 
@@ -129,9 +153,13 @@ const Settings = () => {
           setBrandingSupported(false);
         } else if (error) {
           console.error('Branding support check failed', error);
+          setBrandingSupported(false);
+        } else {
+          setBrandingSupported(true);
         }
       } catch (error) {
         console.error('Branding support check threw', error);
+        setBrandingSupported(false);
       }
     };
 
@@ -209,9 +237,158 @@ const Settings = () => {
     }
   }, [orgSettings]);
 
+  const loadTechnicalSpecs = async () => {
+    try {
+      const specs: Record<string, any[]> = {};
+      
+      // Load each type of technical specification
+      for (const specType of TECHNICAL_SPEC_TYPES) {
+        // Use type assertion to handle dynamic table names
+        const { data, error } = await (supabase as any)
+          .from(specType.tableName)
+          .select('*')
+          .order('name', { ascending: true });
+          
+        if (error) throw error;
+        
+        specs[specType.id] = data || [];
+      }
+      
+      setTechnicalSpecs(specs);
+    } catch (error: Error | unknown) {
+      console.error('Error loading technical specs:', error);
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลสเปคเทคนิคได้',
+        variant: "destructive",
+      });
+      // Set empty specs on error to prevent UI issues
+      setTechnicalSpecs({
+        cpu: [],
+        ram: [],
+        harddisk: [],
+        os: [],
+        office: []
+      });
+    }
+  };
+  
+  // Handle adding a new technical specification
+  const handleTechnicalSpecAdd = (specType: TechnicalSpecType) => {
+    setCurrentSpecType(specType);
+    setEditingSpecRecord(null);
+    setIsTechnicalSpecDialogOpen(true);
+  };
+  
+  // Handle editing an existing technical specification
+  const handleTechnicalSpecEdit = (specType: TechnicalSpecType, spec: any) => {
+    setCurrentSpecType(specType);
+    setEditingSpecRecord(spec);
+    setIsTechnicalSpecDialogOpen(true);
+  };
+  
+  // Handle saving a technical specification
+  const handleTechnicalSpecSave = async (values: any) => {
+    if (!currentSpecType) return;
+    
+    try {
+      let error;
+      let data;
+      
+      if (editingSpecRecord) {
+        // Update existing spec
+        const { data: updatedData, error: updateError } = await (supabase as any)
+          .from(currentSpecType.tableName)
+          .update({
+            ...values,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingSpecRecord.id)
+          .select();
+          
+        data = updatedData?.[0];
+        error = updateError;
+      } else {
+        // Create new spec
+        const { data: newData, error: insertError } = await (supabase as any)
+          .from(currentSpecType.tableName)
+          .insert([{
+            ...values,
+            active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }])
+          .select();
+          
+        data = newData?.[0];
+        error = insertError;
+      }
+      
+      if (error) throw error;
+      
+      toast({
+        title: "บันทึกข้อมูลสำเร็จ",
+        description: `บันทึกข้อมูล${currentSpecType.displayName}เรียบร้อยแล้ว`,
+      });
+      
+      // Refresh the specs list
+      await loadTechnicalSpecs();
+      setIsTechnicalSpecDialogOpen(false);
+    } catch (error: Error | unknown) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error instanceof Error ? error.message : 'ไม่สามารถบันทึกข้อมูลได้',
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Handle deleting a technical specification
+  const handleTechnicalSpecDelete = (specType: TechnicalSpecType, spec: any) => {
+    setDeletingItem({ 
+      type: 'technicalSpec', 
+      item: { 
+        ...spec, 
+        specType 
+      } 
+    });
+    setIsDeleteDialogOpen(true);
+  };
+  
+  // Handle toggling active status of a technical specification
+  const handleToggleTechnicalSpecStatus = async (specType: TechnicalSpecType, spec: any) => {
+    try {
+      const { error } = await (supabase as any)
+        .from(specType.tableName)
+        .update({ 
+          active: !spec.active,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', spec.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "อัปเดตสถานะสำเร็จ",
+        description: `${spec.active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} ${specType.displayName} เรียบร้อยแล้ว`,
+      });
+
+      await loadTechnicalSpecs();
+    } catch (error: Error | unknown) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error instanceof Error ? error.message : 'ไม่สามารถอัปเดตสถานะได้',
+        variant: "destructive",
+      });
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
+      // Load technical specs first
+      await loadTechnicalSpecs();
+
       // Load departments
       const { data: deptData, error: deptError } = await supabase
         .from('departments')
@@ -229,9 +406,9 @@ const Settings = () => {
 
       if (typeError) throw typeError;
 
-      const mappedTypes: EquipmentType[] = (typeData || []).map((type: any) => {
-        const details: EquipmentTypeDetail[] = (type.equipment_type_details || [])
-          .map((detail: any) => ({
+      const mappedTypes: EquipmentType[] = (typeData || []).map((type: Record<string, unknown>) => {
+        const details: EquipmentTypeDetail[] = (type.equipment_type_details as Record<string, unknown>[] || [])
+          .map((detail: Record<string, unknown>) => ({
             id: detail.id as string,
             equipment_type_id: detail.equipment_type_id as string,
             name: detail.name as string,
@@ -242,11 +419,11 @@ const Settings = () => {
           .sort((a, b) => a.code.localeCompare(b.code, 'th'));
 
         return {
-          id: type.id,
-          name: type.name,
-          code: type.code,
-          description: type.description,
-          active: type.active,
+          id: type.id as string,
+          name: type.name as string,
+          code: type.code as string,
+          description: type.description as string | null,
+          active: Boolean(type.active),
           details,
         } satisfies EquipmentType;
       });
@@ -261,10 +438,10 @@ const Settings = () => {
       if (vendorError) throw vendorError;
 
       setVendors(vendorData || []);
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'ไม่สามารถโหลดข้อมูลได้',
         variant: "destructive",
       });
     } finally {
@@ -362,7 +539,7 @@ const Settings = () => {
       const normalizedName = orgForm.name.trim() || DEFAULT_APP_TITLE;
       const normalizedStickerWidth = clampStickerWidth(orgForm.sticker_width_mm);
       const normalizedStickerHeight = clampStickerHeight(orgForm.sticker_height_mm);
-      const updates: Record<string, any> = {
+      const updates: Record<string, string | number | boolean | null | undefined> = {
         name: normalizedName,
         code: orgForm.code.trim(),
         address: sanitize(orgForm.address),
@@ -413,14 +590,14 @@ const Settings = () => {
       if (orgSettings?.id) {
         const { error } = await supabase
           .from('organization_settings')
-          .update(updates)
+          .update(updates as any)
           .eq('id', orgSettings.id);
 
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('organization_settings')
-          .insert(updates);
+          .insert(updates as any);
 
         if (error) throw error;
       }
@@ -431,18 +608,18 @@ const Settings = () => {
         title: "บันทึกสำเร็จ",
         description: "บันทึกข้อมูลองค์กรและการตั้งค่าระบบเรียบร้อยแล้ว",
       });
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       console.error('Failed to save organization settings', error);
 
-      if (error?.code === 'PGRST204') {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'PGRST204') {
         setBrandingSupported(false);
       }
 
-      let description = error?.code === 'PGRST204'
+      let description = (error && typeof error === 'object' && 'code' in error && error.code === 'PGRST204')
         ? 'ระบบยังไม่พบคอลัมน์ app_title ในฐานข้อมูล จึงไม่สามารถบันทึกการตั้งค่าการแสดงผลได้ กรุณาอัปเดตฐานข้อมูลแล้วลองใหม่อีกครั้ง'
-        : error.message;
+        : (error instanceof Error ? error.message : 'Unknown error occurred');
 
-      if (typeof error?.message === 'string' && error.message.includes('sticker_')) {
+      if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message.includes('sticker_')) {
         description = 'ระบบยังไม่พบคอลัมน์ sticker_width_mm/sticker_height_mm ในฐานข้อมูล กรุณาอัปเดตสคีมาของ Supabase ก่อนใช้งานฟีเจอร์กำหนดขนาดสติ๊กเกอร์';
       }
 
@@ -501,10 +678,10 @@ const Settings = () => {
       });
 
       loadData();
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: "destructive",
       });
     }
@@ -525,10 +702,10 @@ const Settings = () => {
       });
 
       loadData();
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: "destructive",
       });
     }
@@ -549,10 +726,10 @@ const Settings = () => {
       });
 
       loadData();
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: "destructive",
       });
     }
@@ -583,10 +760,10 @@ const Settings = () => {
       });
 
       loadData();
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: "destructive",
       });
     }
@@ -614,10 +791,10 @@ const Settings = () => {
       });
 
       loadData();
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: "destructive",
       });
     } finally {
@@ -630,37 +807,47 @@ const Settings = () => {
     if (!deletingItem) return;
 
     try {
-      // Call delete edge function based on type
-      const functionName = deletingItem.type === 'department'
-        ? 'delete-department'
-        : deletingItem.type === 'equipmentType'
-          ? 'delete-equipment-type'
-          : 'delete-vendor';
+      if (deletingItem.type === 'technicalSpec') {
+        // Handle technical spec deletion directly since we don't have an edge function for it
+        const { error } = await (supabase as any)
+          .from((deletingItem.item as any).specType.tableName)
+          .delete()
+          .eq('id', deletingItem.item.id);
 
-      const { data, error } = await supabase.functions.invoke(functionName, {
-        body: {
-          id: deletingItem.item.id,
-          reason,
-          password,
-        },
-      });
+        if (error) throw error;
+      } else {
+        // Call delete edge function based on type for other items
+        const functionName = deletingItem.type === 'department'
+          ? 'delete-department'
+          : deletingItem.type === 'equipmentType'
+            ? 'delete-equipment-type'
+            : 'delete-vendor';
 
-      if (error) throw error;
+        const { data, error } = await supabase.functions.invoke(functionName, {
+          body: {
+            id: deletingItem.item.id,
+            reason,
+            password,
+          },
+        });
 
-      if (!data?.success) {
-        throw new Error(data?.error || 'การลบไม่สำเร็จ');
+        if (error) throw error;
+
+        if (!data?.success) {
+          throw new Error(data?.error || 'การลบไม่สำเร็จ');
+        }
       }
 
       toast({
         title: "ลบสำเร็จ",
-        description: `ลบ${deletingItem.type === 'department' ? 'หน่วยงาน' : deletingItem.type === 'equipmentType' ? 'ประเภทครุภัณฑ์' : 'ข้อมูลผู้ขาย'}เรียบร้อยแล้ว`,
+        description: `ลบ${getDeletingLabel(deletingItem.type)}เรียบร้อยแล้ว`,
       });
 
       loadData();
-    } catch (error: any) {
+    } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
         variant: "destructive",
       });
       throw error;
@@ -679,11 +866,20 @@ const Settings = () => {
     setIsVendorDialogOpen(false);
   };
 
-  const getDeletingLabel = (type?: 'department' | 'equipmentType' | 'vendor') => {
+  // These functions are already defined earlier in the file
+
+  const getDeletingLabel = (type?: 'department' | 'equipmentType' | 'vendor' | 'technicalSpec') => {
     if (type === 'department') return 'หน่วยงาน';
     if (type === 'equipmentType') return 'ประเภทครุภัณฑ์';
     if (type === 'vendor') return 'ข้อมูลผู้ขาย';
+    if (type === 'technicalSpec') return 'ข้อมูลเทคนิค';
     return 'รายการ';
+  };
+
+  const handleTechnicalSpecDialogClose = () => {
+    setIsTechnicalSpecDialogOpen(false);
+    setCurrentSpecType(null);
+    setEditingSpecRecord(null);
   };
 
   if (loading || orgSettingsLoading) {
@@ -705,11 +901,12 @@ const Settings = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="organization">ข้อมูลองค์กร</TabsTrigger>
           <TabsTrigger value="departments">หน่วยงาน</TabsTrigger>
           <TabsTrigger value="equipment-types">ประเภทครุภัณฑ์</TabsTrigger>
           <TabsTrigger value="vendors">ผู้ขาย/ผู้รับจ้าง</TabsTrigger>
+          <TabsTrigger value="technical-specs">ข้อมูลเทคนิค</TabsTrigger>
           <TabsTrigger value="system">ระบบ</TabsTrigger>
         </TabsList>
 
@@ -1050,6 +1247,193 @@ const Settings = () => {
           </Card>
         </TabsContent>
 
+        {/* Technical Specifications Tab */}
+        <TabsContent value="technical-specs">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Cpu className="mr-2 h-5 w-5" />
+                  จัดการข้อมูลเทคนิค
+                </CardTitle>
+                <CardDescription>
+                  เพิ่ม แก้ไข หรือลบข้อมูลสเปคเทคนิคของอุปกรณ์
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* CPU Specifications */}
+                  <Card className="border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center text-lg">
+                        <Cpu className="mr-2 h-5 w-5 text-blue-600" />
+                        CPU
+                      </CardTitle>
+                      <CardDescription>จัดการข้อมูลสเปค CPU</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <Button className="w-full" variant="outline" onClick={() => handleTechnicalSpecAdd(TECHNICAL_SPEC_TYPES[0])}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          เพิ่มข้อมูล CPU
+                        </Button>
+                        <div className="text-sm text-muted-foreground">
+                          มีข้อมูล: {technicalSpecs.cpu?.length || 0} รายการ
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* RAM Specifications */}
+                  <Card className="border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center text-lg">
+                        <MemoryStick className="mr-2 h-5 w-5 text-green-600" />
+                        RAM
+                      </CardTitle>
+                      <CardDescription>จัดการข้อมูลสเปค RAM</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <Button className="w-full" variant="outline" onClick={() => handleTechnicalSpecAdd(TECHNICAL_SPEC_TYPES[1])}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          เพิ่มข้อมูล RAM
+                        </Button>
+                        <div className="text-sm text-muted-foreground">
+                          มีข้อมูล: {technicalSpecs.ram?.length || 0} รายการ
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Harddisk Specifications */}
+                  <Card className="border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center text-lg">
+                        <HardDrive className="mr-2 h-5 w-5 text-purple-600" />
+                        Harddisk
+                      </CardTitle>
+                      <CardDescription>จัดการข้อมูลสเปค Harddisk</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <Button className="w-full" variant="outline" onClick={() => handleTechnicalSpecAdd(TECHNICAL_SPEC_TYPES[2])}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          เพิ่มข้อมูล Harddisk
+                        </Button>
+                        <div className="text-sm text-muted-foreground">
+                          มีข้อมูล: {technicalSpecs.harddisk?.length || 0} รายการ
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* OS Specifications */}
+                  <Card className="border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center text-lg">
+                        <Monitor className="mr-2 h-5 w-5 text-orange-600" />
+                        ระบบปฏิบัติการ
+                      </CardTitle>
+                      <CardDescription>จัดการข้อมูลสเปค OS</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <Button className="w-full" variant="outline" onClick={() => handleTechnicalSpecAdd(TECHNICAL_SPEC_TYPES[3])}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          เพิ่มข้อมูล OS
+                        </Button>
+                        <div className="text-sm text-muted-foreground">
+                          มีข้อมูล: {technicalSpecs.os?.length || 0} รายการ
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Office Specifications */}
+                  <Card className="border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex items-center text-lg">
+                        <FileText className="mr-2 h-5 w-5 text-red-600" />
+                        Office
+                      </CardTitle>
+                      <CardDescription>จัดการข้อมูลสเปค Office</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <Button className="w-full" variant="outline" onClick={() => handleTechnicalSpecAdd(TECHNICAL_SPEC_TYPES[4])}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          เพิ่มข้อมูล Office
+                        </Button>
+                        <div className="text-sm text-muted-foreground">
+                          มีข้อมูล: {technicalSpecs.office?.length || 0} รายการ
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Display existing technical specifications */}
+            {Object.entries(technicalSpecs).some(([_, specs]) => specs.length > 0) && (
+              <>
+                {Object.entries(technicalSpecs).map(([specTypeId, specs]) => {
+                  const specType = TECHNICAL_SPEC_TYPES.find(type => type.id === specTypeId);
+                  if (!specType || specs.length === 0) return null;
+
+                  return (
+                    <Card key={specTypeId}>
+                      <CardHeader>
+                        <CardTitle className="flex items-center">
+                          <specType.icon className="mr-2 h-5 w-5" />
+                          {specType.displayName}
+                        </CardTitle>
+                        <CardDescription>
+                          รายการข้อมูลที่มีอยู่ในระบบ
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid gap-3">
+                          {specs.map((spec: any) => (
+                            <div key={spec.id} className="flex items-center justify-between p-3 border rounded-lg">
+                              <div className="flex-1">
+                                <div className="font-medium">{spec.name}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {Object.entries(spec)
+                                    .filter(([key]) => key !== 'id' && key !== 'name' && key !== 'active' && key !== 'created_at' && key !== 'updated_at')
+                                    .slice(0, 3)
+                                    .map(([key, value]) => `${key}: ${value}`)
+                                    .join(', ')}
+                                  {Object.keys(spec).filter(key => key !== 'id' && key !== 'name' && key !== 'active' && key !== 'created_at' && key !== 'updated_at').length > 3 && '...'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={spec.active ? "default" : "secondary"}>
+                                  {spec.active ? "ใช้งาน" : "ไม่ใช้งาน"}
+                                </Badge>
+                                <Button size="sm" variant="outline" onClick={() => handleTechnicalSpecEdit(specType, spec)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => handleToggleTechnicalSpecStatus(specType, spec)}>
+                                  {spec.active ? "พักใช้งาน" : "ใช้งาน"}
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => handleTechnicalSpecDelete(specType, spec)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </TabsContent>
+
         {/* System Tab */}
         <TabsContent value="system">
           <div className="space-y-6">
@@ -1331,6 +1715,19 @@ const Settings = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TechnicalSpecDialog
+        open={isTechnicalSpecDialogOpen}
+        onOpenChange={(open) => {
+          setIsTechnicalSpecDialogOpen(open);
+          if (!open) handleTechnicalSpecDialogClose();
+        }}
+        specType={currentSpecType || TECHNICAL_SPEC_TYPES[0]}
+        specRecord={editingSpecRecord}
+        onSuccess={() => {
+          loadTechnicalSpecs();
+        }}
+      />
     </div>
   );
 };

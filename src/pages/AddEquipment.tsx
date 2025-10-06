@@ -20,6 +20,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { BASE_EQUIPMENT_TYPES } from "@/data/equipmentTypes.ts";
+import { TechnicalSpecRecord } from "@/data/technicalSpecs";
 import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
 import { normalizeAssetNumber } from "@/lib/asset-number";
@@ -129,10 +130,18 @@ export default function AddEquipment() {
   const [vendorPhone, setVendorPhone] = useState("");
   const [vendorAddress, setVendorAddress] = useState("");
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const [technicalSpecs, setTechnicalSpecs] = useState<Record<string, any[]>>({
+    cpu: [],
+    ram: [],
+    harddisk: [],
+    os: [],
+    office: [],
+  });
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const FORM_STORAGE_KEY = "add-equipment-draft";
+  const NONE_SPEC_VALUE = "__none__";
 
   const openScanner = (target: "model" | "serial") => {
     setScannerTarget(target);
@@ -362,6 +371,31 @@ export default function AddEquipment() {
     };
 
     loadData();
+  }, []);
+
+  // Load technical specifications
+  useEffect(() => {
+    const loadTechnicalSpecs = async () => {
+      try {
+        const specsData: Record<string, TechnicalSpecRecord[]> = {};
+
+        for (const specType of ['cpu', 'ram', 'harddisk', 'os', 'office'] as const) {
+          try {
+            // Skip loading technical specs until tables are created
+            specsData[specType] = [];
+          } catch (err) {
+            console.error(`Failed to load ${specType} specs:`, err);
+            specsData[specType] = [];
+          }
+        }
+
+        setTechnicalSpecs(specsData);
+      } catch (error) {
+        console.error('Error loading technical specs:', error);
+      }
+    };
+
+    loadTechnicalSpecs();
   }, []);
 
   useEffect(() => {
@@ -670,12 +704,12 @@ export default function AddEquipment() {
       const officeSuite = getTrimmedValue('officeSuite');
       const gpu = getTrimmedValue('gpu');
 
-      if (cpu) specs.cpu = cpu;
+      if (cpu && cpu !== NONE_SPEC_VALUE) specs.cpu = cpu;
       if (cpuSeries) specs.cpuSeries = cpuSeries;
-      if (ramGb) specs.ramGb = ramGb;
-      if (harddisk) specs.harddisk = harddisk;
-      if (operatingSystem) specs.operatingSystem = operatingSystem;
-      if (officeSuite) specs.officeSuite = officeSuite;
+      if (ramGb && ramGb !== NONE_SPEC_VALUE) specs.ramGb = ramGb;
+      if (harddisk && harddisk !== NONE_SPEC_VALUE) specs.harddisk = harddisk;
+      if (operatingSystem && operatingSystem !== NONE_SPEC_VALUE) specs.operatingSystem = operatingSystem;
+      if (officeSuite && officeSuite !== NONE_SPEC_VALUE) specs.officeSuite = officeSuite;
       if (gpu) specs.gpu = gpu;
 
       const productKey = getTrimmedValue('productKey');
@@ -1345,65 +1379,214 @@ export default function AddEquipment() {
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="cpu">CPU</Label>
-                  <Input 
-                    id="cpu" 
-                    name="cpu"
-                    placeholder="เช่น Intel Core i5-11500"
-                  />
-                </div>
+                  <Select name="cpu">
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือก CPU" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      {technicalSpecs.cpu && technicalSpecs.cpu.length > 0 ? (() => {
+                        try {
+                          // ตรวจสอบข้อมูลอย่างเข้มงวดก่อนแสดงผล
+                          const validCpuItems = technicalSpecs.cpu
+                            .filter((cpu: any) => {
+                              if (!cpu) return false;
+                              if (typeof cpu !== 'object') return false;
+                              if (!('name' in cpu)) return false;
+                              if (typeof cpu.name !== 'string') return false;
+                              const name = cpu.name.trim();
+                              return name.length > 0 && name !== 'null' && name !== 'undefined';
+                            })
+                            .map((cpu: any) => {
+                              const name = String(cpu.name).trim();
+                              if (!name || name === '' || name === 'null' || name === 'undefined') return null;
 
-                <div className="space-y-2">
-                  <Label htmlFor="cpuSeries">CPU Series</Label>
-                  <Input 
-                    id="cpuSeries" 
-                    name="cpuSeries"
-                    placeholder="เช่น 11th Gen Core i5"
-                  />
+                              return (
+                                <SelectItem key={cpu.id || `cpu-${Math.random()}`} value={name}>
+                                  {name} {cpu.brand && `(${cpu.brand})`}
+                                </SelectItem>
+                              );
+                            })
+                            .filter(Boolean);
+
+                          return validCpuItems.length > 0 ? validCpuItems : null;
+                        } catch (error) {
+                          console.error('Error rendering CPU items:', error);
+                          return null;
+                        }
+                      })() : null}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="ramGb">RAM (GB)</Label>
-                  <Input 
-                    id="ramGb" 
-                    name="ramGb"
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="เช่น 16"
-                  />
+                  <Select name="ramGb">
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือก RAM" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      {technicalSpecs.ram && technicalSpecs.ram.length > 0 ? (() => {
+                        try {
+                          const validRamItems = technicalSpecs.ram
+                            .filter((ram: any) => {
+                              if (!ram) return false;
+                              if (typeof ram !== 'object') return false;
+                              if (!('name' in ram)) return false;
+                              if (typeof ram.name !== 'string') return false;
+                              const name = ram.name.trim();
+                              return name.length > 0 && name !== 'null' && name !== 'undefined';
+                            })
+                            .map((ram: any) => {
+                              const name = String(ram.name).trim();
+                              if (!name || name === '' || name === 'null' || name === 'undefined') return null;
+
+                              return (
+                                <SelectItem key={ram.id || `ram-${Math.random()}`} value={`${ram.capacity_gb}GB`}>
+                                  {name} ({ram.capacity_gb}GB {ram.type})
+                                </SelectItem>
+                              );
+                            })
+                            .filter(Boolean);
+
+                          return validRamItems.length > 0 ? validRamItems : null;
+                        } catch (error) {
+                          console.error('Error rendering RAM items:', error);
+                          return null;
+                        }
+                      })() : null}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="harddisk">Harddisk</Label>
-                  <Input 
-                    id="harddisk" 
-                    name="harddisk"
-                    placeholder="เช่น HDD 1TB"
-                  />
+                  <Select name="harddisk">
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือก Harddisk" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      {technicalSpecs.harddisk && technicalSpecs.harddisk.length > 0 ? (() => {
+                        try {
+                          const validHarddiskItems = technicalSpecs.harddisk
+                            .filter((disk: any) => {
+                              if (!disk) return false;
+                              if (typeof disk !== 'object') return false;
+                              if (!('name' in disk)) return false;
+                              if (typeof disk.name !== 'string') return false;
+                              const name = disk.name.trim();
+                              return name.length > 0 && name !== 'null' && name !== 'undefined';
+                            })
+                            .map((disk: any) => {
+                              const name = String(disk.name).trim();
+                              if (!name || name === '' || name === 'null' || name === 'undefined') return null;
+
+                              return (
+                                <SelectItem key={disk.id || `harddisk-${Math.random()}`} value={`${disk.capacity_gb}GB`}>
+                                  {name} ({disk.capacity_gb}GB {disk.type})
+                                </SelectItem>
+                              );
+                            })
+                            .filter(Boolean);
+
+                          return validHarddiskItems.length > 0 ? validHarddiskItems : null;
+                        } catch (error) {
+                          console.error('Error rendering Harddisk items:', error);
+                          return null;
+                        }
+                      })() : null}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="operatingSystem">Operating System</Label>
-                  <Input 
-                    id="operatingSystem" 
-                    name="operatingSystem"
-                    placeholder="เช่น Windows 11 Pro"
-                  />
+                  <Select name="operatingSystem">
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือก OS" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      {technicalSpecs.os && technicalSpecs.os.length > 0 ? (() => {
+                        try {
+                          const validOsItems = technicalSpecs.os
+                            .filter((os: any) => {
+                              if (!os) return false;
+                              if (typeof os !== 'object') return false;
+                              if (!('name' in os)) return false;
+                              if (typeof os.name !== 'string') return false;
+                              const name = os.name.trim();
+                              return name.length > 0 && name !== 'null' && name !== 'undefined';
+                            })
+                            .map((os: any) => {
+                              const name = String(os.name).trim();
+                              if (!name || name === '' || name === 'null' || name === 'undefined') return null;
+
+                              return (
+                                <SelectItem key={os.id || `os-${Math.random()}`} value={name}>
+                                  {name} {os.version && `(${os.version})`}
+                                </SelectItem>
+                              );
+                            })
+                            .filter(Boolean);
+
+                          return validOsItems.length > 0 ? validOsItems : null;
+                        } catch (error) {
+                          console.error('Error rendering OS items:', error);
+                          return null;
+                        }
+                      })() : null}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="officeSuite">Office</Label>
-                  <Input 
-                    id="officeSuite" 
-                    name="officeSuite"
-                    placeholder="เช่น Microsoft 365"
-                  />
+                  <Select name="officeSuite">
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือก Office" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      {technicalSpecs.office && technicalSpecs.office.length > 0 ? (() => {
+                        try {
+                          const validOfficeItems = technicalSpecs.office
+                            .filter((office: any) => {
+                              if (!office) return false;
+                              if (typeof office !== 'object') return false;
+                              if (!('name' in office)) return false;
+                              if (typeof office.name !== 'string') return false;
+                              const name = office.name.trim();
+                              return name.length > 0 && name !== 'null' && name !== 'undefined';
+                            })
+                            .map((office: any) => {
+                              const name = String(office.name).trim();
+                              if (!name || name === '' || name === 'null' || name === 'undefined') return null;
+
+                              return (
+                                <SelectItem key={office.id || `office-${Math.random()}`} value={name}>
+                                  {name} {office.version && `(${office.version})`}
+                                </SelectItem>
+                              );
+                            })
+                            .filter(Boolean);
+
+                          return validOfficeItems.length > 0 ? validOfficeItems : null;
+                        } catch (error) {
+                          console.error('Error rendering Office items:', error);
+                          return null;
+                        }
+                      })() : null}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="gpu">Graphic Card (GPU)</Label>
-                  <Input 
-                    id="gpu" 
+                  <Input
+                    id="gpu"
                     name="gpu"
                     placeholder="เช่น NVIDIA GTX 1650"
                   />
@@ -1411,8 +1594,8 @@ export default function AddEquipment() {
 
                 <div className="space-y-2">
                   <Label htmlFor="productKey">Product Key</Label>
-                  <Input 
-                    id="productKey" 
+                  <Input
+                    id="productKey"
                     name="productKey"
                     placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
                   />
@@ -1420,8 +1603,8 @@ export default function AddEquipment() {
 
                 <div className="space-y-2">
                   <Label htmlFor="ipAddress">IP Address</Label>
-                  <Input 
-                    id="ipAddress" 
+                  <Input
+                    id="ipAddress"
                     name="ipAddress"
                     placeholder="เช่น 192.168.1.100"
                   />
@@ -1429,8 +1612,8 @@ export default function AddEquipment() {
 
                 <div className="space-y-2">
                   <Label htmlFor="macAddress">MAC Address</Label>
-                  <Input 
-                    id="macAddress" 
+                  <Input
+                    id="macAddress"
                     name="macAddress"
                     placeholder="เช่น 00:11:22:33:44:55"
                   />
@@ -1438,8 +1621,8 @@ export default function AddEquipment() {
 
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="hostname">ชื่อ Hostname</Label>
-                  <Input 
-                    id="hostname" 
+                  <Input
+                    id="hostname"
                     name="hostname"
                     placeholder="เช่น PC-OFFICE-01"
                   />
