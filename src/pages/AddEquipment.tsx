@@ -858,6 +858,83 @@ export default function AddEquipment() {
     return subTypeOptions.find((subType) => subType.value === equipmentSubType) || null;
   }, [equipmentSubType, subTypeOptions]);
 
+  type EquipmentGroup = {
+    title: string;
+    records: AssetRecord[];
+    key: string;
+  };
+
+  const groupedAssetRecords = useMemo<EquipmentGroup[]>(() => {
+    if (!assetRecords?.length) return [];
+
+    const fallbackTitle = 'ไม่ระบุรายละเอียดครุภัณฑ์';
+    const types = activeEquipmentTypes?.length ? activeEquipmentTypes : baseEquipmentTypes;
+    const labelCache = new Map<string, string>();
+
+    const resolveDetailTitle = (value: string | null | undefined): string => {
+      try {
+        const detailValue = String(value || '').trim();
+        if (!detailValue) return fallbackTitle;
+
+        // Return cached title if available
+        const cachedTitle = labelCache.get(detailValue);
+        if (cachedTitle) return cachedTitle;
+
+        // Try to find a matching equipment type
+        let composedTitle = detailValue;
+        for (const type of types) {
+          const subTypes = Array.isArray(type?.subTypes) ? type.subTypes : [];
+          const match = subTypes.find((subType) => subType?.value === detailValue);
+          
+          if (match?.label) {
+            composedTitle = `${detailValue} • ${match.label}`;
+            break;
+          }
+        }
+
+        // Cache and return the composed title
+        labelCache.set(detailValue, composedTitle);
+        return composedTitle;
+      } catch (error) {
+        console.error('Error resolving detail title:', error);
+        return fallbackTitle;
+      }
+    };
+
+    // Group records by their base prefix
+    const groups = new Map<string, EquipmentGroup>();
+
+    for (const record of assetRecords) {
+      try {
+        const detailValue = String(record.basePrefix ?? '').trim();
+        const title = resolveDetailTitle(detailValue);
+        const key = detailValue || title || fallbackTitle;
+
+        if (!groups.has(key)) {
+          groups.set(key, {
+            title: title || fallbackTitle,
+            records: [],
+            key: `group-${key}`
+          });
+        }
+
+        groups.get(key)?.records.push(record);
+      } catch (error) {
+        console.error('Error processing record:', record, error);
+      }
+    }
+
+    // Sort groups by title and records by asset number
+    return Array.from(groups.values())
+      .sort((a, b) => a.title.localeCompare(b.title, 'th'))
+      .map(group => ({
+        ...group,
+        records: [...group.records].sort((a, b) => 
+          (a.assetNumber || '').localeCompare(b.assetNumber || '', 'th')
+        )
+      }));
+  }, [assetRecords, activeEquipmentTypes, baseEquipmentTypes]);
+
   const warrantyStatus = useMemo(() => {
     if (!warrantyEnd) return null;
     return getWarrantyStatusInfo(warrantyEnd);
@@ -1566,55 +1643,71 @@ export default function AddEquipment() {
                 ทั้งหมด {assetRecords.length} รายการ
               </p>
               <ScrollArea className="max-h-[360px] rounded-md border border-border/70">
-                <div className="divide-y divide-border/70">
-                  {assetRecords.map((record) => {
-                    const statusDisplay = getStatusDisplay(record.status);
-
-                    return (
-                      <div key={record.assetNumber} className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="font-semibold text-foreground">{record.assetNumber}</span>
-                            <span
-                              className={cn(
-                                "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                                statusDisplay.className,
-                              )}
-                            >
-                              {statusDisplay.label}
-                            </span>
-                          </div>
-                          <dl className="grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
-                            <div className="flex flex-col">
-                              <dt className="font-medium text-foreground">ชื่อครุภัณฑ์</dt>
-                              <dd>{record.name || '-'}</dd>
-                            </div>
-                            <div className="flex flex-col">
-                              <dt className="font-medium text-foreground">หน่วยงาน</dt>
-                              <dd>{record.department || '-'}</dd>
-                            </div>
-                            <div className="flex flex-col">
-                              <dt className="font-medium text-foreground">สถานะ</dt>
-                              <dd>
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                                    statusDisplay.className,
-                                  )}
-                                >
-                                  {statusDisplay.label}
-                                </span>
-                              </dd>
-                            </div>
-                            <div className="flex flex-col">
-                              <dt className="font-medium text-foreground">สถานที่</dt>
-                              <dd>{record.location || '-'}</dd>
-                            </div>
-                          </dl>
-                        </div>
+                <div className="space-y-4 p-1">
+                  {groupedAssetRecords.length > 0 ? (
+                    groupedAssetRecords.map(({ title, records, key }) => (
+                      <div key={key} className="overflow-hidden rounded-md border border-border/60 bg-card">
+                      <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-4 py-2">
+                        <span className="text-sm font-semibold text-foreground">{title}</span>
+                        <span className="text-xs text-muted-foreground">ทั้งหมด {records.length} รายการ</span>
                       </div>
-                    );
-                  })}
+                      <div className="divide-y divide-border/70">
+                        {records.map((record) => {
+                          const statusDisplay = getStatusDisplay(record.status);
+
+                          return (
+                            <div key={record.assetNumber} className="px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="font-semibold text-foreground">{record.assetNumber}</span>
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                      statusDisplay.className,
+                                    )}
+                                  >
+                                    {statusDisplay.label}
+                                  </span>
+                                </div>
+                                <dl className="grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
+                                  <div className="flex flex-col">
+                                    <dt className="font-medium text-foreground">ชื่อครุภัณฑ์</dt>
+                                    <dd>{record.name || '-'}</dd>
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <dt className="font-medium text-foreground">หน่วยงาน</dt>
+                                    <dd>{record.department || '-'}</dd>
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <dt className="font-medium text-foreground">สถานะ</dt>
+                                    <dd>
+                                      <span
+                                        className={cn(
+                                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                          statusDisplay.className,
+                                        )}
+                                      >
+                                        {statusDisplay.label}
+                                      </span>
+                                    </dd>
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <dt className="font-medium text-foreground">สถานที่</dt>
+                                    <dd>{record.location || '-'}</dd>
+                                  </div>
+                                </dl>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex h-32 items-center justify-center rounded-md border border-border/60 bg-card">
+                    <p className="text-muted-foreground">ไม่พบข้อมูลครุภัณฑ์</p>
+                  </div>
+                )}
                 </div>
               </ScrollArea>
             </>
