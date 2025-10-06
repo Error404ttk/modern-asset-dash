@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, Plus, ArrowLeftRight, Calendar, User, Monitor, QrCode, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -54,6 +55,55 @@ const diffFromToday = (target?: string | null) => {
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+type BorrowNoteDetails = {
+  purpose: string | null;
+  notes: string | null;
+};
+
+const parseBorrowNoteDetails = (raw: string | null): BorrowNoteDetails => {
+  if (!raw) {
+    return { purpose: null, notes: null };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const typed = parsed as Record<string, unknown>;
+      const rawPurpose = typeof typed.purpose === 'string' ? typed.purpose : null;
+      const rawNotes = typeof typed.notes === 'string' ? typed.notes : null;
+      const purpose = rawPurpose?.trim() ?? '';
+      const notes = rawNotes?.trim() ?? '';
+
+      return {
+        purpose: purpose ? purpose : null,
+        notes: notes ? notes : null,
+      };
+    }
+  } catch {}
+
+  const [firstLine = '', ...rest] = raw.split('\n');
+  const trimmedFirst = firstLine.trim();
+  const remaining = rest.join('\n').trim();
+
+  if (rest.length > 0) {
+    return {
+      purpose: trimmedFirst ? trimmedFirst : null,
+      notes: remaining ? remaining : null,
+    };
+  }
+
+  return {
+    purpose: null,
+    notes: trimmedFirst ? trimmedFirst : null,
+  };
+};
+
+const toDisplayText = (value?: string | null) => {
+  if (!value) return '-';
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : '-';
+};
+
 type BorrowTransactionRecord = {
   recordId: string;
   equipmentId: string;
@@ -71,6 +121,8 @@ type BorrowTransactionRecord = {
   returnDateRaw: string | null;
   returnCondition: string | null;
   notes: string | null;
+  borrowPurpose: string | null;
+  borrowNotes: string | null;
   returnDelayDays: number | null;
 };
 
@@ -90,6 +142,8 @@ const BorrowReturn = () => {
   const [availableFetched, setAvailableFetched] = useState(false);
   const [borrowFormDates, setBorrowFormDates] = useState({ borrowDate: "", returnDate: "" });
   const [returnFormState, setReturnFormState] = useState({ recordId: "", returnDate: "" });
+  const [detailRecordId, setDetailRecordId] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   const activeBorrowed = useMemo(
     () => transactions.filter((record) => record.status === 'borrowed'),
@@ -189,6 +243,11 @@ const BorrowReturn = () => {
 
   const recentTransactions = useMemo(() => transactions.slice(0, 10), [transactions]);
 
+  const detailRecord = useMemo(
+    () => (detailRecordId ? transactions.find((record) => record.recordId === detailRecordId) ?? null : null),
+    [detailRecordId, transactions]
+  );
+
   useEffect(() => {
     if (!returnFormState.recordId) {
       return;
@@ -255,6 +314,8 @@ const BorrowReturn = () => {
           );
         }
 
+        const noteDetails = parseBorrowNoteDetails(record.notes ?? null);
+
         return {
           recordId: record.id,
           equipmentId: record.equipment_id,
@@ -272,6 +333,8 @@ const BorrowReturn = () => {
           returnDateRaw,
           returnCondition: record.return_condition,
           notes: record.notes,
+          borrowPurpose: noteDetails.purpose,
+          borrowNotes: noteDetails.notes,
           returnDelayDays: computedReturnDelay,
         };
       });
@@ -319,6 +382,17 @@ const BorrowReturn = () => {
       fetchDepartments();
     }
   }, [user, fetchAvailableEquipment, fetchTransactions, fetchDepartments]);
+
+  useEffect(() => {
+    if (!isDetailOpen || !detailRecordId) {
+      return;
+    }
+
+    if (!detailRecord) {
+      setIsDetailOpen(false);
+      setDetailRecordId(null);
+    }
+  }, [isDetailOpen, detailRecordId, detailRecord]);
 
   useEffect(() => {
     if (!preselectedEquipmentId || !availableFetched) {
@@ -1161,6 +1235,16 @@ const BorrowReturn = () => {
                             <Badge className={badgeClass}>
                               {badgeText}
                             </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setDetailRecordId(item.recordId);
+                                setIsDetailOpen(true);
+                              }}
+                            >
+                              ดูรายละเอียด
+                            </Button>
                             <Button 
                               size="sm" 
                               onClick={() => handleReturn(item.recordId)}
@@ -1297,6 +1381,39 @@ const BorrowReturn = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={isDetailOpen}
+        onOpenChange={(open) => {
+          setIsDetailOpen(open);
+          if (!open) {
+            setDetailRecordId(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>รายละเอียดการยืม</DialogTitle>
+            <DialogDescription>
+              {detailRecord?.name ? `ข้อมูลเพิ่มเติมสำหรับ ${detailRecord.name}` : 'ข้อมูลการยืมเพิ่มเติม'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-muted-foreground">วัตถุประสงค์การยืม</p>
+              <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
+                {toDisplayText(detailRecord?.borrowPurpose ?? null)}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">หมายเหตุ</p>
+              <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
+                {toDisplayText(detailRecord?.borrowNotes ?? null)}
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
