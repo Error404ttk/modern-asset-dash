@@ -208,8 +208,10 @@ export default function Dashboard() {
   const [yearOptions, setYearOptions] = useState<string[]>([]);
   const [ramFilter, setRamFilter] = useState("all");
   const [osFilter, setOsFilter] = useState("all");
+  const [cpuFilter, setCpuFilter] = useState("all");
   const [ramOptions, setRamOptions] = useState<string[]>([]);
   const [osOptions, setOsOptions] = useState<string[]>([]);
+  const [cpuOptions, setCpuOptions] = useState<string[]>([]);
   const [departmentsList, setDepartmentsList] = useState<DepartmentInfo[]>([]);
   const [allEquipment, setAllEquipment] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -390,6 +392,18 @@ export default function Dashboard() {
         .map((value) => String(value))
         .sort((a, b) => a.localeCompare(b));
       setOsOptions(uniqueOs);
+
+      // Calculate unique CPU options
+      const uniqueCpu = Array.from(
+        new Set(
+          (equipmentData || [])
+            .map((item: any) => item.specs?.cpu)
+            .filter((cpu): cpu is string => cpu !== null && cpu !== undefined && cpu.length > 0)
+        )
+      )
+        .map((value) => String(value))
+        .sort((a, b) => a.localeCompare(b));
+      setCpuOptions(uniqueCpu);
 
       // Calculate basic stats
       const total = equipmentData?.length || 0;
@@ -863,9 +877,13 @@ export default function Dashboard() {
       const osValue = getSpecValueLocal(item.specs, ['operatingSystem', 'os']);
       const matchesOs = osFilter === "all" || osValue === osFilter;
 
-      return matchesSearch && matchesType && matchesDepartment && matchesYear && matchesStatus && matchesRam && matchesOs;
+      // CPU filter
+      const cpuValue = item.specs?.cpu;
+      const matchesCpu = cpuFilter === "all" || cpuValue === cpuFilter;
+
+      return matchesSearch && matchesType && matchesDepartment && matchesYear && matchesStatus && matchesRam && matchesOs && matchesCpu;
     });
-  }, [allEquipment, searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter]);
+  }, [allEquipment, searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, cpuFilter]);
 
   // Stats computed from filtered equipment to reflect current filters
   const filteredStats = useMemo(() => {
@@ -1400,7 +1418,7 @@ export default function Dashboard() {
   // Reset page when filters or data change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, allEquipment.length]);
+  }, [searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, cpuFilter, allEquipment.length]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1415,7 +1433,8 @@ export default function Dashboard() {
     yearFilter === "all" &&
     statusFilter === "all" &&
     ramFilter === "all" &&
-    osFilter === "all";
+    osFilter === "all" &&
+    cpuFilter === "all";
 
   const handleResetFilters = () => {
     setSearchTerm("");
@@ -1425,6 +1444,7 @@ export default function Dashboard() {
     setStatusFilter("all");
     setRamFilter("all");
     setOsFilter("all");
+    setCpuFilter("all");
   };
 
   if (loading) {
@@ -1607,7 +1627,7 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-4 items-end">
             <div className="space-y-2 w-full lg:max-w-[240px]">
               <p className="text-sm font-medium text-muted-foreground">ค้นหา</p>
               <div className="relative w-full">
@@ -1678,6 +1698,22 @@ export default function Dashboard() {
                   {STATUS_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 w-full lg:max-w-[240px]">
+              <p className="text-sm font-medium text-muted-foreground">CPU ที่ใช้</p>
+              <Select value={cpuFilter} onValueChange={setCpuFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="ทุก CPU" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุก CPU</SelectItem>
+                  {cpuOptions.map((cpu) => (
+                    <SelectItem key={cpu} value={cpu}>
+                      {cpu}
                     </SelectItem>
                   ))}
                 </SelectContent>
