@@ -209,9 +209,13 @@ export default function Dashboard() {
   const [ramFilter, setRamFilter] = useState("all");
   const [osFilter, setOsFilter] = useState("all");
   const [cpuFilter, setCpuFilter] = useState("all");
+  const [osLicenseTypeFilter, setOsLicenseTypeFilter] = useState("all");
+  const [officeLicenseTypeFilter, setOfficeLicenseTypeFilter] = useState("all");
   const [ramOptions, setRamOptions] = useState<string[]>([]);
   const [osOptions, setOsOptions] = useState<string[]>([]);
   const [cpuOptions, setCpuOptions] = useState<string[]>([]);
+  const [osLicenseTypeOptions, setOsLicenseTypeOptions] = useState<string[]>([]);
+  const [officeLicenseTypeOptions, setOfficeLicenseTypeOptions] = useState<string[]>([]);
   const [departmentsList, setDepartmentsList] = useState<DepartmentInfo[]>([]);
   const [allEquipment, setAllEquipment] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -404,6 +408,30 @@ export default function Dashboard() {
         .map((value) => String(value))
         .sort((a, b) => a.localeCompare(b));
       setCpuOptions(uniqueCpu);
+
+      // Calculate unique OS license type options
+      const uniqueOsLicenseTypes = Array.from(
+        new Set(
+          (equipmentData || [])
+            .map((item: any) => item.specs?.osLicenseType)
+            .filter((license): license is string => license !== null && license !== undefined && license.length > 0)
+        )
+      )
+        .map((value) => String(value))
+        .sort((a, b) => a.localeCompare(b));
+      setOsLicenseTypeOptions(uniqueOsLicenseTypes);
+
+      // Calculate unique Office license type options
+      const uniqueOfficeLicenseTypes = Array.from(
+        new Set(
+          (equipmentData || [])
+            .map((item: any) => item.specs?.officeLicenseType)
+            .filter((license): license is string => license !== null && license !== undefined && license.length > 0)
+        )
+      )
+        .map((value) => String(value))
+        .sort((a, b) => a.localeCompare(b));
+      setOfficeLicenseTypeOptions(uniqueOfficeLicenseTypes);
 
       // Calculate basic stats
       const total = equipmentData?.length || 0;
@@ -881,9 +909,17 @@ export default function Dashboard() {
       const cpuValue = item.specs?.cpu;
       const matchesCpu = cpuFilter === "all" || cpuValue === cpuFilter;
 
-      return matchesSearch && matchesType && matchesDepartment && matchesYear && matchesStatus && matchesRam && matchesOs && matchesCpu;
+      // OS license type filter
+      const osLicenseTypeValue = item.specs?.osLicenseType;
+      const matchesOsLicenseType = osLicenseTypeFilter === "all" || osLicenseTypeValue === osLicenseTypeFilter;
+
+      // Office license type filter
+      const officeLicenseTypeValue = item.specs?.officeLicenseType;
+      const matchesOfficeLicenseType = officeLicenseTypeFilter === "all" || officeLicenseTypeValue === officeLicenseTypeFilter;
+
+      return matchesSearch && matchesType && matchesDepartment && matchesYear && matchesStatus && matchesRam && matchesOs && matchesCpu && matchesOsLicenseType && matchesOfficeLicenseType;
     });
-  }, [allEquipment, searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, cpuFilter]);
+  }, [allEquipment, searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, cpuFilter, osLicenseTypeFilter, officeLicenseTypeFilter]);
 
   // Stats computed from filtered equipment to reflect current filters
   const filteredStats = useMemo(() => {
@@ -1418,7 +1454,7 @@ export default function Dashboard() {
   // Reset page when filters or data change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, cpuFilter, allEquipment.length]);
+  }, [searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, cpuFilter, osLicenseTypeFilter, officeLicenseTypeFilter, allEquipment.length]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1434,7 +1470,9 @@ export default function Dashboard() {
     statusFilter === "all" &&
     ramFilter === "all" &&
     osFilter === "all" &&
-    cpuFilter === "all";
+    cpuFilter === "all" &&
+    osLicenseTypeFilter === "all" &&
+    officeLicenseTypeFilter === "all";
 
   const handleResetFilters = () => {
     setSearchTerm("");
@@ -1445,6 +1483,8 @@ export default function Dashboard() {
     setRamFilter("all");
     setOsFilter("all");
     setCpuFilter("all");
+    setOsLicenseTypeFilter("all");
+    setOfficeLicenseTypeFilter("all");
   };
 
   if (loading) {
@@ -1627,7 +1667,7 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-4 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-10 gap-4 items-end">
             <div className="space-y-2 w-full lg:max-w-[240px]">
               <p className="text-sm font-medium text-muted-foreground">ค้นหา</p>
               <div className="relative w-full">
@@ -1746,6 +1786,38 @@ export default function Dashboard() {
                   {osOptions.map((os) => (
                     <SelectItem key={os} value={os}>
                       {os}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 w-full lg:max-w-[240px]">
+              <p className="text-sm font-medium text-muted-foreground">ลิขสิทธิ์ OS</p>
+              <Select value={osLicenseTypeFilter} onValueChange={setOsLicenseTypeFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="ทุกประเภท" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกประเภท</SelectItem>
+                  {osLicenseTypeOptions.map((licenseType) => (
+                    <SelectItem key={licenseType} value={licenseType}>
+                      {licenseType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 w-full lg:max-w-[240px]">
+              <p className="text-sm font-medium text-muted-foreground">ลิขสิทธิ์ Office</p>
+              <Select value={officeLicenseTypeFilter} onValueChange={setOfficeLicenseTypeFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="ทุกประเภท" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกประเภท</SelectItem>
+                  {officeLicenseTypeOptions.map((licenseType) => (
+                    <SelectItem key={licenseType} value={licenseType}>
+                      {licenseType}
                     </SelectItem>
                   ))}
                 </SelectContent>
