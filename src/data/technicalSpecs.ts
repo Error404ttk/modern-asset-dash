@@ -82,7 +82,7 @@ export const TECHNICAL_SPEC_TYPES: TechnicalSpecType[] = [
       { key: 'edition', label: 'รุ่น', type: 'text', placeholder: 'เช่น Pro, Home, Enterprise' },
       { key: 'architecture', label: 'สถาปัตยกรรม', type: 'select', options: ['32-bit', '64-bit'], placeholder: 'เลือกสถาปัตยกรรม' },
       { key: 'manufacturer', label: 'ผู้พัฒนา', type: 'text', placeholder: 'เช่น Microsoft, Apple, Canonical' },
-      { key: 'license_type', label: 'ประเภทลิขสิทธิ์', type: 'select', options: ['OEM', 'Retail', 'Volume'], placeholder: 'เลือกประเภทลิขสิทธิ์' },
+      { key: 'license_type', label: 'ประเภทลิขสิทธิ์', type: 'select', options: ['OEM', 'Retail', 'Volume', 'Unactivated', 'Not activated'], placeholder: 'เลือกประเภทลิขสิทธิ์' },
     ]
   },
   {
@@ -95,7 +95,7 @@ export const TECHNICAL_SPEC_TYPES: TechnicalSpecType[] = [
       { key: 'name', label: 'ชื่อโปรแกรม', type: 'text', required: true, placeholder: 'เช่น Microsoft 365' },
       { key: 'version', label: 'เวอร์ชัน', type: 'text', placeholder: 'เช่น 2021' },
       { key: 'edition', label: 'รุ่น', type: 'text', placeholder: 'เช่น Standard, Professional' },
-      { key: 'license_type', label: 'ประเภทลิขสิทธิ์', type: 'select', options: ['Perpetual', 'Subscription'], placeholder: 'เลือกประเภทลิขสิทธิ์' },
+      { key: 'license_type', label: 'ประเภทลิขสิทธิ์', type: 'select', options: ['Perpetual', 'Subscription', 'Unlicensed', 'Unlicensed Product'], placeholder: 'เลือกประเภทลิขสิทธิ์' },
       { key: 'manufacturer', label: 'ผู้พัฒนา', type: 'text', placeholder: 'เช่น Microsoft, LibreOffice' },
     ]
   }

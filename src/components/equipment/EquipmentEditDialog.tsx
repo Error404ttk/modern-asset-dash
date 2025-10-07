@@ -1073,6 +1073,26 @@ export default function EquipmentEditDialog({
                 </div>
 
                 <div>
+                  <Label htmlFor="osLicenseType">ประเภทลิขสิทธิ์ OS</Label>
+                  <Select
+                    value={formData.specs?.osLicenseType === "" ? NONE_SPEC_VALUE : (formData.specs?.osLicenseType || "")}
+                    onValueChange={(value) => handleSpecChange('osLicenseType', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกประเภทลิขสิทธิ์" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      <SelectItem value="OEM">OEM</SelectItem>
+                      <SelectItem value="Retail">Retail</SelectItem>
+                      <SelectItem value="Volume">Volume</SelectItem>
+                      <SelectItem value="Unactivated">Unactivated</SelectItem>
+                      <SelectItem value="Not activated">Not activated</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
                   <Label htmlFor="officeSuite">Office</Label>
                   {technicalSpecsData.office && technicalSpecsData.office.length > 0 ? (
                     <Select
@@ -1132,6 +1152,45 @@ export default function EquipmentEditDialog({
                       </p>
                     </div>
                   )}
+                </div>
+
+                <div>
+                  <Label htmlFor="osLicenseType">ประเภทลิขสิทธิ์ OS</Label>
+                  <Select
+                    value={formData.specs?.osLicenseType === "" ? NONE_SPEC_VALUE : (formData.specs?.osLicenseType || "")}
+                    onValueChange={(value) => handleSpecChange('osLicenseType', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกประเภทลิขสิทธิ์" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      <SelectItem value="OEM">OEM</SelectItem>
+                      <SelectItem value="Retail">Retail</SelectItem>
+                      <SelectItem value="Volume">Volume</SelectItem>
+                      <SelectItem value="Unactivated">Unactivated</SelectItem>
+                      <SelectItem value="Not activated">Not activated</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="officeLicenseType">ประเภทลิขสิทธิ์ Office</Label>
+                  <Select
+                    value={formData.specs?.officeLicenseType === "" ? NONE_SPEC_VALUE : (formData.specs?.officeLicenseType || "")}
+                    onValueChange={(value) => handleSpecChange('officeLicenseType', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกประเภทลิขสิทธิ์" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      <SelectItem value="Perpetual">Perpetual</SelectItem>
+                      <SelectItem value="Subscription">Subscription</SelectItem>
+                      <SelectItem value="Unlicensed">Unlicensed</SelectItem>
+                      <SelectItem value="Unlicensed Product">Unlicensed Product</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

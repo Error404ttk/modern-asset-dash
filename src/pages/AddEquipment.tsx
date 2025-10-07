@@ -702,19 +702,21 @@ export default function AddEquipment() {
       const harddisk = getTrimmedValue('harddisk');
       const operatingSystem = getTrimmedValue('operatingSystem');
       const officeSuite = getTrimmedValue('officeSuite');
+      const osLicenseType = getTrimmedValue('osLicenseType');
+      const officeLicenseType = getTrimmedValue('officeLicenseType');
       const gpu = getTrimmedValue('gpu');
+      const productKey = getTrimmedValue('productKey');
+      const ipAddress = getTrimmedValue('ipAddress');
+      const macAddress = getTrimmedValue('macAddress');
 
       if (cpu && cpu !== NONE_SPEC_VALUE) specs.cpu = cpu;
-      if (cpuSeries) specs.cpuSeries = cpuSeries;
       if (ramGb && ramGb !== NONE_SPEC_VALUE) specs.ramGb = ramGb;
       if (harddisk && harddisk !== NONE_SPEC_VALUE) specs.harddisk = harddisk;
       if (operatingSystem && operatingSystem !== NONE_SPEC_VALUE) specs.operatingSystem = operatingSystem;
       if (officeSuite && officeSuite !== NONE_SPEC_VALUE) specs.officeSuite = officeSuite;
+      if (osLicenseType) specs.osLicenseType = osLicenseType;
+      if (officeLicenseType) specs.officeLicenseType = officeLicenseType;
       if (gpu) specs.gpu = gpu;
-
-      const productKey = getTrimmedValue('productKey');
-      const ipAddress = getTrimmedValue('ipAddress');
-      const macAddress = getTrimmedValue('macAddress');
       const hostname = getTrimmedValue('hostname');
 
       if (productKey) specs.productKey = productKey;
@@ -1543,6 +1545,23 @@ export default function AddEquipment() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="osLicenseType">ประเภทลิขสิทธิ์ OS</Label>
+                  <Select name="osLicenseType">
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกประเภทลิขสิทธิ์" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">ไม่ระบุ</SelectItem>
+                      <SelectItem value="OEM">OEM</SelectItem>
+                      <SelectItem value="Retail">Retail</SelectItem>
+                      <SelectItem value="Volume">Volume</SelectItem>
+                      <SelectItem value="Unactivated">Unactivated</SelectItem>
+                      <SelectItem value="Not activated">Not activated</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="officeSuite">Office</Label>
                   <Select name="officeSuite">
                     <SelectTrigger>
@@ -1579,6 +1598,22 @@ export default function AddEquipment() {
                           return null;
                         }
                       })() : null}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="officeLicenseType">ประเภทลิขสิทธิ์ Office</Label>
+                  <Select name="officeLicenseType">
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกประเภทลิขสิทธิ์" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">ไม่ระบุ</SelectItem>
+                      <SelectItem value="Perpetual">Perpetual</SelectItem>
+                      <SelectItem value="Subscription">Subscription</SelectItem>
+                      <SelectItem value="Unlicensed">Unlicensed</SelectItem>
+                      <SelectItem value="Unlicensed Product">Unlicensed Product</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
