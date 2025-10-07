@@ -206,6 +206,10 @@ export default function Dashboard() {
   const [typeOptions, setTypeOptions] = useState<string[]>([]);
   const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
   const [yearOptions, setYearOptions] = useState<string[]>([]);
+  const [ramFilter, setRamFilter] = useState("all");
+  const [osFilter, setOsFilter] = useState("all");
+  const [ramOptions, setRamOptions] = useState<string[]>([]);
+  const [osOptions, setOsOptions] = useState<string[]>([]);
   const [departmentsList, setDepartmentsList] = useState<DepartmentInfo[]>([]);
   const [allEquipment, setAllEquipment] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -227,14 +231,12 @@ export default function Dashboard() {
     ? `ยินดีต้อนรับ, ${displayName} ${roleLabel}!`
     : "ยินดีต้อนรับสู่แดชบอร์ด!";
 
-  const getSpecValue = (specs: any, keys: string[]): string => {
+  const getSpecValueLocal = (specs: any, keys: string[]): string => {
     if (!specs) return "";
     for (const key of keys) {
       if (specs[key] !== undefined && specs[key] !== null) {
         const value = String(specs[key]).trim();
-        if (value.length > 0 && value !== "__none__") {
-          return value;
-        }
+        if (value.length > 0 && value !== "__none__") return value;
       }
     }
     return "";
@@ -352,6 +354,42 @@ export default function Dashboard() {
         .map((value) => String(value))
         .sort((a, b) => parseInt(a) - parseInt(b));
       setYearOptions(uniqueYears);
+
+      // Calculate unique RAM options
+      const uniqueRam = Array.from(
+        new Set(
+          (equipmentData || [])
+            .map((item: any) => {
+              const ramRaw = getSpecValue(item.specs, ['ramGb', 'ram']);
+              if (!ramRaw) return null;
+              return /^[0-9]+(\.[0-9]+)?$/.test(ramRaw) ? `${ramRaw} GB` : ramRaw;
+            })
+            .filter((ram): ram is string => ram !== null && ram.length > 0)
+        )
+      )
+        .map((value) => String(value))
+        .sort((a, b) => {
+          // Sort by numeric value if possible
+          const aNum = parseFloat(a.replace(' GB', ''));
+          const bNum = parseFloat(b.replace(' GB', ''));
+          if (!isNaN(aNum) && !isNaN(bNum)) {
+            return aNum - bNum;
+          }
+          return a.localeCompare(b);
+        });
+      setRamOptions(uniqueRam);
+
+      // Calculate unique OS options
+      const uniqueOs = Array.from(
+        new Set(
+          (equipmentData || [])
+            .map((item: any) => getSpecValue(item.specs, ['operatingSystem', 'os']))
+            .filter((os): os is string => os !== null && os.length > 0)
+        )
+      )
+        .map((value) => String(value))
+        .sort((a, b) => a.localeCompare(b));
+      setOsOptions(uniqueOs);
 
       // Calculate basic stats
       const total = equipmentData?.length || 0;
@@ -816,9 +854,18 @@ export default function Dashboard() {
       const matchesYear = yearFilter === "all" || purchaseYear === yearFilter;
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
 
-      return matchesSearch && matchesType && matchesDepartment && matchesYear && matchesStatus;
+      // RAM filter
+      const ramValue = getSpecValueLocal(item.specs, ['ramGb', 'ram']);
+      const normalizedRam = ramValue && /^[0-9]+(\.[0-9]+)?$/.test(ramValue) ? `${ramValue} GB` : ramValue;
+      const matchesRam = ramFilter === "all" || normalizedRam === ramFilter;
+
+      // OS filter
+      const osValue = getSpecValueLocal(item.specs, ['operatingSystem', 'os']);
+      const matchesOs = osFilter === "all" || osValue === osFilter;
+
+      return matchesSearch && matchesType && matchesDepartment && matchesYear && matchesStatus && matchesRam && matchesOs;
     });
-  }, [allEquipment, searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter]);
+  }, [allEquipment, searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter]);
 
   // Stats computed from filtered equipment to reflect current filters
   const filteredStats = useMemo(() => {
@@ -1353,7 +1400,7 @@ export default function Dashboard() {
   // Reset page when filters or data change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, allEquipment.length]);
+  }, [searchTerm, typeFilter, departmentFilter, yearFilter, statusFilter, ramFilter, osFilter, allEquipment.length]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1366,7 +1413,9 @@ export default function Dashboard() {
     typeFilter === "all" &&
     departmentFilter === "all" &&
     yearFilter === "all" &&
-    statusFilter === "all";
+    statusFilter === "all" &&
+    ramFilter === "all" &&
+    osFilter === "all";
 
   const handleResetFilters = () => {
     setSearchTerm("");
@@ -1374,6 +1423,8 @@ export default function Dashboard() {
     setDepartmentFilter("all");
     setYearFilter("all");
     setStatusFilter("all");
+    setRamFilter("all");
+    setOsFilter("all");
   };
 
   if (loading) {
@@ -1556,7 +1607,7 @@ export default function Dashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4 items-end">
             <div className="space-y-2 w-full lg:max-w-[240px]">
               <p className="text-sm font-medium text-muted-foreground">ค้นหา</p>
               <div className="relative w-full">
@@ -1627,6 +1678,38 @@ export default function Dashboard() {
                   {STATUS_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 w-full lg:max-w-[240px]">
+              <p className="text-sm font-medium text-muted-foreground">RAM ที่ใช้</p>
+              <Select value={ramFilter} onValueChange={setRamFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="ทุก RAM" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุก RAM</SelectItem>
+                  {ramOptions.map((ram) => (
+                    <SelectItem key={ram} value={ram}>
+                      {ram}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 w-full lg:max-w-[240px]">
+              <p className="text-sm font-medium text-muted-foreground">ระบบปฏิบัติการ</p>
+              <Select value={osFilter} onValueChange={setOsFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="ทุก OS" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุก OS</SelectItem>
+                  {osOptions.map((os) => (
+                    <SelectItem key={os} value={os}>
+                      {os}
                     </SelectItem>
                   ))}
                 </SelectContent>
