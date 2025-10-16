@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, ChangeEvent } from "react";
 import { Save, ArrowLeft, Upload, Computer, Monitor, Loader2, Camera, X, Info, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,6 +105,13 @@ type Vendor = {
   active: boolean;
 };
 
+type EquipmentBrand = {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+};
+
 export default function AddEquipment() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -118,6 +125,8 @@ export default function AddEquipment() {
   const [activeEquipmentTypes, setActiveEquipmentTypes] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [brands, setBrands] = useState<EquipmentBrand[]>([]);
+  const [brandsSupported, setBrandsSupported] = useState(true);
   const [assetRecords, setAssetRecords] = useState<AssetRecord[]>([]);
   const [checkingLatestAsset, setCheckingLatestAsset] = useState(false);
   const [isAssetDialogOpen, setIsAssetDialogOpen] = useState(false);
@@ -129,6 +138,8 @@ export default function AddEquipment() {
   const [vendorName, setVendorName] = useState("");
   const [vendorPhone, setVendorPhone] = useState("");
   const [vendorAddress, setVendorAddress] = useState("");
+  const [selectedBrandId, setSelectedBrandId] = useState<string>("");
+  const [brandSelectionMode, setBrandSelectionMode] = useState<"manual" | "select">("manual");
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
   const [technicalSpecs, setTechnicalSpecs] = useState<Record<string, any[]>>({
     cpu: [],
@@ -140,6 +151,7 @@ export default function AddEquipment() {
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const brandInputRef = useRef<HTMLInputElement>(null);
   const FORM_STORAGE_KEY = "add-equipment-draft";
   const NONE_SPEC_VALUE = "__none__";
 
@@ -171,6 +183,36 @@ export default function AddEquipment() {
     setVendorName("");
     setVendorPhone("");
     setVendorAddress("");
+  };
+
+  const handleBrandSelectChange = (value: string) => {
+    if (!brandsSupported) {
+      setBrandSelectionMode("manual");
+      setSelectedBrandId("");
+      return;
+    }
+    if (value === '__manual__') {
+      setBrandSelectionMode("manual");
+      setSelectedBrandId("");
+      return;
+    }
+
+    setBrandSelectionMode("select");
+    setSelectedBrandId(value);
+
+    const brand = brands.find((item) => item.id === value);
+    if (brand && brandInputRef.current) {
+      brandInputRef.current.value = brand.name || "";
+      brandInputRef.current.dispatchEvent(new Event("input", { bubbles: true }));
+      brandInputRef.current.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+
+  const handleBrandInputChange = (_event: ChangeEvent<HTMLInputElement>) => {
+    if (brandSelectionMode === "select") {
+      setBrandSelectionMode("manual");
+      setSelectedBrandId("");
+    }
   };
 
   const handleScanDetected = (value: string) => {
@@ -223,6 +265,8 @@ export default function AddEquipment() {
           vendorPhone?: string;
           vendorAddress?: string;
           selectedVendorId?: string;
+          selectedBrandId?: string;
+          brandSelectionMode?: "manual" | "select";
         };
       };
 
@@ -256,6 +300,12 @@ export default function AddEquipment() {
         }
         if (typeof saved.state.selectedVendorId === "string") {
           setSelectedVendorId(saved.state.selectedVendorId || undefined);
+        }
+        if (typeof saved.state.selectedBrandId === "string") {
+          setSelectedBrandId(saved.state.selectedBrandId);
+        }
+        if (saved.state.brandSelectionMode === "select" || saved.state.brandSelectionMode === "manual") {
+          setBrandSelectionMode(saved.state.brandSelectionMode);
         }
       }
 
@@ -402,6 +452,34 @@ export default function AddEquipment() {
         if (vendorsData) {
           setVendors(vendorsData);
         }
+
+        const { data: brandsData, error: brandsError, status: brandsStatus } = await supabase
+          .from('equipment_brands')
+          .select('*')
+          .eq('active', true)
+          .order('name');
+
+        if (brandsError) {
+          const message = typeof brandsError.message === "string" ? brandsError.message.toLowerCase() : "";
+          const missingTable =
+            brandsStatus === 404 ||
+            brandsError.code === 'PGRST116' ||
+            brandsError.code === '42P01' ||
+            message.includes('not found') ||
+            message.includes('does not exist');
+
+          if (missingTable) {
+            setBrandsSupported(false);
+            setBrands([]);
+            setBrandSelectionMode("manual");
+            setSelectedBrandId("");
+          } else {
+            throw brandsError;
+          }
+        } else {
+          setBrandsSupported(true);
+          setBrands(brandsData || []);
+        }
       } catch (error) {
         console.error('Error loading data:', error);
       }
@@ -434,6 +512,32 @@ export default function AddEquipment() {
 
     loadTechnicalSpecs();
   }, []);
+
+  useEffect(() => {
+    if (!brandsSupported) {
+      return;
+    }
+    if (brandSelectionMode !== "select") return;
+    if (!selectedBrandId) return;
+    const brand = brands.find((item) => item.id === selectedBrandId);
+    if (!brand) {
+      if (brands.length === 0) {
+        return;
+      }
+      setBrandSelectionMode("manual");
+      setSelectedBrandId("");
+      return;
+    }
+    const input = brandInputRef.current;
+    if (!input) return;
+
+    const nextValue = brand.name || "";
+    if (input.value !== nextValue) {
+      input.value = nextValue;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }, [brandSelectionMode, selectedBrandId, brands, brandsSupported]);
 
   useEffect(() => {
     if (!equipmentSubType) {
@@ -600,6 +704,8 @@ export default function AddEquipment() {
         vendorPhone,
         vendorAddress,
         selectedVendorId: selectedVendorId ?? "",
+        selectedBrandId,
+        brandSelectionMode,
       },
     };
 
@@ -614,6 +720,8 @@ export default function AddEquipment() {
     hasRestoredDraft,
     modelValue,
     quantity,
+    selectedBrandId,
+    brandSelectionMode,
     selectedVendorId,
     serialNumberValue,
     vendorAddress,
@@ -1140,10 +1248,30 @@ export default function AddEquipment() {
 
                   <div className="space-y-2">
                     <Label htmlFor="brand">ยี่ห้อ</Label>
+                    {brandsSupported && brands.length > 0 ? (
+                      <Select
+                        value={brandSelectionMode === "select" ? selectedBrandId : "__manual__"}
+                        onValueChange={handleBrandSelectChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="เลือกยี่ห้อจากรายการ หรือกำหนดเอง" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
+                          <SelectItem value="__manual__">กำหนดเอง</SelectItem>
+                          {brands.map((brand) => (
+                            <SelectItem key={brand.id} value={brand.id}>
+                              {brand.name || "ไม่ระบุชื่อ"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
                     <Input
+                      ref={brandInputRef}
                       id="brand"
                       name="brand"
                       placeholder="เช่น Dell, HP, Lenovo"
+                      onChange={handleBrandInputChange}
                     />
                   </div>
 

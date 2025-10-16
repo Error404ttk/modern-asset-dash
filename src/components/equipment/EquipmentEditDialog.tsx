@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, ChangeEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -105,6 +105,13 @@ interface Equipment {
   };
 }
 
+interface EquipmentBrand {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+}
+
 interface EquipmentEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -130,6 +137,9 @@ export default function EquipmentEditDialog({
   const [departments, setDepartments] = useState<any[]>([]);
   const [availableEquipmentTypes, setAvailableEquipmentTypes] = useState<EquipmentTypeOption[]>(BASE_EQUIPMENT_TYPES);
   const [technicalSpecsData, setTechnicalSpecsData] = useState<Record<string, any[]>>({});
+  const [availableBrands, setAvailableBrands] = useState<EquipmentBrand[]>([]);
+  const [selectedBrandId, setSelectedBrandId] = useState<string>("");
+  const [brandSelectionMode, setBrandSelectionMode] = useState<"manual" | "select">("manual");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -181,6 +191,49 @@ export default function EquipmentEditDialog({
 
     fetchDepartments();
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const fetchBrands = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('equipment_brands')
+          .select('*')
+          .order('name');
+
+        if (error) throw error;
+
+        setAvailableBrands(data ?? []);
+      } catch (error) {
+        console.error('Error loading brands:', error);
+        setAvailableBrands([]);
+      }
+    };
+
+    fetchBrands();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const trimmedBrand = (formData.brand || "").trim();
+    if (!trimmedBrand) {
+      setBrandSelectionMode("manual");
+      setSelectedBrandId("");
+      return;
+    }
+
+    const matched = availableBrands.find((brand) => (brand.name || "").trim().toLowerCase() === trimmedBrand.toLowerCase());
+
+    if (matched) {
+      setBrandSelectionMode("select");
+      setSelectedBrandId(matched.id);
+    } else {
+      setBrandSelectionMode("manual");
+      setSelectedBrandId("");
+    }
+  }, [formData.brand, availableBrands, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -273,6 +326,38 @@ export default function EquipmentEditDialog({
 
     fetchTechnicalSpecs();
   }, [open]);
+
+  const handleBrandSelectChange = (value: string) => {
+    if (value === '__manual__') {
+      setBrandSelectionMode('manual');
+      setSelectedBrandId('');
+      return;
+    }
+
+    setBrandSelectionMode('select');
+    setSelectedBrandId(value);
+
+    const brand = availableBrands.find((item) => item.id === value);
+    if (brand) {
+      setFormData((prev) => ({
+        ...prev,
+        brand: brand.name || '',
+      }));
+    }
+  };
+
+  const handleBrandInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    setFormData((prev) => ({
+      ...prev,
+      brand: value,
+    }));
+
+    if (brandSelectionMode === 'select') {
+      setBrandSelectionMode('manual');
+      setSelectedBrandId('');
+    }
+  };
 
   const handleAssetNumberBaseChange = (value: string) => {
     const rawValue = value.trim();
@@ -619,12 +704,31 @@ export default function EquipmentEditDialog({
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="brand">ยี่ห้อ</Label>
+                  {availableBrands.length > 0 ? (
+                    <Select
+                      value={brandSelectionMode === 'select' ? selectedBrandId : '__manual__'}
+                      onValueChange={handleBrandSelectChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกยี่ห้อจากรายการ หรือกำหนดเอง" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
+                        <SelectItem value="__manual__">กำหนดเอง</SelectItem>
+                        {availableBrands.map((brand) => (
+                          <SelectItem key={brand.id} value={brand.id}>
+                            {brand.name || "ไม่ระบุชื่อ"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : null}
                   <Input
                     id="brand"
                     value={formData.brand}
-                    onChange={(e) => handleInputChange('brand', e.target.value)}
+                    onChange={handleBrandInputChange}
+                    placeholder="เช่น Dell, HP, Lenovo"
                   />
                 </div>
                 <div>

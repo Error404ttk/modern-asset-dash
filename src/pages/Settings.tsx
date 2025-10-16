@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Settings as SettingsIcon, Building, Tag, Store, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle, ListChecks, Cpu, HardDrive, MemoryStick, Monitor, FileText } from "lucide-react";
+import { Settings as SettingsIcon, Building, Tag, Tags, Store, Plus, Edit, Trash2, Save, Loader2, Image as ImageIcon, AlertTriangle, ListChecks, Cpu, HardDrive, MemoryStick, Monitor, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { DepartmentDialog } from "@/components/settings/DepartmentDialog";
@@ -17,6 +17,7 @@ import { EquipmentTypeDialog } from "@/components/settings/EquipmentTypeDialog";
 import { EquipmentTypeDetailDialog, EquipmentTypeDetail } from "@/components/settings/EquipmentTypeDetailDialog";
 import { DeleteConfirmDialog } from "@/components/settings/DeleteConfirmDialog";
 import { VendorDialog } from "@/components/settings/VendorDialog";
+import { BrandDialog } from "@/components/settings/BrandDialog";
 import { useOrganizationSettings } from "@/hooks/useOrganizationSettings";
 import { DEFAULT_STICKER_WIDTH_MM, DEFAULT_STICKER_HEIGHT_MM, clampStickerWidth, clampStickerHeight } from "@/lib/sticker";
 import { TechnicalSpecDialog } from "@/components/settings/TechnicalSpecDialog";
@@ -44,6 +45,13 @@ interface Vendor {
   name: string;
   address: string | null;
   phone: string | null;
+  active: boolean;
+}
+
+interface Brand {
+  id: string;
+  name: string;
+  description: string | null;
   active: boolean;
 }
 
@@ -85,6 +93,8 @@ const Settings = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [brandsSupported, setBrandsSupported] = useState(true);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoPreviewObjectUrl, setLogoPreviewObjectUrl] = useState<string | null>(null);
@@ -108,6 +118,7 @@ const Settings = () => {
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [isEquipmentTypeDialogOpen, setIsEquipmentTypeDialogOpen] = useState(false);
   const [isVendorDialogOpen, setIsVendorDialogOpen] = useState(false);
+  const [isBrandDialogOpen, setIsBrandDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isEquipmentDetailDialogOpen, setIsEquipmentDetailDialogOpen] = useState(false);
   // Technical specs dialog states
@@ -119,6 +130,7 @@ const Settings = () => {
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [editingEquipmentType, setEditingEquipmentType] = useState<EquipmentType | null>(null);
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
   interface TechnicalSpecItem {
     id: string;
     name: string;
@@ -128,9 +140,9 @@ const Settings = () => {
   }
 
   const [deletingItem, setDeletingItem] = useState<{ 
-    type: 'department' | 'equipmentType' | 'vendor' | 'technicalSpec', 
-    item: Department | EquipmentType | Vendor | TechnicalSpecItem 
-  } | null>(null);
+  type: 'department' | 'equipmentType' | 'vendor' | 'brand' | 'technicalSpec', 
+  item: Department | EquipmentType | Vendor | Brand | TechnicalSpecItem 
+} | null>(null);
   const [detailDialogState, setDetailDialogState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail | null } | null>(null);
   const [detailDeleteState, setDetailDeleteState] = useState<{ equipmentType: EquipmentType; detail: EquipmentTypeDetail } | null>(null);
 
@@ -165,6 +177,17 @@ const Settings = () => {
 
     checkBrandingSupport();
   }, []);
+
+  useEffect(() => {
+    if (!brandsSupported) {
+      if (activeTab === "brands") {
+        setActiveTab("organization");
+      }
+      if (isBrandDialogOpen) {
+        setIsBrandDialogOpen(false);
+      }
+    }
+  }, [brandsSupported, activeTab, isBrandDialogOpen]);
 
   useEffect(() => () => {
     if (logoPreviewObjectUrl) {
@@ -438,6 +461,31 @@ const Settings = () => {
       if (vendorError) throw vendorError;
 
       setVendors(vendorData || []);
+
+      const { data: brandData, error: brandError, status: brandStatus } = await supabase
+        .from('equipment_brands')
+        .select('*')
+        .order('name');
+
+      if (brandError) {
+        const message = typeof brandError.message === "string" ? brandError.message.toLowerCase() : "";
+        const missingTable =
+          brandStatus === 404 ||
+          brandError.code === 'PGRST116' ||
+          brandError.code === '42P01' ||
+          message.includes('not found') ||
+          message.includes('does not exist');
+
+        if (missingTable) {
+          setBrandsSupported(false);
+          setBrands([]);
+        } else {
+          throw brandError;
+        }
+      } else {
+        setBrandsSupported(true);
+        setBrands(brandData || []);
+      }
     } catch (error: Error | unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -648,6 +696,11 @@ const Settings = () => {
     setIsVendorDialogOpen(true);
   };
 
+  const handleEditBrand = (brand: Brand) => {
+    setEditingBrand(brand);
+    setIsBrandDialogOpen(true);
+  };
+
   const handleDeleteDepartment = (department: Department) => {
     setDeletingItem({ type: 'department', item: department });
     setIsDeleteDialogOpen(true);
@@ -660,6 +713,11 @@ const Settings = () => {
 
   const handleDeleteVendor = (vendor: Vendor) => {
     setDeletingItem({ type: 'vendor', item: vendor });
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteBrand = (brand: Brand) => {
+    setDeletingItem({ type: 'brand', item: brand });
     setIsDeleteDialogOpen(true);
   };
 
@@ -723,6 +781,30 @@ const Settings = () => {
       toast({
         title: "อัปเดตสำเร็จ",
         description: `${vendor.active ? 'พักใช้งาน' : 'เปิดใช้งาน'}ข้อมูลผู้ขายเรียบร้อยแล้ว`,
+      });
+
+      loadData();
+    } catch (error: Error | unknown) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleToggleBrandStatus = async (brand: Brand) => {
+    try {
+      const { error } = await supabase
+        .from('equipment_brands')
+        .update({ active: !brand.active })
+        .eq('id', brand.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "อัปเดตสำเร็จ",
+        description: `${brand.active ? 'พักใช้งาน' : 'เปิดใช้งาน'}ยี่ห้อเรียบร้อยแล้ว`,
       });
 
       loadData();
@@ -815,6 +897,13 @@ const Settings = () => {
           .eq('id', deletingItem.item.id);
 
         if (error) throw error;
+      } else if (deletingItem.type === 'brand') {
+        const { error } = await supabase
+          .from('equipment_brands')
+          .delete()
+          .eq('id', deletingItem.item.id);
+
+        if (error) throw error;
       } else {
         // Call delete edge function based on type for other items
         const functionName = deletingItem.type === 'department'
@@ -858,20 +947,23 @@ const Settings = () => {
     setEditingDepartment(null);
     setEditingEquipmentType(null);
     setEditingVendor(null);
+    setEditingBrand(null);
     setDeletingItem(null);
     setDetailDialogState(null);
     setDetailDeleteState(null);
     setIsEquipmentDetailDialogOpen(false);
     setIsDetailDeleteDialogOpen(false);
     setIsVendorDialogOpen(false);
+    setIsBrandDialogOpen(false);
   };
 
   // These functions are already defined earlier in the file
 
-  const getDeletingLabel = (type?: 'department' | 'equipmentType' | 'vendor' | 'technicalSpec') => {
+  const getDeletingLabel = (type?: 'department' | 'equipmentType' | 'vendor' | 'brand' | 'technicalSpec') => {
     if (type === 'department') return 'หน่วยงาน';
     if (type === 'equipmentType') return 'ประเภทครุภัณฑ์';
     if (type === 'vendor') return 'ข้อมูลผู้ขาย';
+    if (type === 'brand') return 'ยี่ห้อ';
     if (type === 'technicalSpec') return 'ข้อมูลเทคนิค';
     return 'รายการ';
   };
@@ -906,6 +998,9 @@ const Settings = () => {
           <TabsTrigger value="departments">หน่วยงาน</TabsTrigger>
           <TabsTrigger value="equipment-types">ประเภทครุภัณฑ์</TabsTrigger>
           <TabsTrigger value="vendors">ผู้ขาย/ผู้รับจ้าง</TabsTrigger>
+          {brandsSupported ? (
+            <TabsTrigger value="brands">ยี่ห้อ</TabsTrigger>
+          ) : null}
           <TabsTrigger value="technical-specs">ข้อมูลเทคนิค</TabsTrigger>
           <TabsTrigger value="system">ระบบ</TabsTrigger>
         </TabsList>
@@ -1246,6 +1341,97 @@ const Settings = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Brands Tab */}
+        {brandsSupported ? (
+        <TabsContent value="brands">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center">
+                    <Tags className="mr-2 h-5 w-5" />
+                    จัดการยี่ห้อครุภัณฑ์
+                  </CardTitle>
+                  <CardDescription>
+                    เพิ่ม แก้ไข หรือลบยี่ห้อที่ใช้กับข้อมูลครุภัณฑ์
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => {
+                    setEditingBrand(null);
+                    setIsBrandDialogOpen(true);
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  เพิ่มยี่ห้อ
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {brands.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                  ยังไม่มียี่ห้อที่บันทึกไว้ในระบบ
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {brands.map((brand) => (
+                    <div key={brand.id} className="rounded-lg border bg-card p-4">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-3">
+                          <div className="flex items-start space-x-3">
+                            <Tags className="mt-1 h-5 w-5 text-muted-foreground" />
+                            <div>
+                              <h3 className="font-medium text-foreground">{brand.name}</h3>
+                              {brand.description ? (
+                                <p className="text-sm text-muted-foreground whitespace-pre-line mt-1">
+                                  {brand.description}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+                          <Badge variant={brand.active ? "default" : "secondary"}>
+                            {brand.active ? "ใช้งาน" : "ไม่ใช้งาน"}
+                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleToggleBrandStatus(brand)}>
+                              {brand.active ? "พักใช้งาน" : "ใช้งาน"}
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleEditBrand(brand)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleDeleteBrand(brand)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        ) : (
+          activeTab === "brands" && (
+            <TabsContent value="brands">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Tags className="mr-2 h-5 w-5" />
+                    จัดการยี่ห้อครุภัณฑ์
+                  </CardTitle>
+                  <CardDescription>
+                    ระบบยังไม่รองรับการจัดการยี่ห้อ กรุณาอัปเดตโครงสร้างฐานข้อมูล (สร้างตาราง equipment_brands) ก่อนใช้งานฟีเจอร์นี้
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </TabsContent>
+          )
+        )}
 
         {/* Technical Specifications Tab */}
         <TabsContent value="technical-specs">
@@ -1663,6 +1849,16 @@ const Settings = () => {
           if (!open) handleDialogClose();
         }}
         vendor={editingVendor}
+        onSuccess={loadData}
+      />
+
+      <BrandDialog
+        open={isBrandDialogOpen}
+        onOpenChange={(open) => {
+          setIsBrandDialogOpen(open);
+          if (!open) handleDialogClose();
+        }}
+        brand={editingBrand}
         onSuccess={loadData}
       />
 
