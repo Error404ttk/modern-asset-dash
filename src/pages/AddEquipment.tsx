@@ -19,7 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { BASE_EQUIPMENT_TYPES } from "@/data/equipmentTypes.ts";
+import { BASE_EQUIPMENT_TYPES, type EquipmentTypeOption } from "@/data/equipmentTypes.ts";
 import { TechnicalSpecRecord } from "@/data/technicalSpecs";
 import { getWarrantyStatusInfo } from "@/lib/warranty";
 import { cn } from "@/lib/utils";
@@ -311,38 +311,75 @@ export default function AddEquipment() {
 
         if (equipmentTypesData) {
           // Map database equipment types to the format expected by the UI
-          const mappedTypes = equipmentTypesData.map(dbType => {
-            // Prefer exact code match; if not found, fall back to strict label equality
-          const matchingType =
-            baseEquipmentTypes.find(t => t.code === dbType.code) ||
-            baseEquipmentTypes.find(t => t.label === dbType.name);
+          const mappedTypes = equipmentTypesData
+            .map<EquipmentTypeOption | null>((dbType) => {
+              const matchingType =
+                baseEquipmentTypes.find((type) => type.code === dbType?.code) ||
+                baseEquipmentTypes.find((type) => type.label === dbType?.name);
 
-          const details = (dbType.equipment_type_details || []) as Array<{
-              id: string;
-              name: string;
-              code: string;
-              active: boolean;
-            }>;
+              const rawCode = typeof dbType?.code === "string" ? dbType.code.trim() : "";
+              const rawName = typeof dbType?.name === "string" ? dbType.name.trim() : "";
+              const label = rawName || matchingType?.label || rawCode;
 
-          const activeDetails = details
-            .filter(detail => detail.active)
-            .sort((a, b) => a.code.localeCompare(b.code, 'th'))
-            .map(detail => ({ value: detail.code, label: detail.name }));
+              if (!label) {
+                return null;
+              }
 
-          const fallbackSubTypes = (matchingType?.subTypes && matchingType.subTypes.length > 0)
-            ? matchingType.subTypes
-            : [{ value: dbType.code, label: dbType.name }];
+              const fallbackCode = typeof matchingType?.code === "string" ? matchingType.code.trim() : "";
+              const normalizedCode = (rawCode || fallbackCode || label).trim();
+              const details = Array.isArray(dbType?.equipment_type_details)
+                ? (dbType.equipment_type_details as Array<{
+                    id: string;
+                    name: string;
+                    code: string;
+                    active: boolean;
+                  }>)
+                : [];
 
-          return {
-            value: dbType.code.toLowerCase(),
-            label: dbType.name,
-            icon: matchingType?.icon || Computer,
-            code: dbType.code,
-            subTypes: activeDetails.length > 0 ? activeDetails : fallbackSubTypes
-          };
-        });
+              const activeDetails = details
+                .filter(
+                  (detail) =>
+                    detail &&
+                    detail.active &&
+                    typeof detail.code === "string" &&
+                    detail.code.trim().length > 0 &&
+                    typeof detail.name === "string" &&
+                    detail.name.trim().length > 0
+                )
+                .map((detail) => ({
+                  value: detail.code.trim(),
+                  label: detail.name.trim(),
+                }))
+                .sort((a, b) => a.value.localeCompare(b.value, "th"));
 
-          setActiveEquipmentTypes(mappedTypes);
+              let subTypes = activeDetails;
+              if (subTypes.length === 0) {
+                if (matchingType?.subTypes?.length) {
+                  subTypes = matchingType.subTypes;
+                } else {
+                  subTypes = [{ value: normalizedCode, label }];
+                }
+              }
+
+              return {
+                value: normalizedCode.toLowerCase(),
+                label,
+                icon: matchingType?.icon || Computer,
+                code: normalizedCode,
+                subTypes,
+              };
+            })
+            .filter((type): type is EquipmentTypeOption => Boolean(type));
+
+          if (mappedTypes.length > 0) {
+            const uniqueByValue = new Map<string, EquipmentTypeOption>();
+            mappedTypes.forEach((type) => {
+              if (!uniqueByValue.has(type.value)) {
+                uniqueByValue.set(type.value, type);
+              }
+            });
+            setActiveEquipmentTypes(Array.from(uniqueByValue.values()));
+          }
         }
 
         // Load departments
@@ -714,8 +751,8 @@ export default function AddEquipment() {
       if (harddisk && harddisk !== NONE_SPEC_VALUE) specs.harddisk = harddisk;
       if (operatingSystem && operatingSystem !== NONE_SPEC_VALUE) specs.operatingSystem = operatingSystem;
       if (officeSuite && officeSuite !== NONE_SPEC_VALUE) specs.officeSuite = officeSuite;
-      if (osLicenseType) specs.osLicenseType = osLicenseType;
-      if (officeLicenseType) specs.officeLicenseType = officeLicenseType;
+      if (osLicenseType && osLicenseType !== NONE_SPEC_VALUE) specs.osLicenseType = osLicenseType;
+      if (officeLicenseType && officeLicenseType !== NONE_SPEC_VALUE) specs.officeLicenseType = officeLicenseType;
       if (gpu) specs.gpu = gpu;
       const hostname = getTrimmedValue('hostname');
 
@@ -1551,7 +1588,7 @@ export default function AddEquipment() {
                       <SelectValue placeholder="เลือกประเภทลิขสิทธิ์" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">ไม่ระบุ</SelectItem>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
                       <SelectItem value="OEM">OEM</SelectItem>
                       <SelectItem value="Retail">Retail</SelectItem>
                       <SelectItem value="Volume">Volume</SelectItem>
@@ -1609,7 +1646,7 @@ export default function AddEquipment() {
                       <SelectValue placeholder="เลือกประเภทลิขสิทธิ์" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">ไม่ระบุ</SelectItem>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
                       <SelectItem value="Perpetual">Perpetual</SelectItem>
                       <SelectItem value="Subscription">Subscription</SelectItem>
                       <SelectItem value="Unlicensed">Unlicensed</SelectItem>
