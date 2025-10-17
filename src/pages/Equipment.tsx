@@ -96,6 +96,18 @@ const loadPdfMakeModule = (() => {
 })();
 
 type DbEquipment = Tables<'equipment'>;
+type BorrowTransaction = Tables<'borrow_transactions'>;
+
+interface BorrowSummary {
+  borrowerName: string | null;
+  borrowerDepartment: string | null;
+  borrowerContact: string | null;
+  notes: string | null;
+  borrowedAt: string | null;
+  expectedReturnAt: string | null;
+  returnedAt: string | null;
+  status: string;
+}
 
 interface EquipmentItem {
   id: string;
@@ -113,6 +125,11 @@ interface EquipmentItem {
   quantity: string;
   images?: string[];
   specs: { [key: string]: string };
+  vendorId: string | null;
+  vendorName: string;
+  vendorPhone: string;
+  vendorAddress: string;
+  borrowInfo?: BorrowSummary | null;
 }
 
 interface ExportRow {
@@ -212,7 +229,24 @@ const slugifyForFile = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 50) || "all";
 
-const transformEquipment = (dbEquipment: DbEquipment): EquipmentItem => {
+const buildBorrowSummary = (record: BorrowTransaction | undefined | null): BorrowSummary | null => {
+  if (!record) return null;
+  return {
+    borrowerName: record.borrower_name ?? null,
+    borrowerDepartment: record.department ?? null,
+    borrowerContact: record.borrower_contact ?? null,
+    notes: record.notes ?? null,
+    borrowedAt: record.borrowed_at ?? null,
+    expectedReturnAt: record.expected_return_at ?? null,
+    returnedAt: record.returned_at ?? null,
+    status: record.status,
+  };
+};
+
+const transformEquipment = (
+  dbEquipment: DbEquipment,
+  borrowRecord?: BorrowTransaction | null
+): EquipmentItem => {
   const assetInfo = normalizeAssetNumber(dbEquipment.asset_number, dbEquipment.quantity);
 
   return {
@@ -230,7 +264,12 @@ const transformEquipment = (dbEquipment: DbEquipment): EquipmentItem => {
     warrantyEnd: dbEquipment.warranty_end || "",
     quantity: assetInfo.sequence,
     images: dbEquipment.images || [],
-    specs: normalizeSpecs(dbEquipment.specs)
+    specs: normalizeSpecs(dbEquipment.specs),
+    vendorId: dbEquipment.vendor_id,
+    vendorName: dbEquipment.vendor_name || "",
+    vendorPhone: dbEquipment.vendor_phone || "",
+    vendorAddress: dbEquipment.vendor_address || "",
+    borrowInfo: buildBorrowSummary(borrowRecord),
   };
 };
 
@@ -267,9 +306,40 @@ export default function Equipment() {
 
       if (error) throw error;
 
+      const equipmentRows = data ?? [];
+      const equipmentIds = equipmentRows.map((row) => row.id);
+
+      let borrowMap = new Map<string, BorrowTransaction>();
+      if (equipmentIds.length > 0) {
+        const { data: borrowData, error: borrowError } = await supabase
+          .from('borrow_transactions')
+          .select('*')
+          .in('equipment_id', equipmentIds)
+          .in('status', ['borrowed', 'overdue'])
+          .order('borrowed_at', { ascending: false });
+
+        if (borrowError) {
+          console.error("Error loading borrow transactions:", borrowError);
+        } else if (borrowData) {
+          borrowMap = borrowData.reduce((map, record) => {
+            if (!map.has(record.equipment_id)) {
+              map.set(record.equipment_id, record);
+            }
+            return map;
+          }, new Map<string, BorrowTransaction>());
+        }
+      }
+
       // Transform database data to component format
-      const transformedData = (data || []).map(transformEquipment);
+      const transformedData = equipmentRows.map((row) =>
+        transformEquipment(row, borrowMap.get(row.id))
+      );
       setEquipmentList(transformedData);
+      setSelectedEquipment((prev) => {
+        if (!prev) return prev;
+        const refreshed = transformedData.find((item) => item.id === prev.id);
+        return refreshed ?? prev;
+      });
     } catch (error: unknown) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -361,6 +431,33 @@ export default function Equipment() {
         const assignedToNormalized = normalizeOptional(updatedEquipment.user);
         const purchaseDateNormalized = normalizeOptional(updatedEquipment.purchaseDate);
         const warrantyEndNormalized = normalizeOptional(updatedEquipment.warrantyEnd);
+        const vendorIdNormalized =
+          updatedEquipment.vendorId && updatedEquipment.vendorId.trim().length > 0
+            ? updatedEquipment.vendorId.trim()
+            : null;
+        const vendorNameNormalized = normalizeOptional(updatedEquipment.vendorName);
+        const vendorPhoneNormalized = normalizeOptional(updatedEquipment.vendorPhone);
+        const vendorAddressNormalized = normalizeOptional(updatedEquipment.vendorAddress);
+
+        const specsForDb: Record<string, unknown> = {
+          ...(updatedEquipment.specs ?? {}),
+        };
+
+        if (typeof specsForDb.reason === "string" && !specsForDb.notes) {
+          specsForDb.notes = specsForDb.reason;
+        } else if (typeof specsForDb.notes === "string" && !specsForDb.reason) {
+          specsForDb.reason = specsForDb.notes;
+        }
+
+        if (typeof specsForDb.price === "string") {
+          const trimmedPrice = specsForDb.price.trim();
+          if (!trimmedPrice) {
+            delete specsForDb.price;
+          } else {
+            const numericPrice = Number.parseFloat(trimmedPrice.replace(/[^0-9,.-]/g, "").replace(/,/g, ""));
+            specsForDb.price = Number.isFinite(numericPrice) ? numericPrice : trimmedPrice;
+          }
+        }
 
         // Transform back to database format
         const dbUpdate: TablesUpdate<'equipment'> = {
@@ -377,7 +474,11 @@ export default function Equipment() {
           purchase_date: purchaseDateNormalized,
           warranty_end: warrantyEndNormalized,
           images: updatedEquipment.images ?? [],
-          specs: (updatedEquipment.specs as unknown as Json),
+          vendor_id: vendorIdNormalized,
+          vendor_name: vendorNameNormalized,
+          vendor_phone: vendorPhoneNormalized,
+          vendor_address: vendorAddressNormalized,
+          specs: (specsForDb as Json),
         };
 
         const { error } = await supabase
@@ -499,6 +600,7 @@ export default function Equipment() {
           user: assignedToNormalized ?? '',
           purchaseDate: purchaseDateNormalized ?? '',
           warrantyEnd: warrantyEndNormalized ?? '',
+          borrowInfo: previousEquipment?.borrowInfo ?? null,
         };
 
         // Update local state

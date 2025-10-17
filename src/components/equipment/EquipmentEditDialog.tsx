@@ -41,6 +41,10 @@ const DEFAULT_SPEC_FIELDS: Record<string, string> = {
   hostname: "",
   notes: "",
   reason: "",
+  department: "",
+  price: "",
+  budgetType: "",
+  acquisitionMethod: "",
 };
 
 const COMPUTER_SPEC_FIELDS: Array<{
@@ -103,12 +107,24 @@ interface Equipment {
   specs: {
     [key: string]: string;
   };
+  vendorId?: string | null;
+  vendorName?: string;
+  vendorPhone?: string;
+  vendorAddress?: string;
 }
 
 interface EquipmentBrand {
   id: string;
   name: string;
   description: string | null;
+  active: boolean;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
   active: boolean;
 }
 
@@ -128,6 +144,10 @@ export default function EquipmentEditDialog({
   const { toast } = useToast();
   const [formData, setFormData] = useState<Equipment>({
     ...equipment,
+    vendorId: equipment.vendorId ?? null,
+    vendorName: equipment.vendorName || "",
+    vendorPhone: equipment.vendorPhone || "",
+    vendorAddress: equipment.vendorAddress || "",
     specs: normalizeSpecs(equipment.specs),
   });
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
@@ -140,6 +160,11 @@ export default function EquipmentEditDialog({
   const [availableBrands, setAvailableBrands] = useState<EquipmentBrand[]>([]);
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [brandSelectionMode, setBrandSelectionMode] = useState<"manual" | "select">("manual");
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [selectedVendorId, setSelectedVendorId] = useState<string>(equipment.vendorId ?? "");
+  const [vendorSelectionMode, setVendorSelectionMode] = useState<"manual" | "select">(
+    equipment.vendorId ? "select" : "manual"
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -160,8 +185,14 @@ export default function EquipmentEditDialog({
       user: equipment.user || "",
       purchaseDate: equipment.purchaseDate || "",
       warrantyEnd: equipment.warrantyEnd || "",
+      vendorId: equipment.vendorId ?? null,
+      vendorName: equipment.vendorName || "",
+      vendorPhone: equipment.vendorPhone || "",
+      vendorAddress: equipment.vendorAddress || "",
       specs: normalizeSpecs(equipment.specs)
     });
+    setVendorSelectionMode(equipment.vendorId ? "select" : "manual");
+    setSelectedVendorId(equipment.vendorId ?? "");
     
     // Set existing images
     setExistingImages(equipment.images || []);
@@ -212,6 +243,28 @@ export default function EquipmentEditDialog({
     };
 
     fetchBrands();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const fetchVendors = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('vendors')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (error) throw error;
+
+        setVendors(data ?? []);
+      } catch (error) {
+        console.error('Error loading vendors:', error);
+        setVendors([]);
+      }
+    };
+
+    fetchVendors();
   }, [open]);
 
   useEffect(() => {
@@ -357,6 +410,55 @@ export default function EquipmentEditDialog({
       setBrandSelectionMode('manual');
       setSelectedBrandId('');
     }
+  };
+
+  const handleVendorSelectChange = (value: string) => {
+    if (value === MANUAL_VENDOR_VALUE) {
+      setVendorSelectionMode("manual");
+      setSelectedVendorId("");
+      setFormData((prev) => ({
+        ...prev,
+        vendorId: null,
+      }));
+      return;
+    }
+
+    setVendorSelectionMode("select");
+    setSelectedVendorId(value);
+
+    const vendor = vendors.find((item) => item.id === value);
+    setFormData((prev) => ({
+      ...prev,
+      vendorId: value,
+      vendorName: vendor?.name || prev.vendorName || "",
+      vendorPhone: vendor?.phone || "",
+      vendorAddress: vendor?.address || "",
+    }));
+  };
+
+  const handleVendorManualChange = (
+    field: "vendorName" | "vendorPhone" | "vendorAddress",
+    value: string
+  ) => {
+    if (vendorSelectionMode === "select") {
+      setVendorSelectionMode("manual");
+      setSelectedVendorId("");
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      vendorId: null,
+      [field]: value,
+    }));
+  };
+
+  const handleClearVendorSelection = () => {
+    setVendorSelectionMode("manual");
+    setSelectedVendorId("");
+    setFormData((prev) => ({
+      ...prev,
+      vendorId: null,
+    }));
   };
 
   const handleAssetNumberBaseChange = (value: string) => {
@@ -542,13 +644,25 @@ export default function EquipmentEditDialog({
 
       const combinedAssetNumber = joinAssetNumber(trimmedAssetNumber, sanitizedQuantity);
 
+      const vendorIdValue =
+        formData.vendorId && formData.vendorId.toString().trim().length > 0
+          ? formData.vendorId.toString().trim()
+          : null;
+      const sanitizedVendorName = (formData.vendorName || "").trim();
+      const sanitizedVendorPhone = (formData.vendorPhone || "").trim();
+      const sanitizedVendorAddress = (formData.vendorAddress || "").trim();
+
       // Update equipment data
       const updatedEquipment = {
         ...formData,
         assetNumber: combinedAssetNumber,
         quantity: sanitizedQuantity,
         specs: cleanedSpecs,
-        images: finalImages
+        images: finalImages,
+        vendorId: vendorIdValue,
+        vendorName: sanitizedVendorName,
+        vendorPhone: sanitizedVendorPhone,
+        vendorAddress: sanitizedVendorAddress,
       };
       
       onSave(updatedEquipment);
@@ -634,6 +748,26 @@ export default function EquipmentEditDialog({
 
   const NONE_DEPARTMENT_VALUE = "__none__";
   const NONE_SPEC_VALUE = "__none__";
+  const MANUAL_VENDOR_VALUE = "__manual__";
+
+  const BUDGET_TYPE_OPTIONS = [
+    { value: "budget", label: "เงินงบประมาณ" },
+    { value: "non-budget", label: "เงินนอกงบประมาณ" },
+    { value: "donation", label: "เงินบริจาค" },
+    { value: "other", label: "อื่น ๆ" },
+  ];
+
+  const ACQUISITION_METHOD_OPTIONS = [
+    { value: "price-agreement", label: "ตกลงราคา" },
+    { value: "price-auction", label: "ประกวดราคา" },
+    { value: "price-inquiry", label: "สอบราคา" },
+    { value: "special-method", label: "วิธีพิเศษ" },
+    { value: "donation-received", label: "รับบริจาค" },
+    { value: "e-bidding", label: "e-bidding" },
+    { value: "e-market", label: "e-market" },
+    { value: "selection", label: "คัดเลือก" },
+    { value: "specific", label: "เฉพาะเจาะจง" },
+  ];
 
   const departmentValue = typeof formData.specs?.department === "string" ? formData.specs.department || "" : "";
   const departmentOptions = departments
@@ -641,6 +775,13 @@ export default function EquipmentEditDialog({
     .filter((name): name is string => Boolean(name));
   const hasDepartmentInOptions = departmentValue ? departmentOptions.includes(departmentValue) : false;
   const selectDepartmentValue = departmentValue ? departmentValue : NONE_DEPARTMENT_VALUE;
+  const vendorSelectValue =
+    vendorSelectionMode === "select" && selectedVendorId
+      ? selectedVendorId
+      : MANUAL_VENDOR_VALUE;
+  const vendorExistsInOptions = selectedVendorId
+    ? vendors.some((vendor) => vendor.id === selectedVendorId)
+    : false;
   const additionalSpecKeys = Object.keys(formData.specs || {}).filter(
     (key) => key !== "department" && !Object.prototype.hasOwnProperty.call(DEFAULT_SPEC_FIELDS, key)
   );
@@ -915,8 +1056,161 @@ export default function EquipmentEditDialog({
                 />
               </div>
             </div>
-          </CardContent>
-        </Card>
+        </CardContent>
+      </Card>
+
+          {/* ข้อมูลการจัดซื้อจัดจ้าง */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">ข้อมูลการจัดซื้อจัดจ้าง</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <Label htmlFor="price">ราคาครุภัณฑ์ (บาท)</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.specs?.price || ""}
+                    onChange={(e) => handleSpecChange("price", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="budgetType">ประเภทของเงิน</Label>
+                  <Select
+                    value={formData.specs?.budgetType ? formData.specs.budgetType : NONE_SPEC_VALUE}
+                    onValueChange={(value) => handleSpecChange("budgetType", value)}
+                  >
+                    <SelectTrigger id="budgetType">
+                      <SelectValue placeholder="เลือกประเภทของเงิน" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      {BUDGET_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="acquisitionMethod">วิธีการได้มา</Label>
+                  <Select
+                    value={
+                      formData.specs?.acquisitionMethod
+                        ? formData.specs.acquisitionMethod
+                        : NONE_SPEC_VALUE
+                    }
+                    onValueChange={(value) => handleSpecChange("acquisitionMethod", value)}
+                  >
+                    <SelectTrigger id="acquisitionMethod">
+                      <SelectValue placeholder="เลือกวิธีการได้มา" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_SPEC_VALUE}>ไม่ระบุ</SelectItem>
+                      {ACQUISITION_METHOD_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ข้อมูลผู้ขาย/ผู้รับจ้าง */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">ข้อมูลผู้ขาย/ผู้รับจ้าง</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {vendors.length > 0 ? (
+                <div className="space-y-2">
+                  <Label htmlFor="vendorSelect">เลือกจากรายชื่อผู้ขาย</Label>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Select value={vendorSelectValue} onValueChange={handleVendorSelectChange}>
+                      <SelectTrigger id="vendorSelect">
+                        <SelectValue placeholder="เลือกผู้ขายจากรายการ หรือกรอกเอง" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border border-border shadow-lg z-50 max-h-60 overflow-auto">
+                        <SelectItem value={MANUAL_VENDOR_VALUE}>กรอกข้อมูลเอง</SelectItem>
+                        {vendorSelectionMode === "select" &&
+                          !vendorExistsInOptions &&
+                          selectedVendorId && (
+                            <SelectItem value={selectedVendorId}>
+                              {formData.vendorName || "ผู้ขายที่เลือกไว้"}
+                            </SelectItem>
+                          )}
+                        {vendors.map((vendor) => (
+                          <SelectItem key={vendor.id} value={vendor.id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{vendor.name}</span>
+                              {vendor.phone ? (
+                                <span className="text-xs text-muted-foreground">
+                                  โทรศัพท์: {vendor.phone}
+                                </span>
+                              ) : null}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {vendorSelectionMode === "select" ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-10 px-3 text-sm w-full sm:w-auto"
+                        onClick={handleClearVendorSelection}
+                      >
+                        ล้าง
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    เลือกจากข้อมูลที่ตั้งค่าไว้ หรือเลือก "กรอกข้อมูลเอง" เพื่อพิมพ์ข้อมูลติดต่อใหม่
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="vendorName">ชื่อผู้ขาย/ผู้รับจ้าง/ผู้บริจาค</Label>
+                  <Input
+                    id="vendorName"
+                    value={formData.vendorName || ""}
+                    onChange={(e) => handleVendorManualChange("vendorName", e.target.value)}
+                    placeholder="กรอกชื่อผู้ขาย/ผู้รับจ้าง/ผู้บริจาค"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="vendorPhone">โทรศัพท์</Label>
+                  <Input
+                    id="vendorPhone"
+                    value={formData.vendorPhone || ""}
+                    onChange={(e) => handleVendorManualChange("vendorPhone", e.target.value)}
+                    placeholder="หมายเลขโทรศัพท์"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="vendorAddress">ที่อยู่</Label>
+                <Textarea
+                  id="vendorAddress"
+                  value={formData.vendorAddress || ""}
+                  onChange={(e) => handleVendorManualChange("vendorAddress", e.target.value)}
+                  placeholder="ที่อยู่ของผู้ขาย/ผู้รับจ้าง/ผู้บริจาค"
+                  rows={3}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           {/* ข้อมูลเทคนิค */}
           <Card>
