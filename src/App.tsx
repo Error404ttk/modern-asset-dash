@@ -20,6 +20,7 @@ import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import StickerPrint from "./pages/StickerPrint";
+import StockInkToner from "./pages/StockInkToner";
 import { OrganizationSettingsProvider } from "@/hooks/useOrganizationSettings";
 
 const queryClient = new QueryClient();
@@ -129,6 +130,16 @@ const App = () => (
                   <ProtectedRoute>
                     <AppLayout>
                       <BorrowReturn />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/stock-ink-toner"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <StockInkToner />
                     </AppLayout>
                   </ProtectedRoute>
                 }

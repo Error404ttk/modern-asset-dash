@@ -8,7 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, Plus, ArrowLeftRight, Calendar, User, Monitor, QrCode, Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Search, Plus, ArrowLeftRight, Calendar, User, Monitor, QrCode, Loader2, AlertTriangle, Info, CheckCircle2 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +36,17 @@ const normalizeDate = (date: Date) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
+const formatDateForInput = (date: Date) => {
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const normalized = normalizeDate(date);
+  const year = normalized.getFullYear();
+  const month = String(normalized.getMonth() + 1).padStart(2, "0");
+  const day = String(normalized.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const calculateDayDiff = (start: Date, end: Date) => {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     return NaN;
@@ -55,14 +68,32 @@ const diffFromToday = (target?: string | null) => {
 
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+type BorrowExtensionRecord = {
+  extendedAt: string;
+  newDueDate: string;
+  reason: string;
+  extendedBy: string | null;
+};
+
 type BorrowNoteDetails = {
   purpose: string | null;
   notes: string | null;
+  extensions: BorrowExtensionRecord[];
+  raw: string | null;
+  extras: Record<string, unknown>;
+};
+
+type DueAlertInfo = {
+  variant: "default" | "destructive";
+  title: string;
+  description: string;
+  Icon: LucideIcon;
+  className?: string;
 };
 
 const parseBorrowNoteDetails = (raw: string | null): BorrowNoteDetails => {
   if (!raw) {
-    return { purpose: null, notes: null };
+    return { purpose: null, notes: null, extensions: [], raw: null, extras: {} };
   }
 
   try {
@@ -74,9 +105,41 @@ const parseBorrowNoteDetails = (raw: string | null): BorrowNoteDetails => {
       const purpose = rawPurpose?.trim() ?? '';
       const notes = rawNotes?.trim() ?? '';
 
+      const rawExtensions = Array.isArray(typed.extensions) ? typed.extensions : [];
+      const extensions: BorrowExtensionRecord[] = rawExtensions
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            return null;
+          }
+          const payload = entry as Record<string, unknown>;
+          const extendedAt = typeof payload.extendedAt === 'string' ? payload.extendedAt : null;
+          const newDueDate = typeof payload.newDueDate === 'string' ? payload.newDueDate : null;
+          const reason = typeof payload.reason === 'string' ? payload.reason : null;
+          const extendedBy = typeof payload.extendedBy === 'string' ? payload.extendedBy : null;
+
+          if (!extendedAt || !newDueDate || !reason) {
+            return null;
+          }
+
+          return {
+            extendedAt,
+            newDueDate,
+            reason,
+            extendedBy,
+          };
+        })
+        .filter((entry): entry is BorrowExtensionRecord => Boolean(entry));
+
+      const extras: Record<string, unknown> = Object.fromEntries(
+        Object.entries(typed).filter(([key]) => !['purpose', 'notes', 'extensions'].includes(key))
+      );
+
       return {
         purpose: purpose ? purpose : null,
         notes: notes ? notes : null,
+        extensions,
+        raw,
+        extras,
       };
     }
   } catch {}
@@ -89,12 +152,18 @@ const parseBorrowNoteDetails = (raw: string | null): BorrowNoteDetails => {
     return {
       purpose: trimmedFirst ? trimmedFirst : null,
       notes: remaining ? remaining : null,
+      extensions: [],
+      raw,
+      extras: {},
     };
   }
 
   return {
-    purpose: null,
+    purpose: trimmedFirst ? trimmedFirst : null,
     notes: trimmedFirst ? trimmedFirst : null,
+    extensions: [],
+    raw,
+    extras: {},
   };
 };
 
@@ -123,6 +192,7 @@ type BorrowTransactionRecord = {
   notes: string | null;
   borrowPurpose: string | null;
   borrowNotes: string | null;
+  extensions: BorrowExtensionRecord[];
   returnDelayDays: number | null;
 };
 
@@ -144,6 +214,10 @@ const BorrowReturn = () => {
   const [returnFormState, setReturnFormState] = useState({ recordId: "", returnDate: "" });
   const [detailRecordId, setDetailRecordId] = useState<string | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [extendRecordId, setExtendRecordId] = useState<string | null>(null);
+  const [extendForm, setExtendForm] = useState({ newDueDate: "", reason: "" });
+  const [isExtendOpen, setIsExtendOpen] = useState(false);
+  const [isExtendSubmitting, setIsExtendSubmitting] = useState(false);
 
   const activeBorrowed = useMemo(
     () => transactions.filter((record) => record.status === 'borrowed'),
@@ -248,6 +322,76 @@ const BorrowReturn = () => {
     [detailRecordId, transactions]
   );
 
+  const detailDueAlert = useMemo<DueAlertInfo | null>(() => {
+    if (!detailRecord) {
+      return null;
+    }
+
+    const formattedDue = detailRecord.expectedReturnDateFormatted || "-";
+
+    if (!detailRecord.expectedReturnDateRaw) {
+      return {
+        variant: "default",
+        title: "ยังไม่กำหนดวันคืน",
+        description: "รายการนี้ยังไม่ได้ระบุวันที่กำหนดคืน",
+        Icon: Info,
+        className: "border-muted text-muted-foreground bg-muted/40 [&>svg]:text-muted-foreground",
+      };
+    }
+
+    const diff = diffFromToday(detailRecord.expectedReturnDateRaw);
+    if (diff === null) {
+      return {
+        variant: "default",
+        title: "ไม่สามารถคำนวณวันครบกำหนด",
+        description: `กรุณาตรวจสอบรูปแบบวันที่กำหนดคืน (${formattedDue})`,
+        Icon: Info,
+        className: "border-amber-300/60 bg-amber-50 text-amber-700 [&>svg]:text-amber-600",
+      };
+    }
+
+    if (diff < 0) {
+      return {
+        variant: "destructive",
+        title: "เกินกำหนดคืน",
+        description: `เกินกำหนดไป ${Math.abs(diff)} วัน (กำหนดคืน ${formattedDue})`,
+        Icon: AlertTriangle,
+      };
+    }
+
+    if (diff === 0) {
+      return {
+        variant: "destructive",
+        title: "ครบกำหนดวันนี้",
+        description: `โปรดดำเนินการคืนภายในวันนี้ (${formattedDue})`,
+        Icon: AlertTriangle,
+      };
+    }
+
+    if (diff <= NEAR_DUE_THRESHOLD_DAYS) {
+      return {
+        variant: "default",
+        title: "ใกล้ถึงกำหนดคืน",
+        description: `เหลืออีก ${diff} วัน จะครบกำหนด (${formattedDue})`,
+        Icon: AlertTriangle,
+        className: "border-amber-300/60 bg-amber-50 text-amber-700 [&>svg]:text-amber-600",
+      };
+    }
+
+    return {
+      variant: "default",
+      title: "กำหนดคืนยังไม่ถึง",
+      description: `จะครบกำหนดในอีก ${diff} วัน (${formattedDue})`,
+      Icon: CheckCircle2,
+      className: "border-emerald-400/60 bg-emerald-50 text-emerald-700 [&>svg]:text-emerald-600",
+    };
+  }, [detailRecord]);
+
+  const extendRecord = useMemo(
+    () => (extendRecordId ? transactions.find((record) => record.recordId === extendRecordId) ?? null : null),
+    [extendRecordId, transactions]
+  );
+
   useEffect(() => {
     if (!returnFormState.recordId) {
       return;
@@ -335,6 +479,7 @@ const BorrowReturn = () => {
           notes: record.notes,
           borrowPurpose: noteDetails.purpose,
           borrowNotes: noteDetails.notes,
+          extensions: noteDetails.extensions,
           returnDelayDays: computedReturnDelay,
         };
       });
@@ -415,6 +560,26 @@ const BorrowReturn = () => {
     navigate(location.pathname, { replace: true });
   }, [preselectedEquipmentId, availableFetched, availableEquipment, navigate, location.pathname, toast]);
 
+  const openExtendDialog = (record: BorrowTransactionRecord) => {
+    const baseCandidate = record.expectedReturnDateRaw
+      ? new Date(record.expectedReturnDateRaw)
+      : record.borrowDateRaw
+        ? new Date(record.borrowDateRaw)
+        : new Date();
+    const baseDate = Number.isNaN(baseCandidate.getTime()) ? new Date() : baseCandidate;
+    const normalizedBase = normalizeDate(baseDate);
+    const suggested = new Date(normalizedBase.getTime() + DAY_IN_MS);
+    const defaultValue = formatDateForInput(Number.isNaN(suggested.getTime()) ? normalizedBase : suggested);
+
+    setExtendRecordId(record.recordId);
+    setExtendForm({
+      newDueDate: defaultValue,
+      reason: "",
+    });
+    setIsExtendSubmitting(false);
+    setIsExtendOpen(true);
+  };
+
   const handleBorrowSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -478,9 +643,16 @@ const BorrowReturn = () => {
     const borrowerName = formData.get('borrower')?.toString() ?? '';
     const borrowerContact = formData.get('contact')?.toString() ?? null;
     const departmentName = formData.get('department')?.toString() ?? null;
-    const purpose = formData.get('purpose')?.toString().trim() ?? '';
-    const extraNotes = formData.get('notes')?.toString().trim() ?? '';
-    const combinedNotes = [purpose, extraNotes].filter(Boolean).join('\n') || null;
+    const purpose = (formData.get('purpose')?.toString() ?? '').trim();
+    const extraNotes = (formData.get('notes')?.toString() ?? '').trim();
+    const hasNotesContent = Boolean(purpose) || Boolean(extraNotes);
+    const combinedNotes = hasNotesContent
+      ? JSON.stringify({
+          purpose: purpose || null,
+          notes: extraNotes || null,
+          extensions: [] as BorrowExtensionRecord[],
+        })
+      : null;
 
     if (!user?.id) {
       setIsSubmitting(false);
@@ -730,6 +902,116 @@ const BorrowReturn = () => {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleExtendSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!extendRecord) {
+      toast({
+        title: "ไม่พบข้อมูล",
+        description: "ไม่พบรายการยืมที่ต้องการยืมต่อ",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!extendForm.newDueDate) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณาระบุวันที่กำหนดคืนใหม่",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const trimmedReason = extendForm.reason.trim();
+    if (!trimmedReason) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณาระบุเหตุผลการยืมต่อ",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newDueDateObj = new Date(extendForm.newDueDate);
+    if (Number.isNaN(newDueDateObj.getTime())) {
+      toast({
+        title: "วันที่ไม่ถูกต้อง",
+        description: "รูปแบบวันที่กำหนดคืนใหม่ไม่ถูกต้อง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const normalizedNewDue = normalizeDate(newDueDateObj);
+    const comparisonDate = extendRecord.expectedReturnDateRaw
+      ? normalizeDate(new Date(extendRecord.expectedReturnDateRaw))
+      : extendRecord.borrowDateRaw
+        ? normalizeDate(new Date(extendRecord.borrowDateRaw))
+        : null;
+
+    if (comparisonDate && !Number.isNaN(comparisonDate.getTime())) {
+      const diff = calculateDayDiff(comparisonDate, normalizedNewDue);
+      if (Number.isNaN(diff) || diff <= 0) {
+        toast({
+          title: "วันที่ไม่ถูกต้อง",
+          description: extendRecord.expectedReturnDateRaw
+            ? "วันที่กำหนดคืนใหม่ต้องอยู่หลังวันที่กำหนดคืนเดิม"
+            : "วันที่กำหนดคืนใหม่ต้องอยู่หลังวันที่ยืม",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setIsExtendSubmitting(true);
+
+    try {
+      const existingDetails = parseBorrowNoteDetails(extendRecord.notes ?? null);
+      const newExtension: BorrowExtensionRecord = {
+        extendedAt: new Date().toISOString(),
+        newDueDate: normalizedNewDue.toISOString(),
+        reason: trimmedReason,
+        extendedBy: user?.email || user?.id || null,
+      };
+
+      const updatedNotesObject = {
+        ...existingDetails.extras,
+        purpose: existingDetails.purpose,
+        notes: existingDetails.notes,
+        extensions: [...existingDetails.extensions, newExtension],
+      };
+
+      const { error } = await supabase
+        .from('borrow_transactions')
+        .update({
+          expected_return_at: normalizedNewDue.toISOString(),
+          notes: JSON.stringify(updatedNotesObject),
+        })
+        .eq('id', extendRecord.recordId);
+
+      if (error) throw error;
+
+      toast({
+        title: "ยืมต่อสำเร็จ",
+        description: `กำหนดคืนใหม่คือ ${formatThaiDate(normalizedNewDue.toISOString())}`,
+      });
+
+      setIsExtendOpen(false);
+      setExtendRecordId(null);
+      setExtendForm({ newDueDate: "", reason: "" });
+      fetchTransactions();
+    } catch (error) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: `ไม่สามารถยืมต่อได้: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsExtendSubmitting(false);
     }
   };
 
@@ -1228,6 +1510,11 @@ const BorrowReturn = () => {
                               <div>
                                 <span className="text-muted-foreground">กำหนดคืน:</span>
                                 <p className="font-medium">{item.expectedReturnDateFormatted || '-'}</p>
+                                {item.extensions.length > 0 ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    ยืมต่อ {item.extensions.length} ครั้ง (ล่าสุด {formatThaiDate(item.extensions[item.extensions.length - 1].extendedAt) || '-'})
+                                  </p>
+                                ) : null}
                               </div>
                             </div>
                           </div>
@@ -1244,6 +1531,13 @@ const BorrowReturn = () => {
                               }}
                             >
                               ดูรายละเอียด
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openExtendDialog(item)}
+                            >
+                              ยืมต่อ
                             </Button>
                             <Button 
                               size="sm" 
@@ -1383,6 +1677,86 @@ const BorrowReturn = () => {
       </Tabs>
 
       <Dialog
+        open={isExtendOpen}
+        onOpenChange={(open) => {
+          setIsExtendOpen(open);
+          if (!open) {
+            setExtendRecordId(null);
+            setExtendForm({ newDueDate: "", reason: "" });
+            setIsExtendSubmitting(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>ยืมต่อครุภัณฑ์</DialogTitle>
+            <DialogDescription>
+              {extendRecord?.name ? `กำหนดคืนใหม่สำหรับ ${extendRecord.name}` : 'กำหนดคืนใหม่สำหรับรายการที่เลือก'}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleExtendSubmit}>
+            <div className="rounded-lg border p-3 text-sm">
+              <p className="font-semibold text-foreground">
+                {extendRecord?.name ?? '-'}
+              </p>
+              <p className="text-muted-foreground">
+                รหัส: {extendRecord?.id ?? '-'}
+              </p>
+              <p className="text-muted-foreground">
+                กำหนดคืนเดิม: {extendRecord?.expectedReturnDateFormatted || '-'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="extendDueDate">กำหนดคืนใหม่</Label>
+              <Input
+                id="extendDueDate"
+                type="date"
+                value={extendForm.newDueDate}
+                onChange={(event) =>
+                  setExtendForm((prev) => ({ ...prev, newDueDate: event.target.value }))
+                }
+                required
+                disabled={!extendRecord || isExtendSubmitting}
+              />
+              <p className="text-xs text-muted-foreground">
+                วันที่กำหนดคืนใหม่ต้องอยู่หลังวันที่กำหนดคืนเดิมหรือวันที่ยืม
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="extendReason">เหตุผลการยืมต่อ</Label>
+              <Textarea
+                id="extendReason"
+                placeholder="ระบุเหตุผลการยืมต่อ"
+                value={extendForm.reason}
+                onChange={(event) =>
+                  setExtendForm((prev) => ({ ...prev, reason: event.target.value }))
+                }
+                required
+                disabled={!extendRecord || isExtendSubmitting}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full bg-primary hover:bg-primary/90"
+              disabled={!extendRecord || isExtendSubmitting}
+            >
+              {isExtendSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังบันทึก...
+                </>
+              ) : (
+                'ยืนยันการยืมต่อ'
+              )}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={isDetailOpen}
         onOpenChange={(open) => {
           setIsDetailOpen(open);
@@ -1399,18 +1773,76 @@ const BorrowReturn = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {detailRecord ? (
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">ผู้ยืม</p>
+                    <p className="text-sm font-semibold text-foreground mt-1">{detailRecord.borrower || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">หน่วยงาน</p>
+                    <p className="text-sm font-semibold text-foreground mt-1">
+                      {detailRecord.department || DEFAULT_DEPARTMENT_LABEL}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">วันที่ยืม</p>
+                    <p className="text-sm font-semibold text-foreground mt-1">
+                      {detailRecord.borrowDateFormatted || '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">กำหนดคืน</p>
+                    <p className="text-sm font-semibold text-foreground mt-1">
+                      {detailRecord.expectedReturnDateFormatted || '-'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {detailDueAlert ? (
+              <Alert variant={detailDueAlert.variant} className={detailDueAlert.className}>
+                <detailDueAlert.Icon className="h-4 w-4" />
+                <AlertTitle>{detailDueAlert.title}</AlertTitle>
+                <AlertDescription>{detailDueAlert.description}</AlertDescription>
+              </Alert>
+            ) : null}
             <div>
               <p className="text-sm text-muted-foreground">วัตถุประสงค์การยืม</p>
               <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
                 {toDisplayText(detailRecord?.borrowPurpose ?? null)}
               </p>
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">หมายเหตุ</p>
-              <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
-                {toDisplayText(detailRecord?.borrowNotes ?? null)}
-              </p>
-            </div>
+            {detailRecord?.borrowNotes &&
+            detailRecord.borrowNotes.trim() &&
+            detailRecord.borrowNotes.trim() !== (detailRecord.borrowPurpose ?? "").trim() ? (
+              <div>
+                <p className="text-sm text-muted-foreground">หมายเหตุ</p>
+                <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
+                  {toDisplayText(detailRecord.borrowNotes)}
+                </p>
+              </div>
+            ) : null}
+            {detailRecord?.extensions?.length ? (
+              <div>
+                <p className="text-sm text-muted-foreground">ประวัติการยืมต่อ</p>
+                <div className="mt-2 space-y-2">
+                  {detailRecord.extensions.map((entry, index) => (
+                    <div key={`${entry.extendedAt}-${index}`} className="rounded-lg border p-3">
+                      <p className="text-sm font-medium text-foreground">
+                        กำหนดคืนใหม่: {formatThaiDate(entry.newDueDate) || '-'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        บันทึกเมื่อ: {formatThaiDate(entry.extendedAt) || '-'}
+                        {entry.extendedBy ? ` โดย ${entry.extendedBy}` : ''}
+                      </p>
+                      <p className="text-sm text-foreground whitespace-pre-wrap mt-1">{entry.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
