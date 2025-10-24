@@ -50,7 +50,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { Plus, Building2, Package, Store, FileText, Pencil, Trash2, Loader2, History, Lock } from "lucide-react";
+import { Plus, Building2, Package, Store, FileText, Pencil, Trash2, Loader2, History, Lock, Wrench, ShoppingBag } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -111,6 +111,7 @@ type AttachmentMeta = {
   size: number;
   type: string;
   storagePath?: string;
+  storageBucket?: string;
   uploadedAt?: string;
   previewUrl?: string;
   file?: File;
@@ -155,7 +156,12 @@ type DeleteDialogDetails = {
 
 type SensitiveActionType = "edit" | "delete" | "history";
 
-type ReceiptAuditEntry = {
+type EntityType = "receipt" | "maintenance" | "replacement";
+
+type MaintenanceStatus = "planned" | "in_progress" | "completed";
+type ReplacementStatus = "planned" | "ordered" | "received";
+
+type AuditEntry = {
   id: string;
   action: "INSERT" | "UPDATE" | "DELETE";
   fieldName: string | null;
@@ -181,6 +187,130 @@ type ReceiptDraft = {
   totalAmount: number;
 };
 
+type MaintenanceRecord = {
+  id: string;
+  documentNo: string;
+  equipmentId: string;
+  equipmentName: string;
+  equipmentAssetNumber?: string | null;
+  equipmentType?: string | null;
+  equipmentLocation?: string | null;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  department?: string | null;
+  technician?: string | null;
+  issueSummary?: string | null;
+  workDone?: string | null;
+  partsReplaced: string[];
+  sentAt?: string | null;
+  returnedAt?: string | null;
+  warrantyUntil?: string | null;
+  cost: number;
+  notes?: string | null;
+  status: MaintenanceStatus;
+  attachments: AttachmentMeta[];
+};
+
+type ReplacementRecord = {
+  id: string;
+  documentNo: string;
+  equipmentId?: string | null;
+  equipmentName?: string | null;
+  equipmentAssetNumber?: string | null;
+  equipmentLocation?: string | null;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  department?: string | null;
+  requestedBy?: string | null;
+  approvedBy?: string | null;
+  justification?: string | null;
+  orderDate?: string | null;
+  receivedDate?: string | null;
+  warrantyUntil?: string | null;
+  cost: number;
+  status: ReplacementStatus;
+  notes?: string | null;
+  attachments: AttachmentMeta[];
+};
+
+type MaintenanceFormState = {
+  documentNo: string;
+  equipmentId: string;
+  supplierId: string;
+  department: string;
+  technician: string;
+  issueSummary: string;
+  workDone: string;
+  partsReplaced: string;
+  sentAt: string;
+  returnedAt: string;
+  warrantyUntil: string;
+  cost: string;
+  notes: string;
+  status: MaintenanceStatus;
+  attachments: AttachmentMeta[];
+};
+
+type ReplacementFormState = {
+  documentNo: string;
+  equipmentId: string;
+  supplierId: string;
+  department: string;
+  requestedBy: string;
+  approvedBy: string;
+  justification: string;
+  orderDate: string;
+  receivedDate: string;
+  warrantyUntil: string;
+  cost: string;
+  status: ReplacementStatus;
+  notes: string;
+  attachments: AttachmentMeta[];
+};
+
+type EquipmentSummary = {
+  id: string;
+  name: string;
+  type?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  location?: string | null;
+  assetNumber?: string | null;
+};
+
+type MaintenanceDraft = {
+  documentNo: string;
+  equipmentId: string;
+  supplierId: string | null;
+  department: string | null;
+  technician: string | null;
+  issueSummary: string | null;
+  workDone: string | null;
+  partsReplaced: string[];
+  sentAt: string | null;
+  returnedAt: string | null;
+  warrantyUntil: string | null;
+  cost: number;
+  notes: string | null;
+  status: MaintenanceStatus;
+};
+
+type ReplacementDraft = {
+  documentNo: string;
+  equipmentId: string | null;
+  supplierId: string | null;
+  department: string | null;
+  requestedBy: string | null;
+  approvedBy: string | null;
+  justification: string | null;
+  orderDate: string | null;
+  receivedDate: string | null;
+  warrantyUntil: string | null;
+  cost: number;
+  status: ReplacementStatus;
+  notes: string | null;
+};
+
 const INK_TYPE_LABELS: Record<InkType, string> = {
   ink: "Ink",
   toner: "Toner",
@@ -189,6 +319,21 @@ const INK_TYPE_LABELS: Record<InkType, string> = {
 };
 
 const RECEIPT_STORAGE_BUCKET = "ink-receipts";
+const MAINTENANCE_STORAGE_BUCKET = "maintenance-docs";
+const REPLACEMENT_STORAGE_BUCKET = "replacement-docs";
+const MAINTENANCE_STATUS_LABELS: Record<MaintenanceStatus, string> = {
+  planned: "วางแผน",
+  in_progress: "ระหว่างซ่อม",
+  completed: "เสร็จสิ้น",
+};
+
+const REPLACEMENT_STATUS_LABELS: Record<ReplacementStatus, string> = {
+  planned: "วางแผน",
+  ordered: "สั่งซื้อแล้ว",
+  received: "รับสินค้าแล้ว",
+};
+
+const OPTIONAL_SELECT_VALUE = "__none__";
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error && typeof error.message === "string") {
@@ -254,6 +399,41 @@ const DEFAULT_SUPPLIER_FORM: SupplierFormState = {
   email: "",
 };
 
+const DEFAULT_MAINTENANCE_FORM: MaintenanceFormState = {
+  documentNo: "",
+  equipmentId: "",
+  supplierId: "",
+  department: "",
+  technician: "",
+  issueSummary: "",
+  workDone: "",
+  partsReplaced: "",
+  sentAt: new Date().toISOString().split("T")[0],
+  returnedAt: "",
+  warrantyUntil: "",
+  cost: "",
+  notes: "",
+  status: "in_progress",
+  attachments: [],
+};
+
+const DEFAULT_REPLACEMENT_FORM: ReplacementFormState = {
+  documentNo: "",
+  equipmentId: "",
+  supplierId: "",
+  department: "",
+  requestedBy: "",
+  approvedBy: "",
+  justification: "",
+  orderDate: new Date().toISOString().split("T")[0],
+  receivedDate: "",
+  warrantyUntil: "",
+  cost: "",
+  status: "ordered",
+  notes: "",
+  attachments: [],
+};
+
 const releaseAttachmentPreview = (attachment: AttachmentMeta) => {
   if (attachment.previewUrl) {
     URL.revokeObjectURL(attachment.previewUrl);
@@ -270,6 +450,9 @@ const StockInkToner = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [equipments, setEquipments] = useState<EquipmentSummary[]>([]);
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
+  const [replacementRecords, setReplacementRecords] = useState<ReplacementRecord[]>([]);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   const [productDialogMode, setProductDialogMode] = useState<"create" | "edit">("create");
@@ -322,15 +505,32 @@ const StockInkToner = () => {
   });
   const [selectedReceiptId, setSelectedReceiptId] = useState<string | null>(null);
   const [sensitiveActionType, setSensitiveActionType] = useState<SensitiveActionType | null>(null);
-  const [sensitiveActionReceiptId, setSensitiveActionReceiptId] = useState<string | null>(null);
+  const [sensitiveEntityType, setSensitiveEntityType] = useState<EntityType | null>(null);
+  const [sensitiveEntityId, setSensitiveEntityId] = useState<string | null>(null);
   const [sensitiveDialogOpen, setSensitiveDialogOpen] = useState(false);
   const [sensitivePassword, setSensitivePassword] = useState("");
   const [sensitiveReason, setSensitiveReason] = useState("");
   const [sensitiveLoading, setSensitiveLoading] = useState(false);
-  const [receiptHistoryEntries, setReceiptHistoryEntries] = useState<ReceiptAuditEntry[]>([]);
+  const [auditHistoryEntries, setAuditHistoryEntries] = useState<AuditEntry[]>([]);
   const [isHistoryDialogOpen, setHistoryDialogOpen] = useState(false);
   const [isHistoryLoading, setHistoryLoading] = useState(false);
-  const [historyTargetReceipt, setHistoryTargetReceipt] = useState<Receipt | null>(null);
+  const [historyContext, setHistoryContext] = useState<{ type: EntityType; recordId: string; title: string } | null>(
+    null,
+  );
+  const [isMaintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false);
+  const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormState>({ ...DEFAULT_MAINTENANCE_FORM });
+  const [isSubmittingMaintenance, setSubmittingMaintenance] = useState(false);
+  const [maintenanceDialogMode, setMaintenanceDialogMode] = useState<"create" | "edit">("create");
+  const [editingMaintenanceId, setEditingMaintenanceId] = useState<string | null>(null);
+  const [editingMaintenanceOriginal, setEditingMaintenanceOriginal] = useState<MaintenanceRecord | null>(null);
+  const [maintenanceChangeReason, setMaintenanceChangeReason] = useState("");
+  const [isReplacementDialogOpen, setReplacementDialogOpen] = useState(false);
+  const [replacementForm, setReplacementForm] = useState<ReplacementFormState>({ ...DEFAULT_REPLACEMENT_FORM });
+  const [isSubmittingReplacement, setSubmittingReplacement] = useState(false);
+  const [replacementDialogMode, setReplacementDialogMode] = useState<"create" | "edit">("create");
+  const [editingReplacementId, setEditingReplacementId] = useState<string | null>(null);
+  const [editingReplacementOriginal, setEditingReplacementOriginal] = useState<ReplacementRecord | null>(null);
+  const [replacementChangeReason, setReplacementChangeReason] = useState("");
 
   const [isAttachmentPreviewOpen, setAttachmentPreviewOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{
@@ -378,6 +578,32 @@ const StockInkToner = () => {
     setEditingReceiptId(null);
     setEditingReceiptOriginal(null);
     setReceiptChangeReason("");
+  }, []);
+
+  const resetMaintenanceForm = useCallback(() => {
+    setMaintenanceForm((prev) => {
+      if (prev.attachments.length > 0) {
+        releaseAttachmentCollection(prev.attachments);
+      }
+      return { ...DEFAULT_MAINTENANCE_FORM };
+    });
+    setMaintenanceDialogMode("create");
+    setEditingMaintenanceId(null);
+    setEditingMaintenanceOriginal(null);
+    setMaintenanceChangeReason("");
+  }, []);
+
+  const resetReplacementForm = useCallback(() => {
+    setReplacementForm((prev) => {
+      if (prev.attachments.length > 0) {
+        releaseAttachmentCollection(prev.attachments);
+      }
+      return { ...DEFAULT_REPLACEMENT_FORM };
+    });
+    setReplacementDialogMode("create");
+    setEditingReplacementId(null);
+    setEditingReplacementOriginal(null);
+    setReplacementChangeReason("");
   }, []);
 
   const verifySensitivePassword = useCallback(
@@ -438,6 +664,45 @@ const StockInkToner = () => {
     [],
   );
 
+  const convertMaintenanceToDraft = useCallback(
+    (record: MaintenanceRecord): MaintenanceDraft => ({
+      documentNo: record.documentNo,
+      equipmentId: record.equipmentId,
+      supplierId: record.supplierId ?? null,
+      department: record.department ?? null,
+      technician: record.technician ?? null,
+      issueSummary: record.issueSummary ?? null,
+      workDone: record.workDone ?? null,
+      partsReplaced: [...record.partsReplaced],
+      sentAt: record.sentAt ?? null,
+      returnedAt: record.returnedAt ?? null,
+      warrantyUntil: record.warrantyUntil ?? null,
+      cost: Number(record.cost ?? 0),
+      notes: record.notes ?? null,
+      status: record.status,
+    }),
+    [],
+  );
+
+  const convertReplacementToDraft = useCallback(
+    (record: ReplacementRecord): ReplacementDraft => ({
+      documentNo: record.documentNo,
+      equipmentId: record.equipmentId ?? null,
+      supplierId: record.supplierId ?? null,
+      department: record.department ?? null,
+      requestedBy: record.requestedBy ?? null,
+      approvedBy: record.approvedBy ?? null,
+      justification: record.justification ?? null,
+      orderDate: record.orderDate ?? null,
+      receivedDate: record.receivedDate ?? null,
+      warrantyUntil: record.warrantyUntil ?? null,
+      cost: Number(record.cost ?? 0),
+      status: record.status,
+      notes: record.notes ?? null,
+    }),
+    [],
+  );
+
   const convertReceiptToFormState = useCallback((receipt: Receipt) => {
     return {
       documentNo: receipt.documentNo,
@@ -453,6 +718,45 @@ const StockInkToner = () => {
       })),
       attachments: [] as AttachmentMeta[],
     };
+  }, []);
+
+  const convertMaintenanceToFormState = useCallback((record: MaintenanceRecord) => {
+    return {
+      documentNo: record.documentNo,
+      equipmentId: record.equipmentId,
+      supplierId: record.supplierId ?? "",
+      department: record.department ?? "",
+      technician: record.technician ?? "",
+      issueSummary: record.issueSummary ?? "",
+      workDone: record.workDone ?? "",
+      partsReplaced: record.partsReplaced.join("\n"),
+      sentAt: record.sentAt ? record.sentAt.slice(0, 10) : new Date().toISOString().split("T")[0],
+      returnedAt: record.returnedAt ? record.returnedAt.slice(0, 10) : "",
+      warrantyUntil: record.warrantyUntil ? record.warrantyUntil.slice(0, 10) : "",
+      cost: record.cost ? record.cost.toString() : "",
+      notes: record.notes ?? "",
+      status: record.status,
+      attachments: [],
+    } satisfies MaintenanceFormState;
+  }, []);
+
+  const convertReplacementToFormState = useCallback((record: ReplacementRecord) => {
+    return {
+      documentNo: record.documentNo,
+      equipmentId: record.equipmentId ?? "",
+      supplierId: record.supplierId ?? "",
+      department: record.department ?? "",
+      requestedBy: record.requestedBy ?? "",
+      approvedBy: record.approvedBy ?? "",
+      justification: record.justification ?? "",
+      orderDate: record.orderDate ? record.orderDate.slice(0, 10) : new Date().toISOString().split("T")[0],
+      receivedDate: record.receivedDate ? record.receivedDate.slice(0, 10) : "",
+      warrantyUntil: record.warrantyUntil ? record.warrantyUntil.slice(0, 10) : "",
+      cost: record.cost ? record.cost.toString() : "",
+      status: record.status,
+      notes: record.notes ?? "",
+      attachments: [],
+    } satisfies ReplacementFormState;
   }, []);
 
   const normalizeItemsForHistory = useCallback((items: ReceiptDraft["items"]) => {
@@ -569,39 +873,281 @@ const StockInkToner = () => {
     [convertReceiptToDraft, normalizeItemsForHistory, serializeReceiptDraft],
   );
 
-  const getReceiptFieldLabel = useCallback((fieldName: string | null) => {
-    switch (fieldName) {
-      case "document_no":
-        return "เลขที่เอกสาร";
-      case "supplier_id":
-        return "ผู้ขาย";
-      case "received_at":
-        return "วันที่ลงรับ";
-      case "note":
-        return "หมายเหตุ";
-      case "total_amount":
-        return "ยอดรวม";
-      case "items":
-        return "รายละเอียดสินค้า";
-      case "entire_receipt":
-        return "ข้อมูลใบลงรับทั้งหมด";
-      default:
-        return fieldName ?? "ไม่ระบุฟิลด์";
-    }
-  }, []);
+  const computeMaintenanceChanges = useCallback(
+    (before: MaintenanceRecord | null, after: MaintenanceDraft | null) => {
+      if (!before && !after) {
+        return [];
+      }
+
+      if (!before && after) {
+        return [
+          {
+            field: "entire_record",
+            oldValue: null,
+            newValue: JSON.stringify(after),
+          },
+        ];
+      }
+
+      if (before && !after) {
+        return [
+          {
+            field: "entire_record",
+            oldValue: JSON.stringify(convertMaintenanceToDraft(before)),
+            newValue: null,
+          },
+        ];
+      }
+
+      if (!before || !after) {
+        return [];
+      }
+
+      const beforeDraft = convertMaintenanceToDraft(before);
+      const changes: Array<{ field: string; oldValue: string | null; newValue: string | null }> = [];
+
+      const fields: Array<keyof MaintenanceDraft> = [
+        "documentNo",
+        "equipmentId",
+        "supplierId",
+        "department",
+        "technician",
+        "issueSummary",
+        "workDone",
+        "sentAt",
+        "returnedAt",
+        "warrantyUntil",
+        "notes",
+        "status",
+      ];
+
+      fields.forEach((field) => {
+        const beforeValue = beforeDraft[field];
+        const afterValue = after[field];
+        if ((beforeValue ?? "") !== (afterValue ?? "")) {
+          changes.push({
+            field,
+            oldValue: beforeValue == null ? null : String(beforeValue),
+            newValue: afterValue == null ? null : String(afterValue),
+          });
+        }
+      });
+
+      if (beforeDraft.cost !== after.cost) {
+        changes.push({
+          field: "cost",
+          oldValue: beforeDraft.cost.toString(),
+          newValue: after.cost.toString(),
+        });
+      }
+
+      const beforeParts = JSON.stringify(beforeDraft.partsReplaced.sort());
+      const afterParts = JSON.stringify([...after.partsReplaced].sort());
+      if (beforeParts !== afterParts) {
+        changes.push({
+          field: "parts_replaced",
+          oldValue: beforeParts,
+          newValue: afterParts,
+        });
+      }
+
+      return changes;
+    },
+    [convertMaintenanceToDraft],
+  );
+
+  const computeReplacementChanges = useCallback(
+    (before: ReplacementRecord | null, after: ReplacementDraft | null) => {
+      if (!before && !after) {
+        return [];
+      }
+
+      if (!before && after) {
+        return [
+          {
+            field: "entire_record",
+            oldValue: null,
+            newValue: JSON.stringify(after),
+          },
+        ];
+      }
+
+      if (before && !after) {
+        return [
+          {
+            field: "entire_record",
+            oldValue: JSON.stringify(convertReplacementToDraft(before)),
+            newValue: null,
+          },
+        ];
+      }
+
+      if (!before || !after) {
+        return [];
+      }
+
+      const beforeDraft = convertReplacementToDraft(before);
+      const changes: Array<{ field: string; oldValue: string | null; newValue: string | null }> = [];
+
+      const fields: Array<keyof ReplacementDraft> = [
+        "documentNo",
+        "equipmentId",
+        "supplierId",
+        "department",
+        "requestedBy",
+        "approvedBy",
+        "justification",
+        "orderDate",
+        "receivedDate",
+        "warrantyUntil",
+        "notes",
+        "status",
+      ];
+
+      fields.forEach((field) => {
+        const beforeValue = beforeDraft[field];
+        const afterValue = after[field];
+        if ((beforeValue ?? "") !== (afterValue ?? "")) {
+          changes.push({
+            field,
+            oldValue: beforeValue == null ? null : String(beforeValue),
+            newValue: afterValue == null ? null : String(afterValue),
+          });
+        }
+      });
+
+      if (beforeDraft.cost !== after.cost) {
+        changes.push({
+          field: "cost",
+          oldValue: beforeDraft.cost.toString(),
+          newValue: after.cost.toString(),
+        });
+      }
+
+      return changes;
+    },
+    [convertReplacementToDraft],
+  );
+
+  const brandById = useMemo(() => new Map(brands.map((item) => [item.id, item])), [brands]);
+  const supplierById = useMemo(() => new Map(suppliers.map((item) => [item.id, item])), [suppliers]);
+  const productById = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
+  const equipmentById = useMemo(() => new Map(equipments.map((item) => [item.id, item])), [equipments]);
+
+  const getAuditFieldLabel = useCallback(
+    (entityType: EntityType, fieldName: string | null) => {
+      const fallback = fieldName ?? "ไม่ระบุฟิลด์";
+      if (!fieldName) {
+        return fallback;
+      }
+
+      if (entityType === "receipt") {
+        switch (fieldName) {
+          case "document_no":
+            return "เลขที่เอกสาร";
+          case "supplier_id":
+            return "ผู้ขาย";
+          case "received_at":
+            return "วันที่ลงรับ";
+          case "note":
+            return "หมายเหตุ";
+          case "total_amount":
+            return "ยอดรวม";
+          case "items":
+            return "รายละเอียดสินค้า";
+          case "entire_receipt":
+            return "ข้อมูลใบลงรับทั้งหมด";
+          default:
+            return fallback;
+        }
+      }
+
+      if (entityType === "maintenance") {
+        switch (fieldName) {
+          case "documentNo":
+            return "เลขที่เอกสาร";
+          case "equipmentId":
+            return "ครุภัณฑ์";
+          case "supplierId":
+            return "ผู้ให้บริการ";
+          case "department":
+            return "แผนก";
+          case "technician":
+            return "ช่าง/ผู้ประสาน";
+          case "issueSummary":
+            return "อาการที่พบ";
+          case "workDone":
+            return "งานที่ดำเนินการ";
+          case "parts_replaced":
+            return "อะไหล่ที่เปลี่ยน";
+          case "sentAt":
+            return "ส่งซ่อม";
+          case "returnedAt":
+            return "รับคืน";
+          case "warrantyUntil":
+            return "ประกันถึง";
+          case "cost":
+            return "ค่าใช้จ่าย";
+          case "notes":
+            return "หมายเหตุ";
+          case "status":
+            return "สถานะ";
+          case "entire_record":
+            return "ข้อมูลการซ่อมทั้งหมด";
+          default:
+            return fallback;
+        }
+      }
+
+      // replacement
+      switch (fieldName) {
+        case "documentNo":
+          return "เลขที่เอกสาร";
+        case "equipmentId":
+          return "ครุภัณฑ์";
+        case "supplierId":
+          return "ผู้ขาย";
+        case "department":
+          return "แผนก";
+        case "requestedBy":
+          return "ผู้ร้องขอ";
+        case "approvedBy":
+          return "ผู้อนุมัติ";
+        case "justification":
+          return "เหตุผล";
+        case "orderDate":
+          return "วันที่สั่งซื้อ";
+        case "receivedDate":
+          return "วันที่รับสินค้า";
+        case "warrantyUntil":
+          return "ประกันถึง";
+        case "cost":
+          return "งบประมาณ";
+        case "notes":
+          return "หมายเหตุ";
+        case "status":
+          return "สถานะ";
+        case "entire_record":
+          return "ข้อมูลการซื้อทั้งหมด";
+        default:
+          return fallback;
+      }
+    },
+    [],
+  );
 
   const formatHistoryValue = useCallback(
-    (fieldName: string | null, value: string | null) => {
+    (entityType: EntityType, fieldName: string | null, value: string | null) => {
       if (!value) {
         return "-";
       }
 
-      if (fieldName === "total_amount") {
+      if (entityType === "receipt" && fieldName === "total_amount") {
         const numeric = Number(value);
         return Number.isFinite(numeric) ? formatCurrency(numeric) : value;
       }
 
-      if (fieldName === "received_at") {
+      if (fieldName === "received_at" || fieldName === "sentAt" || fieldName === "returnedAt" || fieldName === "orderDate" || fieldName === "receivedDate" || fieldName === "warrantyUntil") {
         const dateValue = new Date(value);
         return Number.isNaN(dateValue.valueOf())
           ? value
@@ -614,7 +1160,7 @@ const StockInkToner = () => {
             });
       }
 
-      if (fieldName === "items") {
+      if (entityType === "receipt" && fieldName === "items") {
         try {
           const parsed = JSON.parse(value) as Array<{
             productId: string;
@@ -639,7 +1185,7 @@ const StockInkToner = () => {
         return value;
       }
 
-      if (fieldName === "entire_receipt") {
+      if (fieldName === "entire_record" || fieldName === "entire_receipt") {
         try {
           const parsed = JSON.parse(value);
           return JSON.stringify(parsed, null, 2);
@@ -649,9 +1195,50 @@ const StockInkToner = () => {
         }
       }
 
+      if (fieldName === "parts_replaced") {
+        try {
+          const parsed = JSON.parse(value) as string[];
+          if (Array.isArray(parsed)) {
+            return parsed.join("\n");
+          }
+        } catch (error) {
+          console.error("ไม่สามารถแปลงค่าประวัติ parts_replaced ได้", error);
+        }
+        return value;
+      }
+
+      if (fieldName === "cost" || fieldName === "total_amount") {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? formatCurrency(numeric) : value;
+      }
+
+      if (entityType === "maintenance" && fieldName === "status") {
+        return MAINTENANCE_STATUS_LABELS[value as MaintenanceStatus] ?? value;
+      }
+
+      if (entityType === "replacement" && fieldName === "status") {
+        return REPLACEMENT_STATUS_LABELS[value as ReplacementStatus] ?? value;
+      }
+
+      if (fieldName === "supplierId") {
+        const supplier = supplierById.get(value);
+        return supplier ? supplier.name : value;
+      }
+
+      if (fieldName === "equipmentId") {
+        const equipment = equipmentById.get(value);
+        if (equipment) {
+          const asset = equipment.assetNumber ? ` • ${equipment.assetNumber}` : "";
+          const model = equipment.model ? ` • ${equipment.model}` : "";
+          const location = equipment.location ? ` (${equipment.location})` : "";
+          return `${equipment.name}${asset}${model}${location}`;
+        }
+        return value;
+      }
+
       return value;
     },
-    [],
+    [equipmentById, supplierById],
   );
 
   const logReceiptChanges = useCallback(
@@ -704,21 +1291,109 @@ const StockInkToner = () => {
     [computeReceiptChanges, convertReceiptToDraft, serializeReceiptDraft, user],
   );
 
-  const fetchReceiptHistory = useCallback(
-    async (receiptId: string) => {
+  const logMaintenanceChanges = useCallback(
+    async ({
+      maintenanceId,
+      action,
+      reason,
+      before,
+      after,
+    }: {
+      maintenanceId: string;
+      action: "INSERT" | "UPDATE" | "DELETE";
+      reason: string;
+      before: MaintenanceRecord | null;
+      after: MaintenanceDraft | null;
+    }) => {
+      const changeSet = computeMaintenanceChanges(before, after);
+      const payload = (changeSet.length > 0 ? changeSet : [
+        {
+          field: "entire_record",
+          oldValue: before ? JSON.stringify(convertMaintenanceToDraft(before)) : null,
+          newValue: after ? JSON.stringify(after) : null,
+        },
+      ]).map((change) => ({
+        table_name: "equipment_maintenance",
+        record_id: maintenanceId,
+        action,
+        field_name: change.field,
+        old_value: change.oldValue,
+        new_value: change.newValue,
+        changed_by: user?.id ?? null,
+        reason: reason.trim() || null,
+      }));
+
+      if (payload.length === 0) {
+        return;
+      }
+
+      const { error } = await inkDb.from("audit_logs").insert(payload);
+      if (error) {
+        throw error;
+      }
+    },
+    [computeMaintenanceChanges, convertMaintenanceToDraft, user],
+  );
+
+  const logReplacementChanges = useCallback(
+    async ({
+      replacementId,
+      action,
+      reason,
+      before,
+      after,
+    }: {
+      replacementId: string;
+      action: "INSERT" | "UPDATE" | "DELETE";
+      reason: string;
+      before: ReplacementRecord | null;
+      after: ReplacementDraft | null;
+    }) => {
+      const changeSet = computeReplacementChanges(before, after);
+      const payload = (changeSet.length > 0 ? changeSet : [
+        {
+          field: "entire_record",
+          oldValue: before ? JSON.stringify(convertReplacementToDraft(before)) : null,
+          newValue: after ? JSON.stringify(after) : null,
+        },
+      ]).map((change) => ({
+        table_name: "equipment_replacements",
+        record_id: replacementId,
+        action,
+        field_name: change.field,
+        old_value: change.oldValue,
+        new_value: change.newValue,
+        changed_by: user?.id ?? null,
+        reason: reason.trim() || null,
+      }));
+
+      if (payload.length === 0) {
+        return;
+      }
+
+      const { error } = await inkDb.from("audit_logs").insert(payload);
+      if (error) {
+        throw error;
+      }
+    },
+    [computeReplacementChanges, convertReplacementToDraft, user],
+  );
+
+  const fetchAuditHistory = useCallback(
+    async (tableName: string, recordId: string) => {
       try {
         setHistoryLoading(true);
         const { data, error } = await inkDb
           .from("audit_logs")
           .select("id, action, field_name, old_value, new_value, changed_by, changed_at, reason")
-          .eq("table_name", "ink_receipts")
-          .eq("record_id", receiptId)
+          .eq("table_name", tableName)
+          .eq("record_id", recordId)
           .order("changed_at", { ascending: false });
         if (error) throw error;
 
         const entries = (data ?? []).map((row) => ({
           id: row.id,
-          action: row.action as ReceiptAuditEntry["action"],
+          action: row.action as AuditEntry["action"],
           fieldName: row.field_name,
           oldValue: row.old_value,
           newValue: row.new_value,
@@ -745,14 +1420,14 @@ const StockInkToner = () => {
           );
         }
 
-        setReceiptHistoryEntries(
+        setAuditHistoryEntries(
           entries.map((entry) => ({
             ...entry,
             changedByName: entry.changedBy ? userMap.get(entry.changedBy) ?? entry.changedBy : "ไม่ทราบผู้ใช้",
           })),
         );
       } catch (error) {
-        setReceiptHistoryEntries([]);
+        setAuditHistoryEntries([]);
         throw error;
       } finally {
         setHistoryLoading(false);
@@ -938,6 +1613,7 @@ const StockInkToner = () => {
           type: attachment.file_type ?? "",
           size: Number(attachment.file_size ?? 0),
           storagePath: attachment.storage_path ?? undefined,
+          storageBucket: RECEIPT_STORAGE_BUCKET,
           uploadedAt: attachment.uploaded_at ?? undefined,
         })),
       }));
@@ -947,6 +1623,214 @@ const StockInkToner = () => {
       toast({
         title: "เกิดข้อผิดพลาด",
         description: `ไม่สามารถโหลดใบลงรับสินค้าได้: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      });
+    }
+  }, []);
+
+  const fetchEquipments = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("equipment")
+        .select("id, name, type, brand, model, location, asset_number")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      setEquipments(
+        (data ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          brand: item.brand,
+          model: item.model,
+          location: item.location,
+          assetNumber: item.asset_number,
+        })),
+      );
+    } catch (error) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: `ไม่สามารถโหลดข้อมูลครุภัณฑ์ได้: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      });
+    }
+  }, []);
+
+  const fetchMaintenanceRecords = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("equipment_maintenance")
+        .select(
+          `
+            id,
+            document_no,
+            equipment_id,
+            supplier_id,
+            department,
+            technician,
+            issue_summary,
+            work_done,
+            parts_replaced,
+            sent_at,
+            returned_at,
+            warranty_until,
+            cost,
+            notes,
+            status,
+            created_at,
+            equipment:equipment (
+              id,
+              name,
+              type,
+              brand,
+              model,
+              location,
+              asset_number
+            ),
+            supplier:ink_suppliers (
+              id,
+              name
+            ),
+            attachments:equipment_maintenance_attachments (
+              id,
+              file_name,
+              file_type,
+              file_size,
+              storage_path,
+              uploaded_at
+            )
+          `,
+        )
+        .order("sent_at", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      const rows = (data ?? []) as any[];
+      const mapped: MaintenanceRecord[] = rows.map((row) => ({
+        id: row.id,
+        documentNo: row.document_no,
+        equipmentId: row.equipment_id,
+        equipmentName: row.equipment?.name ?? "ไม่ทราบครุภัณฑ์",
+        equipmentAssetNumber: row.equipment?.asset_number ?? null,
+        equipmentType: row.equipment?.type ?? null,
+        equipmentLocation: row.equipment?.location ?? null,
+        supplierId: row.supplier_id ?? null,
+        supplierName: row.supplier?.name ?? null,
+        department: row.department ?? null,
+        technician: row.technician ?? null,
+        issueSummary: row.issue_summary ?? null,
+        workDone: row.work_done ?? null,
+        partsReplaced: Array.isArray(row.parts_replaced) ? row.parts_replaced.filter(Boolean) : [],
+        sentAt: row.sent_at ?? null,
+        returnedAt: row.returned_at ?? null,
+        warrantyUntil: row.warranty_until ?? null,
+        cost: Number(row.cost ?? 0),
+        notes: row.notes ?? null,
+        status: (row.status ?? "in_progress") as MaintenanceStatus,
+        attachments: (row.attachments ?? []).map((attachment: any) => ({
+          id: attachment.id,
+          name: attachment.file_name,
+          type: attachment.file_type ?? "",
+          size: Number(attachment.file_size ?? 0),
+          storagePath: attachment.storage_path ?? undefined,
+          storageBucket: MAINTENANCE_STORAGE_BUCKET,
+          uploadedAt: attachment.uploaded_at ?? undefined,
+        })),
+      }));
+
+      setMaintenanceRecords(mapped);
+    } catch (error) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: `ไม่สามารถโหลดข้อมูลการซ่อมบำรุงได้: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      });
+    }
+  }, []);
+
+  const fetchReplacementRecords = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("equipment_replacements")
+        .select(
+          `
+            id,
+            document_no,
+            equipment_id,
+            supplier_id,
+            department,
+            requested_by,
+            approved_by,
+            justification,
+            order_date,
+            received_date,
+            warranty_until,
+            cost,
+            status,
+            notes,
+            created_at,
+            equipment:equipment (
+              id,
+              name,
+              type,
+              brand,
+              model,
+              location,
+              asset_number
+            ),
+            supplier:ink_suppliers (
+              id,
+              name
+            ),
+            attachments:equipment_replacement_attachments (
+              id,
+              file_name,
+              file_type,
+              file_size,
+              storage_path,
+              uploaded_at
+            )
+          `,
+        )
+        .order("order_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      const rows = (data ?? []) as any[];
+      const mapped: ReplacementRecord[] = rows.map((row) => ({
+        id: row.id,
+        documentNo: row.document_no,
+        equipmentId: row.equipment_id ?? null,
+        equipmentName: row.equipment?.name ?? null,
+        equipmentAssetNumber: row.equipment?.asset_number ?? null,
+        equipmentLocation: row.equipment?.location ?? null,
+        supplierId: row.supplier_id ?? null,
+        supplierName: row.supplier?.name ?? null,
+        department: row.department ?? null,
+        requestedBy: row.requested_by ?? null,
+        approvedBy: row.approved_by ?? null,
+        justification: row.justification ?? null,
+        orderDate: row.order_date ?? null,
+        receivedDate: row.received_date ?? null,
+        warrantyUntil: row.warranty_until ?? null,
+        cost: Number(row.cost ?? 0),
+        status: (row.status ?? "ordered") as ReplacementStatus,
+        notes: row.notes ?? null,
+        attachments: (row.attachments ?? []).map((attachment: any) => ({
+          id: attachment.id,
+          name: attachment.file_name,
+          type: attachment.file_type ?? "",
+          size: Number(attachment.file_size ?? 0),
+          storagePath: attachment.storage_path ?? undefined,
+          storageBucket: REPLACEMENT_STORAGE_BUCKET,
+          uploadedAt: attachment.uploaded_at ?? undefined,
+        })),
+      }));
+
+      setReplacementRecords(mapped);
+    } catch (error) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: `ไม่สามารถโหลดข้อมูลซื้อใหม่/ทดแทนได้: ${getErrorMessage(error)}`,
         variant: "destructive",
       });
     }
@@ -982,6 +1866,64 @@ const StockInkToner = () => {
         if (insertError) {
           throw insertError;
         }
+      }
+    },
+    [],
+  );
+
+  const uploadMaintenanceAttachments = useCallback(
+    async (maintenanceId: string, attachments: AttachmentMeta[]) => {
+      for (const attachment of attachments) {
+        if (!attachment.file) continue;
+
+        const sanitizedName = attachment.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+        const objectKey = `${maintenanceId}/${crypto.randomUUID()}-${sanitizedName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from(MAINTENANCE_STORAGE_BUCKET)
+          .upload(objectKey, attachment.file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+        if (uploadError) throw uploadError;
+
+        const { error: insertError } = await supabase.from("equipment_maintenance_attachments").insert({
+          maintenance_id: maintenanceId,
+          file_name: attachment.name,
+          file_type: attachment.type,
+          file_size: attachment.size,
+          storage_path: objectKey,
+        });
+        if (insertError) throw insertError;
+      }
+    },
+    [],
+  );
+
+  const uploadReplacementAttachments = useCallback(
+    async (replacementId: string, attachments: AttachmentMeta[]) => {
+      for (const attachment of attachments) {
+        if (!attachment.file) continue;
+
+        const sanitizedName = attachment.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+        const objectKey = `${replacementId}/${crypto.randomUUID()}-${sanitizedName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from(REPLACEMENT_STORAGE_BUCKET)
+          .upload(objectKey, attachment.file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+        if (uploadError) throw uploadError;
+
+        const { error: insertError } = await supabase.from("equipment_replacement_attachments").insert({
+          replacement_id: replacementId,
+          file_name: attachment.name,
+          file_type: attachment.type,
+          file_size: attachment.size,
+          storage_path: objectKey,
+        });
+        if (insertError) throw insertError;
       }
     },
     [],
@@ -1035,13 +1977,83 @@ const StockInkToner = () => {
     [adjustInventoryForItems, fetchProducts, fetchReceipts, logReceiptChanges],
   );
 
+  const handleDeleteMaintenance = useCallback(
+    async (record: MaintenanceRecord, reason: string) => {
+      try {
+        const { error } = await supabase.from("equipment_maintenance").delete().eq("id", record.id);
+        if (error) throw error;
+
+        await logMaintenanceChanges({
+          maintenanceId: record.id,
+          action: "DELETE",
+          reason,
+          before: record,
+          after: null,
+        });
+
+        toast({
+          title: "ลบข้อมูลการซ่อมสำเร็จ",
+          description: `ลบเอกสาร ${record.documentNo} เรียบร้อยแล้ว`,
+        });
+
+        await Promise.all([fetchMaintenanceRecords(), fetchEquipments()]);
+      } catch (error) {
+        toast({
+          title: "ลบข้อมูลการซ่อมไม่สำเร็จ",
+          description: getErrorMessage(error),
+          variant: "destructive",
+        });
+      }
+    },
+    [fetchEquipments, fetchMaintenanceRecords, logMaintenanceChanges],
+  );
+
+  const handleDeleteReplacement = useCallback(
+    async (record: ReplacementRecord, reason: string) => {
+      try {
+        const { error } = await supabase.from("equipment_replacements").delete().eq("id", record.id);
+        if (error) throw error;
+
+        await logReplacementChanges({
+          replacementId: record.id,
+          action: "DELETE",
+          reason,
+          before: record,
+          after: null,
+        });
+
+        toast({
+          title: "ลบข้อมูลซื้อใหม่/ทดแทนสำเร็จ",
+          description: `ลบเอกสาร ${record.documentNo} เรียบร้อยแล้ว`,
+        });
+
+        await Promise.all([fetchReplacementRecords(), fetchEquipments()]);
+      } catch (error) {
+        toast({
+          title: "ลบข้อมูลซื้อใหม่/ทดแทนไม่สำเร็จ",
+          description: getErrorMessage(error),
+          variant: "destructive",
+        });
+      }
+    },
+    [fetchEquipments, fetchReplacementRecords, logReplacementChanges],
+  );
+
   useEffect(() => {
     let isMounted = true;
 
     const loadData = async () => {
       setIsLoadingData(true);
       try {
-        await Promise.all([fetchBrands(), fetchSuppliers(), fetchProducts(), fetchReceipts()]);
+        await Promise.all([
+          fetchBrands(),
+          fetchSuppliers(),
+          fetchProducts(),
+          fetchReceipts(),
+          fetchEquipments(),
+          fetchMaintenanceRecords(),
+          fetchReplacementRecords(),
+        ]);
       } finally {
         if (isMounted) {
           setIsLoadingData(false);
@@ -1054,11 +2066,16 @@ const StockInkToner = () => {
     return () => {
       isMounted = false;
     };
-  }, [fetchBrands, fetchSuppliers, fetchProducts, fetchReceipts]);
+  }, [
+    fetchBrands,
+    fetchSuppliers,
+    fetchProducts,
+    fetchReceipts,
+    fetchEquipments,
+    fetchMaintenanceRecords,
+    fetchReplacementRecords,
+  ]);
 
-  const brandById = useMemo(() => new Map(brands.map((item) => [item.id, item])), [brands]);
-  const supplierById = useMemo(() => new Map(suppliers.map((item) => [item.id, item])), [suppliers]);
-  const productById = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
   const brandUsage = useMemo(() => {
     const usage = new Map<string, number>();
     products.forEach((product) => {
@@ -1222,6 +2239,132 @@ const StockInkToner = () => {
 
     return sorted.length ? sorted : [{ month: "ยังไม่มีข้อมูล", value: 0 }];
   }, [filteredReceipts]);
+
+  const maintenanceStatusSummary = useMemo(() => {
+    const summary = new Map<MaintenanceStatus, number>([
+      ["planned", 0],
+      ["in_progress", 0],
+      ["completed", 0],
+    ]);
+
+    maintenanceRecords.forEach((record) => {
+      summary.set(record.status, (summary.get(record.status) ?? 0) + 1);
+    });
+
+    return Array.from(summary.entries()).map(([status, count]) => ({
+      status,
+      count,
+    }));
+  }, [maintenanceRecords]);
+
+  const maintenanceSupplierTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    maintenanceRecords.forEach((record) => {
+      const supplier = record.supplierName ?? "ไม่ระบุผู้ให้บริการ";
+      totals.set(supplier, (totals.get(supplier) ?? 0) + record.cost);
+    });
+    return Array.from(totals.entries()).map(([supplier, value]) => ({
+      supplier,
+      value,
+    }));
+  }, [maintenanceRecords]);
+
+  const maintenanceTrendData = useMemo(() => {
+    const timeline = new Map<string, number>();
+    maintenanceRecords.forEach((record) => {
+      const key =
+        record.sentAt && record.sentAt.length >= 7 ? record.sentAt.slice(0, 7) : "ไม่ระบุเดือน";
+      timeline.set(key, (timeline.get(key) ?? 0) + record.cost);
+    });
+    return Array.from(timeline.entries())
+      .sort(([a], [b]) => (a > b ? 1 : -1))
+      .map(([month, value]) => ({ month, value }));
+  }, [maintenanceRecords]);
+
+  const maintenanceTotalCost = useMemo(
+    () => maintenanceRecords.reduce((sum, record) => sum + record.cost, 0),
+    [maintenanceRecords],
+  );
+
+  const replacementStatusSummary = useMemo(() => {
+    const summary = new Map<ReplacementStatus, number>([
+      ["planned", 0],
+      ["ordered", 0],
+      ["received", 0],
+    ]);
+
+    replacementRecords.forEach((record) => {
+      summary.set(record.status, (summary.get(record.status) ?? 0) + 1);
+    });
+
+    return Array.from(summary.entries()).map(([status, count]) => ({
+      status,
+      count,
+    }));
+  }, [replacementRecords]);
+
+  const replacementSupplierTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    replacementRecords.forEach((record) => {
+      const supplier = record.supplierName ?? "ไม่ระบุผู้ขาย";
+      totals.set(supplier, (totals.get(supplier) ?? 0) + record.cost);
+    });
+    return Array.from(totals.entries()).map(([supplier, value]) => ({
+      supplier,
+      value,
+    }));
+  }, [replacementRecords]);
+
+  const replacementTrendData = useMemo(() => {
+    const timeline = new Map<string, number>();
+    replacementRecords.forEach((record) => {
+      const key =
+        record.orderDate && record.orderDate.length >= 7 ? record.orderDate.slice(0, 7) : "ไม่ระบุเดือน";
+      timeline.set(key, (timeline.get(key) ?? 0) + record.cost);
+    });
+    return Array.from(timeline.entries())
+      .sort(([a], [b]) => (a > b ? 1 : -1))
+      .map(([month, value]) => ({ month, value }));
+  }, [replacementRecords]);
+
+  const replacementTotalCost = useMemo(
+    () => replacementRecords.reduce((sum, record) => sum + record.cost, 0),
+    [replacementRecords],
+  );
+
+  const maintenancePlannedCount = maintenanceStatusSummary.find((item) => item.status === "planned")?.count ?? 0;
+  const maintenanceInProgressCount =
+    maintenanceStatusSummary.find((item) => item.status === "in_progress")?.count ?? 0;
+  const maintenanceCompletedCount =
+    maintenanceStatusSummary.find((item) => item.status === "completed")?.count ?? 0;
+
+  const replacementPlannedCount = replacementStatusSummary.find((item) => item.status === "planned")?.count ?? 0;
+  const replacementOrderedCount = replacementStatusSummary.find((item) => item.status === "ordered")?.count ?? 0;
+  const replacementReceivedCount = replacementStatusSummary.find((item) => item.status === "received")?.count ?? 0;
+
+  const getMaintenanceStatusVariant = (status: MaintenanceStatus): "default" | "secondary" | "destructive" | "outline" => {
+    switch (status) {
+      case "completed":
+        return "default";
+      case "in_progress":
+        return "secondary";
+      case "planned":
+      default:
+        return "outline";
+    }
+  };
+
+  const getReplacementStatusVariant = (status: ReplacementStatus): "default" | "secondary" | "destructive" | "outline" => {
+    switch (status) {
+      case "received":
+        return "default";
+      case "ordered":
+        return "secondary";
+      case "planned":
+      default:
+        return "outline";
+    }
+  };
 
   const productSummary = useMemo(() => {
     return products.map((product) => {
@@ -1644,6 +2787,46 @@ const StockInkToner = () => {
     });
   };
 
+  const handleMaintenanceAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    setMaintenanceForm((prev) => {
+      if (prev.attachments.length > 0) {
+        releaseAttachmentCollection(prev.attachments);
+      }
+
+      return {
+        ...prev,
+        attachments: files.map((file) => ({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          file,
+          previewUrl: URL.createObjectURL(file),
+        })),
+      };
+    });
+  };
+
+  const handleReplacementAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    setReplacementForm((prev) => {
+      if (prev.attachments.length > 0) {
+        releaseAttachmentCollection(prev.attachments);
+      }
+
+      return {
+        ...prev,
+        attachments: files.map((file) => ({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          file,
+          previewUrl: URL.createObjectURL(file),
+        })),
+      };
+    });
+  };
+
   const handleEditProduct = (product: Product) => {
     setProductDialogMode("edit");
     setEditingProductId(product.id);
@@ -1807,13 +2990,15 @@ const StockInkToner = () => {
     setSensitivePassword("");
     setSensitiveReason("");
     setSensitiveActionType(null);
-    setSensitiveActionReceiptId(null);
+    setSensitiveEntityType(null);
+    setSensitiveEntityId(null);
   }, []);
 
   const openSensitiveAction = useCallback(
-    (type: SensitiveActionType, receiptId: string) => {
+    (entityType: EntityType, type: SensitiveActionType, id: string) => {
       setSensitiveActionType(type);
-      setSensitiveActionReceiptId(receiptId);
+      setSensitiveEntityType(entityType);
+      setSensitiveEntityId(id);
       setSensitivePassword("");
       setSensitiveReason("");
       setSensitiveDialogOpen(true);
@@ -1822,12 +3007,14 @@ const StockInkToner = () => {
   );
 
   const handleSensitiveActionSubmit = useCallback(async () => {
-    if (!sensitiveActionType || !sensitiveActionReceiptId) {
+    if (!sensitiveActionType || !sensitiveEntityId || !sensitiveEntityType) {
       return;
     }
 
     const requiresReason = sensitiveActionType !== "history";
-    if (requiresReason && !sensitiveReason.trim()) {
+    const reasonValue = sensitiveReason.trim();
+
+    if (requiresReason && !reasonValue) {
       toast({
         title: "ต้องระบุเหตุผล",
         description: "กรุณาระบุเหตุผลประกอบการดำเนินการ",
@@ -1845,55 +3032,166 @@ const StockInkToner = () => {
       return;
     }
 
-    const targetReceipt = receipts.find((receipt) => receipt.id === sensitiveActionReceiptId);
-    if (!targetReceipt) {
-      toast({
-        title: "ไม่พบใบลงรับ",
-        description: "ไม่พบข้อมูลใบลงรับที่ต้องการดำเนินการ",
-        variant: "destructive",
-      });
-      closeSensitiveDialog();
-      return;
-    }
-
     try {
       setSensitiveLoading(true);
       await verifySensitivePassword(sensitivePassword);
 
-      if (sensitiveActionType === "edit") {
-        setEditingReceiptOriginal(targetReceipt);
-        setReceiptForm(convertReceiptToFormState(targetReceipt));
-        setReceiptDialogMode("edit");
-        setEditingReceiptId(targetReceipt.id);
-        setReceiptChangeReason(sensitiveReason.trim());
-        setHistoryTargetReceipt(null);
-        closeSensitiveDialog();
-        setReceiptDialogOpen(true);
-        return;
-      }
-
-      if (sensitiveActionType === "delete") {
-        const reason = sensitiveReason.trim();
-        setHistoryTargetReceipt(null);
-        closeSensitiveDialog();
-        await handleDeleteReceipt(targetReceipt, reason);
-        return;
-      }
-
-      if (sensitiveActionType === "history") {
-        setHistoryTargetReceipt(targetReceipt);
-        closeSensitiveDialog();
-        try {
-          await fetchReceiptHistory(targetReceipt.id);
-          setHistoryDialogOpen(true);
-        } catch (error) {
+      if (sensitiveEntityType === "receipt") {
+        const target = receipts.find((item) => item.id === sensitiveEntityId);
+        if (!target) {
           toast({
-            title: "ไม่สามารถโหลดประวัติได้",
-            description: getErrorMessage(error),
+            title: "ไม่พบใบลงรับ",
+            description: "ไม่พบข้อมูลใบลงรับที่ต้องการดำเนินการ",
             variant: "destructive",
           });
+          closeSensitiveDialog();
+          return;
+        }
+
+        if (sensitiveActionType === "edit") {
+          setEditingReceiptOriginal(target);
+          setReceiptForm(convertReceiptToFormState(target));
+          setReceiptDialogMode("edit");
+          setEditingReceiptId(target.id);
+          setReceiptChangeReason(reasonValue);
+          closeSensitiveDialog();
+          setReceiptDialogOpen(true);
+          return;
+        }
+
+        if (sensitiveActionType === "delete") {
+          closeSensitiveDialog();
+          await handleDeleteReceipt(target, reasonValue);
+          return;
+        }
+
+        if (sensitiveActionType === "history") {
+          closeSensitiveDialog();
+          try {
+            await fetchAuditHistory("ink_receipts", target.id);
+            setHistoryContext({
+              type: "receipt",
+              recordId: target.id,
+              title: "ใบลงรับ " + target.documentNo,
+            });
+            setHistoryDialogOpen(true);
+          } catch (error) {
+            toast({
+              title: "ไม่สามารถโหลดประวัติได้",
+              description: getErrorMessage(error),
+              variant: "destructive",
+            });
+          }
+          return;
         }
       }
+
+      if (sensitiveEntityType === "maintenance") {
+        const target = maintenanceRecords.find((item) => item.id === sensitiveEntityId);
+        if (!target) {
+          toast({
+            title: "ไม่พบข้อมูลการซ่อมบำรุง",
+            description: "ไม่พบการซ่อมที่ต้องการดำเนินการ",
+            variant: "destructive",
+          });
+          closeSensitiveDialog();
+          return;
+        }
+
+        if (sensitiveActionType === "edit") {
+          setEditingMaintenanceOriginal(target);
+          setEditingMaintenanceId(target.id);
+          setMaintenanceForm(convertMaintenanceToFormState(target));
+          setMaintenanceDialogMode("edit");
+          setMaintenanceChangeReason(reasonValue);
+          closeSensitiveDialog();
+          setMaintenanceDialogOpen(true);
+          return;
+        }
+
+        if (sensitiveActionType === "delete") {
+          closeSensitiveDialog();
+          await handleDeleteMaintenance(target, reasonValue);
+          return;
+        }
+
+        if (sensitiveActionType === "history") {
+          closeSensitiveDialog();
+          try {
+            await fetchAuditHistory("equipment_maintenance", target.id);
+            setHistoryContext({
+              type: "maintenance",
+              recordId: target.id,
+              title: "การซ่อม " + target.documentNo,
+            });
+            setHistoryDialogOpen(true);
+          } catch (error) {
+            toast({
+              title: "ไม่สามารถโหลดประวัติได้",
+              description: getErrorMessage(error),
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+      }
+
+      if (sensitiveEntityType === "replacement") {
+        const target = replacementRecords.find((item) => item.id === sensitiveEntityId);
+        if (!target) {
+          toast({
+            title: "ไม่พบข้อมูลซื้อใหม่/ทดแทน",
+            description: "ไม่พบข้อมูลที่ต้องการดำเนินการ",
+            variant: "destructive",
+          });
+          closeSensitiveDialog();
+          return;
+        }
+
+        if (sensitiveActionType === "edit") {
+          setEditingReplacementOriginal(target);
+          setEditingReplacementId(target.id);
+          setReplacementForm(convertReplacementToFormState(target));
+          setReplacementDialogMode("edit");
+          setReplacementChangeReason(reasonValue);
+          closeSensitiveDialog();
+          setReplacementDialogOpen(true);
+          return;
+        }
+
+        if (sensitiveActionType === "delete") {
+          closeSensitiveDialog();
+          await handleDeleteReplacement(target, reasonValue);
+          return;
+        }
+
+        if (sensitiveActionType === "history") {
+          closeSensitiveDialog();
+          try {
+            await fetchAuditHistory("equipment_replacements", target.id);
+            setHistoryContext({
+              type: "replacement",
+              recordId: target.id,
+              title: "ซื้อใหม่ " + target.documentNo,
+            });
+            setHistoryDialogOpen(true);
+          } catch (error) {
+            toast({
+              title: "ไม่สามารถโหลดประวัติได้",
+              description: getErrorMessage(error),
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+      }
+
+      toast({
+        title: "ไม่สามารถดำเนินการได้",
+        description: "ไม่พบประเภทข้อมูลที่รองรับ",
+        variant: "destructive",
+      });
+      closeSensitiveDialog();
     } catch (error) {
       toast({
         title: "การยืนยันไม่สำเร็จ",
@@ -1905,12 +3203,19 @@ const StockInkToner = () => {
     }
   }, [
     closeSensitiveDialog,
+    convertMaintenanceToFormState,
     convertReceiptToFormState,
-    fetchReceiptHistory,
+    convertReplacementToFormState,
+    fetchAuditHistory,
+    handleDeleteMaintenance,
     handleDeleteReceipt,
+    handleDeleteReplacement,
+    maintenanceRecords,
+    replacementRecords,
     receipts,
-    sensitiveActionReceiptId,
     sensitiveActionType,
+    sensitiveEntityId,
+    sensitiveEntityType,
     sensitivePassword,
     sensitiveReason,
     verifySensitivePassword,
@@ -2068,6 +3373,440 @@ const StockInkToner = () => {
         description: `บันทึกใบลงรับไม่สำเร็จ: ${getErrorMessage(error)}`,
         variant: "destructive",
       });
+    }
+  };
+
+  const handleSubmitMaintenance = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const documentNo = maintenanceForm.documentNo.trim();
+    if (!documentNo) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณาระบุเลขที่เอกสารซ่อมบำรุง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!maintenanceForm.equipmentId) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณาเลือกครุภัณฑ์ที่ส่งซ่อม",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const costValue = Number(maintenanceForm.cost || 0);
+    if (!Number.isFinite(costValue) || costValue < 0) {
+      toast({
+        title: "ข้อมูลไม่ถูกต้อง",
+        description: "กรุณาระบุค่าใช้จ่ายเป็นตัวเลขที่ถูกต้อง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const partsReplaced = maintenanceForm.partsReplaced
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (maintenanceDialogMode === "edit" && !maintenanceChangeReason.trim()) {
+      toast({
+        title: "ต้องระบุเหตุผล",
+        description: "กรุณาระบุเหตุผลในการแก้ไขข้อมูลซ่อมบำรุง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSubmittingMaintenance(true);
+
+      if (maintenanceDialogMode === "edit") {
+        if (!editingMaintenanceId || !editingMaintenanceOriginal) {
+          throw new Error("ไม่พบข้อมูลการซ่อมบำรุงที่ต้องการแก้ไข");
+        }
+
+        if (documentNo !== editingMaintenanceOriginal.documentNo) {
+          const { data: duplicate, error: duplicateError } = await supabase
+            .from("equipment_maintenance")
+            .select("id")
+            .eq("document_no", documentNo)
+            .neq("id", editingMaintenanceId)
+            .maybeSingle();
+          if (duplicateError) throw duplicateError;
+          if (duplicate) {
+            toast({
+              title: "เลขที่เอกสารซ้ำ",
+              description: "มีเลขที่เอกสารนี้อยู่แล้วในระบบ",
+              variant: "destructive",
+            });
+            setSubmittingMaintenance(false);
+            return;
+          }
+        }
+
+        const { error: updateError } = await supabase
+          .from("equipment_maintenance")
+          .update({
+            document_no: documentNo,
+            equipment_id: maintenanceForm.equipmentId,
+            supplier_id: maintenanceForm.supplierId || null,
+            department: maintenanceForm.department.trim() || null,
+            technician: maintenanceForm.technician.trim() || null,
+            issue_summary: maintenanceForm.issueSummary.trim() || null,
+            work_done: maintenanceForm.workDone.trim() || null,
+            parts_replaced: partsReplaced,
+            sent_at: maintenanceForm.sentAt || null,
+            returned_at: maintenanceForm.returnedAt || null,
+            warranty_until: maintenanceForm.warrantyUntil || null,
+            cost: costValue,
+            notes: maintenanceForm.notes.trim() || null,
+            status: maintenanceForm.status,
+          })
+          .eq("id", editingMaintenanceId);
+        if (updateError) throw updateError;
+
+        if (maintenanceForm.attachments.length > 0) {
+          await uploadMaintenanceAttachments(editingMaintenanceId, maintenanceForm.attachments);
+        }
+
+        const draft: MaintenanceDraft = {
+          documentNo,
+          equipmentId: maintenanceForm.equipmentId,
+          supplierId: maintenanceForm.supplierId || null,
+          department: maintenanceForm.department.trim() || null,
+          technician: maintenanceForm.technician.trim() || null,
+          issueSummary: maintenanceForm.issueSummary.trim() || null,
+          workDone: maintenanceForm.workDone.trim() || null,
+          partsReplaced,
+          sentAt: maintenanceForm.sentAt || null,
+          returnedAt: maintenanceForm.returnedAt || null,
+          warrantyUntil: maintenanceForm.warrantyUntil || null,
+          cost: costValue,
+          notes: maintenanceForm.notes.trim() || null,
+          status: maintenanceForm.status,
+        };
+
+        await logMaintenanceChanges({
+          maintenanceId: editingMaintenanceId,
+          action: "UPDATE",
+          reason: maintenanceChangeReason.trim(),
+          before: editingMaintenanceOriginal,
+          after: draft,
+        });
+
+        releaseAttachmentCollection(maintenanceForm.attachments);
+        resetMaintenanceForm();
+        setMaintenanceDialogOpen(false);
+        toast({
+          title: "อัปเดตข้อมูลการซ่อมสำเร็จ",
+          description: `แก้ไขเอกสาร ${documentNo} เรียบร้อยแล้ว`,
+        });
+      } else {
+        const { data: existing, error: existingError } = await supabase
+          .from("equipment_maintenance")
+          .select("id")
+          .eq("document_no", documentNo)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (existing) {
+          toast({
+            title: "เลขที่เอกสารซ้ำ",
+            description: "มีเลขที่เอกสารนี้อยู่ในระบบแล้ว กรุณาใช้เลขอื่น",
+            variant: "destructive",
+          });
+          setSubmittingMaintenance(false);
+          return;
+        }
+
+        const { data: inserted, error: insertError } = await supabase
+          .from("equipment_maintenance")
+          .insert({
+            document_no: documentNo,
+            equipment_id: maintenanceForm.equipmentId,
+            supplier_id: maintenanceForm.supplierId || null,
+            department: maintenanceForm.department.trim() || null,
+            technician: maintenanceForm.technician.trim() || null,
+            issue_summary: maintenanceForm.issueSummary.trim() || null,
+            work_done: maintenanceForm.workDone.trim() || null,
+            parts_replaced: partsReplaced,
+            sent_at: maintenanceForm.sentAt || null,
+            returned_at: maintenanceForm.returnedAt || null,
+            warranty_until: maintenanceForm.warrantyUntil || null,
+            cost: costValue,
+            notes: maintenanceForm.notes.trim() || null,
+            status: maintenanceForm.status,
+            created_by: user?.id ?? null,
+          })
+          .select("id")
+          .single();
+        if (insertError) throw insertError;
+
+        const maintenanceId = inserted.id;
+
+        if (maintenanceForm.attachments.length > 0) {
+          await uploadMaintenanceAttachments(maintenanceId, maintenanceForm.attachments);
+        }
+
+        const draft: MaintenanceDraft = {
+          documentNo,
+          equipmentId: maintenanceForm.equipmentId,
+          supplierId: maintenanceForm.supplierId || null,
+          department: maintenanceForm.department.trim() || null,
+          technician: maintenanceForm.technician.trim() || null,
+          issueSummary: maintenanceForm.issueSummary.trim() || null,
+          workDone: maintenanceForm.workDone.trim() || null,
+          partsReplaced,
+          sentAt: maintenanceForm.sentAt || null,
+          returnedAt: maintenanceForm.returnedAt || null,
+          warrantyUntil: maintenanceForm.warrantyUntil || null,
+          cost: costValue,
+          notes: maintenanceForm.notes.trim() || null,
+          status: maintenanceForm.status,
+        };
+
+        await logMaintenanceChanges({
+          maintenanceId,
+          action: "INSERT",
+          reason: maintenanceForm.notes.trim() || "สร้างข้อมูลการซ่อม",
+          before: null,
+          after: draft,
+        });
+
+        releaseAttachmentCollection(maintenanceForm.attachments);
+        resetMaintenanceForm();
+        setMaintenanceDialogOpen(false);
+        toast({
+          title: "บันทึกการซ่อมบำรุงสำเร็จ",
+          description: `เพิ่มเอกสารการซ่อม ${documentNo} เรียบร้อยแล้ว`,
+        });
+      }
+
+      await Promise.all([fetchMaintenanceRecords(), fetchEquipments()]);
+    } catch (error) {
+      toast({
+        title: "บันทึกการซ่อมบำรุงไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingMaintenance(false);
+    }
+  };
+
+  const handleSubmitReplacement = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const documentNo = replacementForm.documentNo.trim();
+    if (!documentNo) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณาระบุเลขที่เอกสารซื้อใหม่/ทดแทน",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!replacementForm.equipmentId) {
+      toast({
+        title: "ข้อมูลไม่ครบถ้วน",
+        description: "กรุณาเลือกครุภัณฑ์ที่เกี่ยวข้อง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const costValue = Number(replacementForm.cost || 0);
+    if (!Number.isFinite(costValue) || costValue < 0) {
+      toast({
+        title: "ข้อมูลไม่ถูกต้อง",
+        description: "กรุณาระบุงบประมาณ/ราคาเป็นตัวเลขที่ถูกต้อง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (replacementDialogMode === "edit" && !replacementChangeReason.trim()) {
+      toast({
+        title: "ต้องระบุเหตุผล",
+        description: "กรุณาระบุเหตุผลในการแก้ไขข้อมูลซื้อใหม่/ทดแทน",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSubmittingReplacement(true);
+
+      if (replacementDialogMode === "edit") {
+        if (!editingReplacementId || !editingReplacementOriginal) {
+          throw new Error("ไม่พบข้อมูลการซื้อใหม่/ทดแทนที่ต้องการแก้ไข");
+        }
+
+        if (documentNo !== editingReplacementOriginal.documentNo) {
+          const { data: duplicate, error: duplicateError } = await supabase
+            .from("equipment_replacements")
+            .select("id")
+            .eq("document_no", documentNo)
+            .neq("id", editingReplacementId)
+            .maybeSingle();
+          if (duplicateError) throw duplicateError;
+          if (duplicate) {
+            toast({
+              title: "เลขที่เอกสารซ้ำ",
+              description: "มีเลขที่เอกสารนี้อยู่แล้วในระบบ",
+              variant: "destructive",
+            });
+            setSubmittingReplacement(false);
+            return;
+          }
+        }
+
+        const { error: updateError } = await supabase
+          .from("equipment_replacements")
+          .update({
+            document_no: documentNo,
+            equipment_id: replacementForm.equipmentId || null,
+            supplier_id: replacementForm.supplierId || null,
+            department: replacementForm.department.trim() || null,
+            requested_by: replacementForm.requestedBy.trim() || null,
+            approved_by: replacementForm.approvedBy.trim() || null,
+            justification: replacementForm.justification.trim() || null,
+            order_date: replacementForm.orderDate || null,
+            received_date: replacementForm.receivedDate || null,
+            warranty_until: replacementForm.warrantyUntil || null,
+            cost: costValue,
+            status: replacementForm.status,
+            notes: replacementForm.notes.trim() || null,
+          })
+          .eq("id", editingReplacementId);
+        if (updateError) throw updateError;
+
+        if (replacementForm.attachments.length > 0) {
+          await uploadReplacementAttachments(editingReplacementId, replacementForm.attachments);
+        }
+
+        const draft: ReplacementDraft = {
+          documentNo,
+          equipmentId: replacementForm.equipmentId || null,
+          supplierId: replacementForm.supplierId || null,
+          department: replacementForm.department.trim() || null,
+          requestedBy: replacementForm.requestedBy.trim() || null,
+          approvedBy: replacementForm.approvedBy.trim() || null,
+          justification: replacementForm.justification.trim() || null,
+          orderDate: replacementForm.orderDate || null,
+          receivedDate: replacementForm.receivedDate || null,
+          warrantyUntil: replacementForm.warrantyUntil || null,
+          cost: costValue,
+          status: replacementForm.status,
+          notes: replacementForm.notes.trim() || null,
+        };
+
+        await logReplacementChanges({
+          replacementId: editingReplacementId,
+          action: "UPDATE",
+          reason: replacementChangeReason.trim(),
+          before: editingReplacementOriginal,
+          after: draft,
+        });
+
+        releaseAttachmentCollection(replacementForm.attachments);
+        resetReplacementForm();
+        setReplacementDialogOpen(false);
+        toast({
+          title: "อัปเดตข้อมูลซื้อใหม่/ทดแทนสำเร็จ",
+          description: `แก้ไขเอกสาร ${documentNo} เรียบร้อยแล้ว`,
+        });
+      } else {
+        const { data: existing, error: existingError } = await supabase
+          .from("equipment_replacements")
+          .select("id")
+          .eq("document_no", documentNo)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        if (existing) {
+          toast({
+            title: "เลขที่เอกสารซ้ำ",
+            description: "มีเลขที่เอกสารนี้อยู่แล้วในระบบ",
+            variant: "destructive",
+          });
+          setSubmittingReplacement(false);
+          return;
+        }
+
+        const { data: inserted, error: insertError } = await supabase
+          .from("equipment_replacements")
+          .insert({
+            document_no: documentNo,
+            equipment_id: replacementForm.equipmentId || null,
+            supplier_id: replacementForm.supplierId || null,
+            department: replacementForm.department.trim() || null,
+            requested_by: replacementForm.requestedBy.trim() || null,
+            approved_by: replacementForm.approvedBy.trim() || null,
+            justification: replacementForm.justification.trim() || null,
+            order_date: replacementForm.orderDate || null,
+            received_date: replacementForm.receivedDate || null,
+            warranty_until: replacementForm.warrantyUntil || null,
+            cost: costValue,
+            status: replacementForm.status,
+            notes: replacementForm.notes.trim() || null,
+            created_by: user?.id ?? null,
+          })
+          .select("id")
+          .single();
+        if (insertError) throw insertError;
+
+        const replacementId = inserted.id;
+        if (replacementForm.attachments.length > 0) {
+          await uploadReplacementAttachments(replacementId, replacementForm.attachments);
+        }
+
+        const draft: ReplacementDraft = {
+          documentNo,
+          equipmentId: replacementForm.equipmentId || null,
+          supplierId: replacementForm.supplierId || null,
+          department: replacementForm.department.trim() || null,
+          requestedBy: replacementForm.requestedBy.trim() || null,
+          approvedBy: replacementForm.approvedBy.trim() || null,
+          justification: replacementForm.justification.trim() || null,
+          orderDate: replacementForm.orderDate || null,
+          receivedDate: replacementForm.receivedDate || null,
+          warrantyUntil: replacementForm.warrantyUntil || null,
+          cost: costValue,
+          status: replacementForm.status,
+          notes: replacementForm.notes.trim() || null,
+        };
+
+        await logReplacementChanges({
+          replacementId,
+          action: "INSERT",
+          reason: replacementForm.justification.trim() || "สร้างข้อมูลซื้อใหม่/ทดแทน",
+          before: null,
+          after: draft,
+        });
+
+        releaseAttachmentCollection(replacementForm.attachments);
+        resetReplacementForm();
+        setReplacementDialogOpen(false);
+        toast({
+          title: "บันทึกการซื้อใหม่/ทดแทนสำเร็จ",
+          description: `เพิ่มเอกสาร ${documentNo} เรียบร้อยแล้ว`,
+        });
+      }
+
+      await Promise.all([fetchReplacementRecords(), fetchEquipments()]);
+    } catch (error) {
+      toast({
+        title: "บันทึกซื้อใหม่/ทดแทนไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingReplacement(false);
     }
   };
 
@@ -2298,8 +4037,9 @@ const StockInkToner = () => {
       }
 
       if (attachment.storagePath) {
+        const bucket = attachment.storageBucket ?? RECEIPT_STORAGE_BUCKET;
         const { data, error } = await supabase.storage
-          .from(RECEIPT_STORAGE_BUCKET)
+          .from(bucket)
           .createSignedUrl(attachment.storagePath, 120);
         if (error) throw error;
         const signedUrl = data?.signedUrl;
@@ -2365,7 +4105,7 @@ const StockInkToner = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Stock Ink & Toner</h1>
+          <h1 className="text-3xl font-bold text-foreground">Maintenance/Stock</h1>
           <p className="text-muted-foreground mt-2">
             จัดการหมึกพิมพ์ทุกประเภท ตั้งแต่ข้อมูลสินค้า ผู้ขาย ไปจนถึงใบลงรับและสถิติภาพรวม
           </p>
@@ -2584,6 +4324,529 @@ const StockInkToner = () => {
                 <DialogFooter>
                   <Button type="submit" className="bg-primary hover:bg-primary/90">
                     {receiptDialogMode === "edit" ? "บันทึกการแก้ไข" : "บันทึกใบลงรับ"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={isMaintenanceDialogOpen}
+            onOpenChange={(open) => {
+              if (!open) {
+                resetMaintenanceForm();
+              }
+              setMaintenanceDialogOpen(open);
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button variant="outline" onClick={() => resetMaintenanceForm()}>
+                <Wrench className="mr-2 h-4 w-4" />
+                บันทึกการซ่อมบำรุง
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>
+                  {maintenanceDialogMode === "edit"
+                    ? "แก้ไขการซ่อมบำรุงครุภัณฑ์"
+                    : "บันทึกการซ่อมบำรุงครุภัณฑ์"}
+                </DialogTitle>
+                <DialogDescription>
+                  เชื่อมโยงข้อมูลครุภัณฑ์ ผู้ให้บริการ และรายละเอียดการซ่อม พร้อมแนบหลักฐานประกอบ
+                </DialogDescription>
+              </DialogHeader>
+              <form className="space-y-6" onSubmit={handleSubmitMaintenance}>
+                {maintenanceDialogMode === "edit" && (
+                  <div className="space-y-2 rounded-lg border border-dashed bg-muted/30 p-4">
+                    <Label htmlFor="maintenance-reason">เหตุผลในการแก้ไข *</Label>
+                    <Textarea
+                      id="maintenance-reason"
+                      value={maintenanceChangeReason}
+                      onChange={(event) => setMaintenanceChangeReason(event.target.value)}
+                      placeholder="อธิบายเหตุผลที่ต้องการแก้ไขข้อมูลการซ่อม"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">เหตุผลนี้จะถูกบันทึกไว้ในประวัติการแก้ไข</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-document">เลขที่เอกสาร *</Label>
+                    <Input
+                      id="maintenance-document"
+                      value={maintenanceForm.documentNo}
+                      onChange={(event) =>
+                        setMaintenanceForm((prev) => ({ ...prev, documentNo: event.target.value }))
+                      }
+                      placeholder="เช่น MTN-0007/2567"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-status">สถานะงาน</Label>
+                    <Select
+                      value={maintenanceForm.status}
+                      onValueChange={(value: MaintenanceStatus) =>
+                        setMaintenanceForm((prev) => ({ ...prev, status: value }))
+                      }
+                    >
+                      <SelectTrigger id="maintenance-status">
+                        <SelectValue placeholder="เลือกสถานะ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(MAINTENANCE_STATUS_LABELS) as MaintenanceStatus[]).map((status) => (
+                          <SelectItem key={status} value={status}>
+                            {MAINTENANCE_STATUS_LABELS[status]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>เลือกครุภัณฑ์ *</Label>
+                    <Select
+                      value={maintenanceForm.equipmentId}
+                      onValueChange={(value) =>
+                        setMaintenanceForm((prev) => ({ ...prev, equipmentId: value }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกครุภัณฑ์" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {equipments.map((equipment) => (
+                          <SelectItem key={equipment.id} value={equipment.id}>
+                            {equipment.name}
+                            {equipment.assetNumber ? ` • ${equipment.assetNumber}` : ""}
+                            {equipment.model ? ` • ${equipment.model}` : ""}
+                            {equipment.location ? ` (${equipment.location})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>ผู้ให้บริการ</Label>
+                    <Select
+                      value={maintenanceForm.supplierId || OPTIONAL_SELECT_VALUE}
+                      onValueChange={(value) =>
+                        setMaintenanceForm((prev) => ({
+                          ...prev,
+                          supplierId: value === OPTIONAL_SELECT_VALUE ? "" : value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกผู้ให้บริการ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={OPTIONAL_SELECT_VALUE}>ไม่ระบุ</SelectItem>
+                        {suppliers.map((supplier) => (
+                          <SelectItem key={supplier.id} value={supplier.id}>
+                            {supplier.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-department">แผนก/หน่วยงาน</Label>
+                    <Input
+                      id="maintenance-department"
+                      value={maintenanceForm.department}
+                      onChange={(event) =>
+                        setMaintenanceForm((prev) => ({ ...prev, department: event.target.value }))
+                      }
+                      placeholder="เช่น แผนกไอที"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-technician">ผู้ประสาน/ช่าง</Label>
+                    <Input
+                      id="maintenance-technician"
+                      value={maintenanceForm.technician}
+                      onChange={(event) =>
+                        setMaintenanceForm((prev) => ({ ...prev, technician: event.target.value }))
+                      }
+                      placeholder="ระบุชื่อช่างหรือผู้ดำเนินการ"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-sent">วันที่ส่งซ่อม</Label>
+                    <Input
+                      id="maintenance-sent"
+                      type="date"
+                      value={maintenanceForm.sentAt}
+                      onChange={(event) =>
+                        setMaintenanceForm((prev) => ({ ...prev, sentAt: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-returned">วันที่รับคืน</Label>
+                    <Input
+                      id="maintenance-returned"
+                      type="date"
+                      value={maintenanceForm.returnedAt}
+                      onChange={(event) =>
+                        setMaintenanceForm((prev) => ({ ...prev, returnedAt: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-warranty">ประกันการซ่อมถึง</Label>
+                    <Input
+                      id="maintenance-warranty"
+                      type="date"
+                      value={maintenanceForm.warrantyUntil}
+                      onChange={(event) =>
+                        setMaintenanceForm((prev) => ({ ...prev, warrantyUntil: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maintenance-cost">ค่าใช้จ่าย (บาท)</Label>
+                    <Input
+                      id="maintenance-cost"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={maintenanceForm.cost}
+                      onChange={(event) =>
+                        setMaintenanceForm((prev) => ({ ...prev, cost: event.target.value }))
+                      }
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="maintenance-issue">อาการ/ปัญหาที่พบ</Label>
+                  <Textarea
+                    id="maintenance-issue"
+                    value={maintenanceForm.issueSummary}
+                    onChange={(event) =>
+                      setMaintenanceForm((prev) => ({ ...prev, issueSummary: event.target.value }))
+                    }
+                    placeholder="อธิบายปัญหาหรืออาการที่พบ"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maintenance-work">ดำเนินการซ่อม/เปลี่ยนอะไร</Label>
+                  <Textarea
+                    id="maintenance-work"
+                    value={maintenanceForm.workDone}
+                    onChange={(event) =>
+                      setMaintenanceForm((prev) => ({ ...prev, workDone: event.target.value }))
+                    }
+                    placeholder="บันทึกรายละเอียดการซ่อม การเปลี่ยนอะไหล่ หรือการปรับปรุง"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maintenance-parts">รายการอะไหล่ที่เปลี่ยน (บรรทัดละ 1 รายการ)</Label>
+                  <Textarea
+                    id="maintenance-parts"
+                    value={maintenanceForm.partsReplaced}
+                    onChange={(event) =>
+                      setMaintenanceForm((prev) => ({ ...prev, partsReplaced: event.target.value }))
+                    }
+                    placeholder="เช่น\nชุดลูกดรัม\nสายแพ"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maintenance-notes">หมายเหตุเพิ่มเติม</Label>
+                  <Textarea
+                    id="maintenance-notes"
+                    value={maintenanceForm.notes}
+                    onChange={(event) =>
+                      setMaintenanceForm((prev) => ({ ...prev, notes: event.target.value }))
+                    }
+                    placeholder="ข้อมูลเพิ่มเติมอื่น ๆ"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maintenance-attachments">แนบไฟล์ (ใบเสนอราคา รูปภาพ ฯลฯ)</Label>
+                  <Input
+                    id="maintenance-attachments"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    multiple
+                    onChange={handleMaintenanceAttachments}
+                  />
+                  {maintenanceForm.attachments.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      ไฟล์:
+                      {maintenanceForm.attachments.map((file) => ` ${file.name}`).join(", ")}
+                    </p>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button type="submit" disabled={isSubmittingMaintenance}>
+                    {isSubmittingMaintenance ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        กำลังบันทึก...
+                      </>
+                    ) : (
+                      "บันทึกการซ่อมบำรุง"
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={isReplacementDialogOpen}
+            onOpenChange={(open) => {
+              if (!open) {
+                resetReplacementForm();
+              }
+              setReplacementDialogOpen(open);
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button variant="outline" onClick={() => resetReplacementForm()}>
+                <ShoppingBag className="mr-2 h-4 w-4" />
+                บันทึกซื้อใหม่/ทดแทน
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>
+                  {replacementDialogMode === "edit"
+                    ? "แก้ไขข้อมูลซื้อใหม่หรือทดแทนครุภัณฑ์"
+                    : "บันทึกการซื้อใหม่หรือทดแทนครุภัณฑ์"}
+                </DialogTitle>
+                <DialogDescription>
+                  ติดตามการจัดซื้อเพื่อซ่อมทดแทน พร้อมเหตุผล งบประมาณ และหลักฐานประกอบการจัดซื้อ
+                </DialogDescription>
+              </DialogHeader>
+              <form className="space-y-6" onSubmit={handleSubmitReplacement}>
+                {replacementDialogMode === "edit" && (
+                  <div className="space-y-2 rounded-lg border border-dashed bg-muted/30 p-4">
+                    <Label htmlFor="replacement-reason">เหตุผลในการแก้ไข *</Label>
+                    <Textarea
+                      id="replacement-reason"
+                      value={replacementChangeReason}
+                      onChange={(event) => setReplacementChangeReason(event.target.value)}
+                      placeholder="อธิบายเหตุผลที่ต้องการแก้ไขข้อมูลซื้อใหม่/ทดแทน"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">เหตุผลนี้จะถูกบันทึกไว้ในประวัติการแก้ไข</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-document">เลขที่เอกสาร *</Label>
+                    <Input
+                      id="replacement-document"
+                      value={replacementForm.documentNo}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, documentNo: event.target.value }))
+                      }
+                      placeholder="เช่น REP-0004/2567"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-status">สถานะงาน</Label>
+                    <Select
+                      value={replacementForm.status}
+                      onValueChange={(value: ReplacementStatus) =>
+                        setReplacementForm((prev) => ({ ...prev, status: value }))
+                      }
+                    >
+                      <SelectTrigger id="replacement-status">
+                        <SelectValue placeholder="เลือกสถานะ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(REPLACEMENT_STATUS_LABELS) as ReplacementStatus[]).map((status) => (
+                          <SelectItem key={status} value={status}>
+                            {REPLACEMENT_STATUS_LABELS[status]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>ครุภัณฑ์ที่เกี่ยวข้อง *</Label>
+                    <Select
+                      value={replacementForm.equipmentId}
+                      onValueChange={(value) =>
+                        setReplacementForm((prev) => ({ ...prev, equipmentId: value }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกครุภัณฑ์" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {equipments.map((equipment) => (
+                          <SelectItem key={equipment.id} value={equipment.id}>
+                            {equipment.name}
+                            {equipment.assetNumber ? ` • ${equipment.assetNumber}` : ""}
+                            {equipment.model ? ` • ${equipment.model}` : ""}
+                            {equipment.location ? ` (${equipment.location})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>ผู้ขาย/บริษัท</Label>
+                    <Select
+                      value={replacementForm.supplierId || OPTIONAL_SELECT_VALUE}
+                      onValueChange={(value) =>
+                        setReplacementForm((prev) => ({
+                          ...prev,
+                          supplierId: value === OPTIONAL_SELECT_VALUE ? "" : value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกผู้ขาย" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={OPTIONAL_SELECT_VALUE}>ไม่ระบุ</SelectItem>
+                        {suppliers.map((supplier) => (
+                          <SelectItem key={supplier.id} value={supplier.id}>
+                            {supplier.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-department">แผนกที่ร้องขอ</Label>
+                    <Input
+                      id="replacement-department"
+                      value={replacementForm.department}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, department: event.target.value }))
+                      }
+                      placeholder="เช่น แผนกบัญชี"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-requester">ผู้ร้องขอ</Label>
+                    <Input
+                      id="replacement-requester"
+                      value={replacementForm.requestedBy}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, requestedBy: event.target.value }))
+                      }
+                      placeholder="เช่น นางสาวเอ"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-approver">ผู้อนุมัติ</Label>
+                    <Input
+                      id="replacement-approver"
+                      value={replacementForm.approvedBy}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, approvedBy: event.target.value }))
+                      }
+                      placeholder="เช่น ผู้จัดการฝ่าย"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-order-date">วันที่สั่งซื้อ</Label>
+                    <Input
+                      id="replacement-order-date"
+                      type="date"
+                      value={replacementForm.orderDate}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, orderDate: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-received-date">วันที่รับสินค้า</Label>
+                    <Input
+                      id="replacement-received-date"
+                      type="date"
+                      value={replacementForm.receivedDate}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, receivedDate: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-warranty">ประกันสินค้า</Label>
+                    <Input
+                      id="replacement-warranty"
+                      type="date"
+                      value={replacementForm.warrantyUntil}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, warrantyUntil: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="replacement-cost">งบประมาณ/ราคา (บาท)</Label>
+                    <Input
+                      id="replacement-cost"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={replacementForm.cost}
+                      onChange={(event) =>
+                        setReplacementForm((prev) => ({ ...prev, cost: event.target.value }))
+                      }
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="replacement-justification">เหตุผลในการซื้อใหม่/ทดแทน</Label>
+                  <Textarea
+                    id="replacement-justification"
+                    value={replacementForm.justification}
+                    onChange={(event) =>
+                      setReplacementForm((prev) => ({ ...prev, justification: event.target.value }))
+                    }
+                    placeholder="อธิบายเหตุผล เช่น ครุภัณฑ์เดิมชำรุด หลุดประกัน หรือจำเป็นต้องเพิ่ม"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="replacement-notes">หมายเหตุเพิ่มเติม</Label>
+                  <Textarea
+                    id="replacement-notes"
+                    value={replacementForm.notes}
+                    onChange={(event) =>
+                      setReplacementForm((prev) => ({ ...prev, notes: event.target.value }))
+                    }
+                    placeholder="ข้อมูลประกอบการจัดซื้ออื่น ๆ"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="replacement-attachments">แนบไฟล์ (ใบเสนอราคา ใบอนุมัติ ฯลฯ)</Label>
+                  <Input
+                    id="replacement-attachments"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    multiple
+                    onChange={handleReplacementAttachments}
+                  />
+                  {replacementForm.attachments.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      ไฟล์:
+                      {replacementForm.attachments.map((file) => ` ${file.name}`).join(", ")}
+                    </p>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button type="submit" disabled={isSubmittingReplacement}>
+                    {isSubmittingReplacement ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        กำลังบันทึก...
+                      </>
+                    ) : (
+                      "บันทึกซื้อใหม่/ทดแทน"
+                    )}
                   </Button>
                 </DialogFooter>
               </form>
@@ -2894,11 +5157,13 @@ const StockInkToner = () => {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-4">
+        <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-6">
           <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
           <TabsTrigger value="products">ข้อมูลหมึก</TabsTrigger>
           <TabsTrigger value="suppliers">ผู้ขาย</TabsTrigger>
           <TabsTrigger value="receipts">ใบลงรับ</TabsTrigger>
+          <TabsTrigger value="maintenance">การซ่อมบำรุง</TabsTrigger>
+          <TabsTrigger value="replacement">ซื้อใหม่/ทดแทน</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -3037,7 +5302,7 @@ const StockInkToner = () => {
                         />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
@@ -3054,7 +5319,7 @@ const StockInkToner = () => {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="supplier" />
                     <YAxis />
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
                     <Legend />
                     <Bar dataKey="value" name="มูลค่า (บาท)" fill="#2563eb" />
                     <Bar dataKey="quantity" name="จำนวน (ชิ้น)" fill="#fb923c" />
@@ -3075,7 +5340,7 @@ const StockInkToner = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
                   <Line type="monotone" dataKey="value" name="มูลค่าลงรับ (บาท)" stroke="#22c55e" />
                 </LineChart>
               </ResponsiveContainer>
@@ -3396,7 +5661,7 @@ const StockInkToner = () => {
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => openSensitiveAction("edit", selectedReceipt.id)}
+                            onClick={() => openSensitiveAction("receipt", "edit", selectedReceipt.id)}
                           >
                             <Pencil className="mr-2 h-4 w-4" />
                             แก้ไข
@@ -3404,7 +5669,7 @@ const StockInkToner = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => openSensitiveAction("history", selectedReceipt.id)}
+                            onClick={() => openSensitiveAction("receipt", "history", selectedReceipt.id)}
                           >
                             <History className="mr-2 h-4 w-4" />
                             ประวัติ
@@ -3412,7 +5677,7 @@ const StockInkToner = () => {
                           <Button
                             variant="destructive"
                             size="sm"
-                            onClick={() => openSensitiveAction("delete", selectedReceipt.id)}
+                            onClick={() => openSensitiveAction("receipt", "delete", selectedReceipt.id)}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
                             ลบ
@@ -3506,6 +5771,563 @@ const StockInkToner = () => {
           </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="maintenance" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">จำนวนงานซ่อม</CardTitle>
+                <CardDescription>บันทึกทั้งหมดในระบบ</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{maintenanceRecords.length}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">ค่าใช้จ่ายรวม</CardTitle>
+                <CardDescription>รวมค่าใช้จ่ายจากงานซ่อมบำรุง</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{formatCurrency(maintenanceTotalCost)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">กำลังดำเนินการ</CardTitle>
+                <CardDescription>งานที่อยู่ระหว่างซ่อม/รอผล</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{maintenanceInProgressCount}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">เสร็จสิ้น</CardTitle>
+                <CardDescription>งานที่ปิดจบพร้อมใช้งาน</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{maintenanceCompletedCount}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>สถานะการซ่อม</CardTitle>
+                <CardDescription>สัดส่วนงานซ่อมในแต่ละสถานะ</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[260px]">
+                {maintenanceRecords.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    ยังไม่มีข้อมูลการซ่อมบำรุง
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={maintenanceStatusSummary.map((item, index) => ({
+                          name: MAINTENANCE_STATUS_LABELS[item.status],
+                          value: item.count,
+                          fill: PIE_COLORS[index % PIE_COLORS.length],
+                        }))}
+                        dataKey="value"
+                        innerRadius={50}
+                      >
+                        {maintenanceStatusSummary.map((_, index) => (
+                          <Cell key={`maintenance-status-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => `${value} งาน`} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>ค่าใช้จ่ายตามผู้ให้บริการ</CardTitle>
+                <CardDescription>เปรียบเทียบผู้ให้บริการที่ใช้จ่ายสูงสุด</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[260px]">
+                {maintenanceSupplierTotals.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    ยังไม่มีข้อมูลค่าใช้จ่าย
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={maintenanceSupplierTotals}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="supplier" hide={maintenanceSupplierTotals.length > 4} />
+                      <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
+                      <Legend />
+                      <Bar dataKey="value" name="ค่าใช้จ่าย" fill={PIE_COLORS[0]} radius={4} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>แนวโน้มค่าใช้จ่ายรายเดือน</CardTitle>
+                <CardDescription>ติดตามค่าใช้จ่ายซ่อมบำรุงตามช่วงเวลา</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[260px]">
+                {maintenanceTrendData.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    ยังไม่มีข้อมูลแนวโน้ม
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={maintenanceTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis />
+                      <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
+                      <Legend />
+                      <Line type="monotone" dataKey="value" name="ค่าใช้จ่าย" stroke={PIE_COLORS[1]} strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            {maintenanceRecords.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                ยังไม่มีการบันทึกการซ่อมบำรุง
+              </div>
+            ) : (
+              maintenanceRecords.map((record) => {
+                const equipment = equipmentById.get(record.equipmentId);
+                return (
+                  <Card key={record.id}>
+                    <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="text-lg font-semibold text-foreground">
+                          เอกสาร {record.documentNo}
+                        </CardTitle>
+                        <CardDescription className="flex flex-wrap gap-2 text-sm">
+                          <span>
+                            {equipment?.name ?? record.equipmentName ?? "ไม่ทราบครุภัณฑ์"}
+                            {(equipment?.assetNumber ?? record.equipmentAssetNumber)
+                              ? ` • ${equipment?.assetNumber ?? record.equipmentAssetNumber}`
+                              : ""}
+                            {equipment?.model ? ` • ${equipment.model}` : ""}
+                            {(equipment?.location ?? record.equipmentLocation)
+                              ? ` (${equipment?.location ?? record.equipmentLocation})`
+                              : ""}
+                          </span>
+                          {equipment?.location && <span>• {equipment.location}</span>}
+                          {record.sentAt && (
+                            <span>
+                              • ส่งเมื่อ {new Date(record.sentAt).toLocaleDateString("th-TH")}
+                            </span>
+                          )}
+                          {record.returnedAt && (
+                            <span>
+                              • รับคืน {new Date(record.returnedAt).toLocaleDateString("th-TH")}
+                            </span>
+                          )}
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 text-right">
+                        <Badge variant={getMaintenanceStatusVariant(record.status)}>
+                          {MAINTENANCE_STATUS_LABELS[record.status]}
+                        </Badge>
+                        <div className="text-xs text-muted-foreground">ค่าใช้จ่าย</div>
+                        <div className="text-lg font-semibold text-primary">{formatCurrency(record.cost)}</div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openSensitiveAction("maintenance", "edit", record.id)}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            แก้ไข
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openSensitiveAction("maintenance", "history", record.id)}
+                          >
+                            <History className="mr-2 h-4 w-4" />
+                            ประวัติ
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openSensitiveAction("maintenance", "delete", record.id)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            ลบ
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">รายละเอียดการซ่อม</p>
+                          <p className="text-foreground whitespace-pre-wrap">
+                            {record.workDone || "-"}
+                          </p>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">อาการ/ปัญหา</p>
+                          <p className="text-foreground whitespace-pre-wrap">
+                            {record.issueSummary || "-"}
+                          </p>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">ผู้ให้บริการ</p>
+                          <p className="text-foreground">
+                            {record.supplierName || "-"}
+                            {record.technician ? ` • ${record.technician}` : ""}
+                          </p>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">แผนกที่เกี่ยวข้อง</p>
+                          <p className="text-foreground">{record.department || "-"}</p>
+                        </div>
+                        {record.warrantyUntil && (
+                          <div className="space-y-1 text-sm">
+                            <p className="font-medium text-muted-foreground">ประกันการซ่อม</p>
+                            <p className="text-foreground">
+                              ถึง {new Date(record.warrantyUntil).toLocaleDateString("th-TH")}
+                            </p>
+                          </div>
+                        )}
+                        {record.partsReplaced.length > 0 && (
+                          <div className="space-y-1 text-sm">
+                            <p className="font-medium text-muted-foreground">อะไหล่ที่เปลี่ยน</p>
+                            <ul className="list-disc space-y-1 pl-5 text-foreground">
+                              {record.partsReplaced.map((part, index) => (
+                                <li key={`${record.id}-part-${index}`}>{part}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      {record.notes && (
+                        <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
+                          หมายเหตุ: {record.notes}
+                        </div>
+                      )}
+
+                      {record.attachments.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-foreground">ไฟล์แนบ</h4>
+                          <ul className="mt-2 space-y-2 text-sm">
+                            {record.attachments.map((attachment) => (
+                              <li
+                                key={attachment.id ?? `${record.id}-${attachment.name}`}
+                                className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+                              >
+                                <div>
+                                  <p className="font-medium text-foreground">{attachment.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {attachment.type || "ไม่ทราบประเภท"} • {formatFileSize(attachment.size)}
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handlePreviewAttachment(record.documentNo, attachment)}
+                                >
+                                  ดูไฟล์
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="replacement" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">จำนวนการซื้อใหม่</CardTitle>
+                <CardDescription>บันทึกทั้งหมดในระบบ</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{replacementRecords.length}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">งบประมาณรวม</CardTitle>
+                <CardDescription>รวมค่าใช้จ่ายซื้อใหม่/ทดแทน</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{formatCurrency(replacementTotalCost)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">กำลังดำเนินการ</CardTitle>
+                <CardDescription>งานที่อยู่ระหว่างสั่งซื้อ</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{replacementOrderedCount}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-muted-foreground">รับสินค้าแล้ว</CardTitle>
+                <CardDescription>งานที่ปิดจบพร้อมใช้งาน</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-primary">{replacementReceivedCount}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>สถานะการซื้อ</CardTitle>
+                <CardDescription>ดูความคืบหน้าการซื้อใหม่/ทดแทน</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[260px]">
+                {replacementRecords.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    ยังไม่มีข้อมูลการซื้อใหม่/ทดแทน
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={replacementStatusSummary.map((item, index) => ({
+                          name: REPLACEMENT_STATUS_LABELS[item.status],
+                          value: item.count,
+                          fill: PIE_COLORS[index % PIE_COLORS.length],
+                        }))}
+                        dataKey="value"
+                        innerRadius={50}
+                      >
+                        {replacementStatusSummary.map((_, index) => (
+                          <Cell key={`replacement-status-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value) => `${value} รายการ`} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>งบประมาณตามผู้ขาย</CardTitle>
+                <CardDescription>วิเคราะห์ผู้ขายที่ใช้จ่ายสูงสุด</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[260px]">
+                {replacementSupplierTotals.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    ยังไม่มีข้อมูลค่าใช้จ่าย
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={replacementSupplierTotals}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="supplier" hide={replacementSupplierTotals.length > 4} />
+                      <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
+                      <Legend />
+                      <Bar dataKey="value" name="งบประมาณ" fill={PIE_COLORS[2]} radius={4} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>แนวโน้มการซื้อ</CardTitle>
+                <CardDescription>ติดตามงบประมาณจัดซื้อรายเดือน</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[260px]">
+                {replacementTrendData.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    ยังไม่มีข้อมูลแนวโน้ม
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={replacementTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" />
+                      <YAxis />
+                      <Tooltip formatter={(value: number | string) => formatCurrency(Number(value))} />
+                      <Legend />
+                      <Line type="monotone" dataKey="value" name="งบประมาณ" stroke={PIE_COLORS[3]} strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            {replacementRecords.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                ยังไม่มีการบันทึกซื้อใหม่/ทดแทน
+              </div>
+            ) : (
+              replacementRecords.map((record) => {
+                const equipment = record.equipmentId ? equipmentById.get(record.equipmentId) : null;
+                return (
+                  <Card key={record.id}>
+                    <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="text-lg font-semibold text-foreground">
+                          เอกสาร {record.documentNo}
+                        </CardTitle>
+                        <CardDescription className="flex flex-wrap gap-2 text-sm">
+                          <span>
+                            {equipment?.name ?? record.equipmentName ?? "ไม่ทราบครุภัณฑ์"}
+                            {(equipment?.assetNumber ?? record.equipmentAssetNumber)
+                              ? ` • ${equipment?.assetNumber ?? record.equipmentAssetNumber}`
+                              : ""}
+                            {equipment?.model ? ` • ${equipment.model}` : ""}
+                          </span>
+                          {(equipment?.location ?? record.equipmentLocation) && (
+                            <span>• {equipment?.location ?? record.equipmentLocation}</span>
+                          )}
+                          {record.orderDate && (
+                            <span>
+                              • สั่งซื้อเมื่อ {new Date(record.orderDate).toLocaleDateString("th-TH")}
+                            </span>
+                          )}
+                          {record.receivedDate && (
+                            <span>
+                              • รับเมื่อ {new Date(record.receivedDate).toLocaleDateString("th-TH")}
+                            </span>
+                          )}
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 text-right">
+                        <Badge variant={getReplacementStatusVariant(record.status)}>
+                          {REPLACEMENT_STATUS_LABELS[record.status]}
+                        </Badge>
+                        <div className="text-xs text-muted-foreground">งบประมาณ</div>
+                        <div className="text-lg font-semibold text-primary">{formatCurrency(record.cost)}</div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openSensitiveAction("replacement", "edit", record.id)}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            แก้ไข
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openSensitiveAction("replacement", "history", record.id)}
+                          >
+                            <History className="mr-2 h-4 w-4" />
+                            ประวัติ
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openSensitiveAction("replacement", "delete", record.id)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            ลบ
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">ผู้ขาย/บริษัท</p>
+                          <p className="text-foreground">{record.supplierName || "-"}</p>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">แผนกที่ร้องขอ</p>
+                          <p className="text-foreground">{record.department || "-"}</p>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">ผู้ร้องขอ</p>
+                          <p className="text-foreground">{record.requestedBy || "-"}</p>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-muted-foreground">ผู้อนุมัติ</p>
+                          <p className="text-foreground">{record.approvedBy || "-"}</p>
+                        </div>
+                        {record.warrantyUntil && (
+                          <div className="space-y-1 text-sm">
+                            <p className="font-medium text-muted-foreground">ประกันสินค้า</p>
+                            <p className="text-foreground">
+                              ถึง {new Date(record.warrantyUntil).toLocaleDateString("th-TH")}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {record.justification && (
+                        <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
+                          เหตุผล: {record.justification}
+                        </div>
+                      )}
+
+                      {record.notes && (
+                        <div className="rounded-lg border border-dashed bg-muted/10 p-3 text-sm text-muted-foreground">
+                          หมายเหตุ: {record.notes}
+                        </div>
+                      )}
+
+                      {record.attachments.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-foreground">ไฟล์แนบ</h4>
+                          <ul className="mt-2 space-y-2 text-sm">
+                            {record.attachments.map((attachment) => (
+                              <li
+                                key={attachment.id ?? `${record.id}-${attachment.name}`}
+                                className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+                              >
+                                <div>
+                                  <p className="font-medium text-foreground">{attachment.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {attachment.type || "ไม่ทราบประเภท"} • {formatFileSize(attachment.size)}
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handlePreviewAttachment(record.documentNo, attachment)}
+                                >
+                                  ดูไฟล์
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </TabsContent>
+
       </Tabs>
 
       <Dialog
@@ -3576,16 +6398,16 @@ const StockInkToner = () => {
         onOpenChange={(open) => {
           setHistoryDialogOpen(open);
           if (!open) {
-            setReceiptHistoryEntries([]);
-            setHistoryTargetReceipt(null);
+            setAuditHistoryEntries([]);
+            setHistoryContext(null);
           }
         }}
       >
         <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              ประวัติการแก้ไขใบลงรับ
-              {historyTargetReceipt ? ` • ${historyTargetReceipt.documentNo}` : ""}
+              ประวัติการแก้ไข
+              {historyContext ? ` • ${historyContext.title}` : ""}
             </DialogTitle>
             <DialogDescription>
               ตรวจสอบรายละเอียดการสร้าง แก้ไข หรือลบ พร้อมเหตุผลและผู้ดำเนินการ
@@ -3596,15 +6418,16 @@ const StockInkToner = () => {
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               กำลังโหลดประวัติ...
             </div>
-          ) : receiptHistoryEntries.length === 0 ? (
+          ) : auditHistoryEntries.length === 0 ? (
             <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
               ยังไม่มีประวัติการแก้ไขสำหรับใบลงรับนี้
             </div>
           ) : (
             <div className="space-y-4">
-              {receiptHistoryEntries.map((entry) => {
-                const oldValue = formatHistoryValue(entry.fieldName, entry.oldValue);
-                const newValue = formatHistoryValue(entry.fieldName, entry.newValue);
+              {auditHistoryEntries.map((entry) => {
+                const entityType = historyContext?.type ?? "receipt";
+                const oldValue = formatHistoryValue(entityType, entry.fieldName, entry.oldValue);
+                const newValue = formatHistoryValue(entityType, entry.fieldName, entry.newValue);
                 const actionLabel =
                   entry.action === "INSERT"
                     ? "สร้างใหม่"
@@ -3624,7 +6447,7 @@ const StockInkToner = () => {
                       <div className="flex items-center gap-2">
                         <Badge variant={actionVariant as any}>{actionLabel}</Badge>
                         <span className="text-sm font-medium text-foreground">
-                          {getReceiptFieldLabel(entry.fieldName)}
+                          {getAuditFieldLabel(entityType, entry.fieldName)}
                         </span>
                       </div>
                       <span className="text-xs text-muted-foreground">

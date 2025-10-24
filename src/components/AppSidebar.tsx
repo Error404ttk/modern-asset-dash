@@ -1,4 +1,4 @@
-import { Home, Computer, Plus, ArrowLeftRight, History, Users, Settings, Monitor, QrCode, LogOut, Printer, Droplet } from "lucide-react";
+import { Home, Computer, Plus, ArrowLeftRight, History, Users, Settings, Monitor, QrCode, LogOut, Printer, Wrench } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar, SidebarFooter } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,9 +21,9 @@ const menuItems = [{
   url: "/sticker-print",
   icon: Printer
 }, {
-  title: "Stock ink/toner",
+  title: "Maintenance/Stock",
   url: "/stock-ink-toner",
-  icon: Droplet
+  icon: Wrench
 }, {
   title: "เพิ่มครุภัณฑ์",
   url: "/equipment/add",
