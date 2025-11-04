@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   PieChart,
   Pie,
   Cell,
@@ -50,11 +59,27 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import { Plus, Building2, Package, Store, FileText, Pencil, Trash2, Loader2, History, Lock, Wrench, ShoppingBag } from "lucide-react";
+import {
+  Plus,
+  Building2,
+  Package,
+  Store,
+  FileText,
+  Pencil,
+  Trash2,
+  Loader2,
+  History,
+  Lock,
+  Wrench,
+  ShoppingBag,
+  Check,
+  ChevronsUpDown,
+} from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { useAuth } from "@/hooks/useAuth";
+import { cn } from "@/lib/utils";
 
 const inkDb = supabase as SupabaseClient<any>;
 
@@ -158,7 +183,13 @@ type SensitiveActionType = "edit" | "delete" | "history";
 
 type EntityType = "receipt" | "maintenance" | "replacement";
 
-type MaintenanceStatus = "planned" | "in_progress" | "completed";
+type MaintenanceStatus =
+  | "planned"
+  | "in_progress"
+  | "completed"
+  | "not_worth_repair"
+  | "disposed"
+  | "pending_disposal";
 type ReplacementStatus = "planned" | "ordered" | "received";
 
 type AuditEntry = {
@@ -197,6 +228,8 @@ type MaintenanceRecord = {
   equipmentLocation?: string | null;
   supplierId?: string | null;
   supplierName?: string | null;
+  departmentId?: string | null;
+  departmentName?: string | null;
   department?: string | null;
   technician?: string | null;
   issueSummary?: string | null;
@@ -220,6 +253,8 @@ type ReplacementRecord = {
   equipmentLocation?: string | null;
   supplierId?: string | null;
   supplierName?: string | null;
+  departmentId?: string | null;
+  departmentName?: string | null;
   department?: string | null;
   requestedBy?: string | null;
   approvedBy?: string | null;
@@ -237,7 +272,8 @@ type MaintenanceFormState = {
   documentNo: string;
   equipmentId: string;
   supplierId: string;
-  department: string;
+  departmentId: string;
+  departmentName: string;
   technician: string;
   issueSummary: string;
   workDone: string;
@@ -255,7 +291,8 @@ type ReplacementFormState = {
   documentNo: string;
   equipmentId: string;
   supplierId: string;
-  department: string;
+  departmentId: string;
+  departmentName: string;
   requestedBy: string;
   approvedBy: string;
   justification: string;
@@ -278,10 +315,37 @@ type EquipmentSummary = {
   assetNumber?: string | null;
 };
 
+type DepartmentOption = {
+  id: string;
+  name: string;
+  code: string;
+  active: boolean;
+};
+
+const getEquipmentMeta = (equipment: EquipmentSummary): string =>
+  [equipment.assetNumber, equipment.model, equipment.location].filter(Boolean).join(" • ");
+
+const getEquipmentDisplayLabel = (equipment: EquipmentSummary): string => {
+  const meta = getEquipmentMeta(equipment);
+  return meta ? `${equipment.name} • ${meta}` : equipment.name;
+};
+
+const getEquipmentSearchValue = (equipment: EquipmentSummary): string =>
+  [equipment.name, equipment.assetNumber, equipment.model, equipment.brand, equipment.location]
+    .filter(Boolean)
+    .join(" ");
+
+const getDepartmentDisplayLabel = (department: DepartmentOption): string =>
+  department.code ? `${department.name} (${department.code})` : department.name;
+
+const getDepartmentSearchValue = (department: DepartmentOption): string =>
+  [department.name, department.code].filter(Boolean).join(" ");
+
 type MaintenanceDraft = {
   documentNo: string;
   equipmentId: string;
   supplierId: string | null;
+  departmentId: string | null;
   department: string | null;
   technician: string | null;
   issueSummary: string | null;
@@ -299,6 +363,7 @@ type ReplacementDraft = {
   documentNo: string;
   equipmentId: string | null;
   supplierId: string | null;
+  departmentId: string | null;
   department: string | null;
   requestedBy: string | null;
   approvedBy: string | null;
@@ -325,7 +390,19 @@ const MAINTENANCE_STATUS_LABELS: Record<MaintenanceStatus, string> = {
   planned: "วางแผน",
   in_progress: "ระหว่างซ่อม",
   completed: "เสร็จสิ้น",
+  not_worth_repair: "ไม่คุ้มค่าซ่อม",
+  disposed: "จำหน่าย",
+  pending_disposal: "รอจำหน่าย",
 };
+
+const MAINTENANCE_STATUSES: MaintenanceStatus[] = [
+  "planned",
+  "in_progress",
+  "completed",
+  "not_worth_repair",
+  "disposed",
+  "pending_disposal",
+];
 
 const REPLACEMENT_STATUS_LABELS: Record<ReplacementStatus, string> = {
   planned: "วางแผน",
@@ -403,7 +480,8 @@ const DEFAULT_MAINTENANCE_FORM: MaintenanceFormState = {
   documentNo: "",
   equipmentId: "",
   supplierId: "",
-  department: "",
+  departmentId: "",
+  departmentName: "",
   technician: "",
   issueSummary: "",
   workDone: "",
@@ -421,7 +499,8 @@ const DEFAULT_REPLACEMENT_FORM: ReplacementFormState = {
   documentNo: "",
   equipmentId: "",
   supplierId: "",
-  department: "",
+  departmentId: "",
+  departmentName: "",
   requestedBy: "",
   approvedBy: "",
   justification: "",
@@ -448,6 +527,7 @@ const StockInkToner = () => {
   const { user } = useAuth();
   const [brands, setBrands] = useState<Brand[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [equipments, setEquipments] = useState<EquipmentSummary[]>([]);
@@ -531,6 +611,10 @@ const StockInkToner = () => {
   const [editingReplacementId, setEditingReplacementId] = useState<string | null>(null);
   const [editingReplacementOriginal, setEditingReplacementOriginal] = useState<ReplacementRecord | null>(null);
   const [replacementChangeReason, setReplacementChangeReason] = useState("");
+  const [isMaintenanceEquipmentOpen, setMaintenanceEquipmentOpen] = useState(false);
+  const [isMaintenanceDepartmentOpen, setMaintenanceDepartmentOpen] = useState(false);
+  const [isReplacementEquipmentOpen, setReplacementEquipmentOpen] = useState(false);
+  const [isReplacementDepartmentOpen, setReplacementDepartmentOpen] = useState(false);
 
   const [isAttachmentPreviewOpen, setAttachmentPreviewOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{
@@ -669,7 +753,8 @@ const StockInkToner = () => {
       documentNo: record.documentNo,
       equipmentId: record.equipmentId,
       supplierId: record.supplierId ?? null,
-      department: record.department ?? null,
+      departmentId: record.departmentId ?? null,
+      department: record.departmentName ?? record.department ?? null,
       technician: record.technician ?? null,
       issueSummary: record.issueSummary ?? null,
       workDone: record.workDone ?? null,
@@ -689,7 +774,8 @@ const StockInkToner = () => {
       documentNo: record.documentNo,
       equipmentId: record.equipmentId ?? null,
       supplierId: record.supplierId ?? null,
-      department: record.department ?? null,
+      departmentId: record.departmentId ?? null,
+      department: record.departmentName ?? record.department ?? null,
       requestedBy: record.requestedBy ?? null,
       approvedBy: record.approvedBy ?? null,
       justification: record.justification ?? null,
@@ -725,7 +811,8 @@ const StockInkToner = () => {
       documentNo: record.documentNo,
       equipmentId: record.equipmentId,
       supplierId: record.supplierId ?? "",
-      department: record.department ?? "",
+      departmentId: record.departmentId ?? "",
+      departmentName: record.departmentName ?? record.department ?? "",
       technician: record.technician ?? "",
       issueSummary: record.issueSummary ?? "",
       workDone: record.workDone ?? "",
@@ -745,7 +832,8 @@ const StockInkToner = () => {
       documentNo: record.documentNo,
       equipmentId: record.equipmentId ?? "",
       supplierId: record.supplierId ?? "",
-      department: record.department ?? "",
+      departmentId: record.departmentId ?? "",
+      departmentName: record.departmentName ?? record.department ?? "",
       requestedBy: record.requestedBy ?? "",
       approvedBy: record.approvedBy ?? "",
       justification: record.justification ?? "",
@@ -910,6 +998,7 @@ const StockInkToner = () => {
         "documentNo",
         "equipmentId",
         "supplierId",
+        "departmentId",
         "department",
         "technician",
         "issueSummary",
@@ -993,6 +1082,7 @@ const StockInkToner = () => {
         "documentNo",
         "equipmentId",
         "supplierId",
+        "departmentId",
         "department",
         "requestedBy",
         "approvedBy",
@@ -1032,7 +1122,32 @@ const StockInkToner = () => {
   const brandById = useMemo(() => new Map(brands.map((item) => [item.id, item])), [brands]);
   const supplierById = useMemo(() => new Map(suppliers.map((item) => [item.id, item])), [suppliers]);
   const productById = useMemo(() => new Map(products.map((item) => [item.id, item])), [products]);
+  const departmentById = useMemo(() => new Map(departments.map((item) => [item.id, item])), [departments]);
+  const activeDepartments = useMemo(
+    () => departments.filter((department) => department.active !== false),
+    [departments],
+  );
   const equipmentById = useMemo(() => new Map(equipments.map((item) => [item.id, item])), [equipments]);
+
+  const selectedMaintenanceEquipment = useMemo(
+    () => equipments.find((equipment) => equipment.id === maintenanceForm.equipmentId) ?? null,
+    [equipments, maintenanceForm.equipmentId],
+  );
+
+  const selectedMaintenanceDepartment = useMemo(
+    () => (maintenanceForm.departmentId ? departmentById.get(maintenanceForm.departmentId) ?? null : null),
+    [departmentById, maintenanceForm.departmentId],
+  );
+
+  const selectedReplacementEquipment = useMemo(
+    () => equipments.find((equipment) => equipment.id === replacementForm.equipmentId) ?? null,
+    [equipments, replacementForm.equipmentId],
+  );
+
+  const selectedReplacementDepartment = useMemo(
+    () => (replacementForm.departmentId ? departmentById.get(replacementForm.departmentId) ?? null : null),
+    [departmentById, replacementForm.departmentId],
+  );
 
   const getAuditFieldLabel = useCallback(
     (entityType: EntityType, fieldName: string | null) => {
@@ -1479,6 +1594,30 @@ const StockInkToner = () => {
     }
   }, []);
 
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("departments")
+        .select("id, name, code, active")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      setDepartments(
+        (data ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          code: item.code,
+          active: item.active ?? true,
+        })),
+      );
+    } catch (error) {
+      toast({
+        title: "เกิดข้อผิดพลาด",
+        description: `ไม่สามารถโหลดข้อมูลหน่วยงานได้: ${getErrorMessage(error)}`,
+        variant: "destructive",
+      });
+    }
+  }, []);
+
   const fetchProducts = useCallback(async () => {
     try {
       const { data, error } = await inkDb
@@ -1666,6 +1805,7 @@ const StockInkToner = () => {
             equipment_id,
             supplier_id,
             department,
+            department_id,
             technician,
             issue_summary,
             work_done,
@@ -1697,6 +1837,11 @@ const StockInkToner = () => {
               file_size,
               storage_path,
               uploaded_at
+            ),
+            department_info:departments!equipment_maintenance_department_id_fkey (
+              id,
+              name,
+              code
             )
           `,
         )
@@ -1715,6 +1860,8 @@ const StockInkToner = () => {
         equipmentLocation: row.equipment?.location ?? null,
         supplierId: row.supplier_id ?? null,
         supplierName: row.supplier?.name ?? null,
+        departmentId: row.department_id ?? null,
+        departmentName: row.department_info?.name ?? null,
         department: row.department ?? null,
         technician: row.technician ?? null,
         issueSummary: row.issue_summary ?? null,
@@ -1758,6 +1905,7 @@ const StockInkToner = () => {
             equipment_id,
             supplier_id,
             department,
+            department_id,
             requested_by,
             approved_by,
             justification,
@@ -1788,6 +1936,11 @@ const StockInkToner = () => {
               file_size,
               storage_path,
               uploaded_at
+            ),
+            department_info:departments!equipment_replacements_department_id_fkey (
+              id,
+              name,
+              code
             )
           `,
         )
@@ -1805,6 +1958,8 @@ const StockInkToner = () => {
         equipmentLocation: row.equipment?.location ?? null,
         supplierId: row.supplier_id ?? null,
         supplierName: row.supplier?.name ?? null,
+        departmentId: row.department_id ?? null,
+        departmentName: row.department_info?.name ?? null,
         department: row.department ?? null,
         requestedBy: row.requested_by ?? null,
         approvedBy: row.approved_by ?? null,
@@ -2048,6 +2203,7 @@ const StockInkToner = () => {
         await Promise.all([
           fetchBrands(),
           fetchSuppliers(),
+          fetchDepartments(),
           fetchProducts(),
           fetchReceipts(),
           fetchEquipments(),
@@ -2069,6 +2225,7 @@ const StockInkToner = () => {
   }, [
     fetchBrands,
     fetchSuppliers,
+    fetchDepartments,
     fetchProducts,
     fetchReceipts,
     fetchEquipments,
@@ -2126,6 +2283,20 @@ const StockInkToner = () => {
       return filteredReceipts[0].id;
     });
   }, [filteredReceipts]);
+
+  useEffect(() => {
+    if (!isMaintenanceDialogOpen) {
+      setMaintenanceEquipmentOpen(false);
+      setMaintenanceDepartmentOpen(false);
+    }
+  }, [isMaintenanceDialogOpen]);
+
+  useEffect(() => {
+    if (!isReplacementDialogOpen) {
+      setReplacementEquipmentOpen(false);
+      setReplacementDepartmentOpen(false);
+    }
+  }, [isReplacementDialogOpen]);
 
   const groupedReceipts = useMemo(() => {
     const groups = new Map<
@@ -2241,19 +2412,17 @@ const StockInkToner = () => {
   }, [filteredReceipts]);
 
   const maintenanceStatusSummary = useMemo(() => {
-    const summary = new Map<MaintenanceStatus, number>([
-      ["planned", 0],
-      ["in_progress", 0],
-      ["completed", 0],
-    ]);
+    const summary = new Map<MaintenanceStatus, number>();
+    MAINTENANCE_STATUSES.forEach((status) => summary.set(status, 0));
 
     maintenanceRecords.forEach((record) => {
-      summary.set(record.status, (summary.get(record.status) ?? 0) + 1);
+      const status = record.status as MaintenanceStatus;
+      summary.set(status, (summary.get(status) ?? 0) + 1);
     });
 
-    return Array.from(summary.entries()).map(([status, count]) => ({
+    return MAINTENANCE_STATUSES.map((status) => ({
       status,
-      count,
+      count: summary.get(status) ?? 0,
     }));
   }, [maintenanceRecords]);
 
@@ -2267,6 +2436,20 @@ const StockInkToner = () => {
       supplier,
       value,
     }));
+  }, [maintenanceRecords]);
+
+  const maintenanceDepartmentSummary = useMemo(() => {
+    const summary = new Map<string, { count: number; cost: number }>();
+    maintenanceRecords.forEach((record) => {
+      const departmentName = record.departmentName ?? record.department ?? "ไม่ระบุ";
+      const current = summary.get(departmentName) ?? { count: 0, cost: 0 };
+      current.count += 1;
+      current.cost += record.cost;
+      summary.set(departmentName, current);
+    });
+    return Array.from(summary.entries())
+      .map(([department, value]) => ({ department, count: value.count, totalCost: value.cost }))
+      .sort((a, b) => b.count - a.count || b.totalCost - a.totalCost);
   }, [maintenanceRecords]);
 
   const maintenanceTrendData = useMemo(() => {
@@ -2315,6 +2498,20 @@ const StockInkToner = () => {
     }));
   }, [replacementRecords]);
 
+  const replacementDepartmentSummary = useMemo(() => {
+    const summary = new Map<string, { count: number; cost: number }>();
+    replacementRecords.forEach((record) => {
+      const departmentName = record.departmentName ?? record.department ?? "ไม่ระบุ";
+      const current = summary.get(departmentName) ?? { count: 0, cost: 0 };
+      current.count += 1;
+      current.cost += record.cost;
+      summary.set(departmentName, current);
+    });
+    return Array.from(summary.entries())
+      .map(([department, value]) => ({ department, count: value.count, totalCost: value.cost }))
+      .sort((a, b) => b.count - a.count || b.totalCost - a.totalCost);
+  }, [replacementRecords]);
+
   const replacementTrendData = useMemo(() => {
     const timeline = new Map<string, number>();
     replacementRecords.forEach((record) => {
@@ -2337,6 +2534,11 @@ const StockInkToner = () => {
     maintenanceStatusSummary.find((item) => item.status === "in_progress")?.count ?? 0;
   const maintenanceCompletedCount =
     maintenanceStatusSummary.find((item) => item.status === "completed")?.count ?? 0;
+  const maintenanceNotWorthRepairCount =
+    maintenanceStatusSummary.find((item) => item.status === "not_worth_repair")?.count ?? 0;
+  const maintenanceDisposedCount = maintenanceStatusSummary.find((item) => item.status === "disposed")?.count ?? 0;
+  const maintenancePendingDisposalCount =
+    maintenanceStatusSummary.find((item) => item.status === "pending_disposal")?.count ?? 0;
 
   const replacementPlannedCount = replacementStatusSummary.find((item) => item.status === "planned")?.count ?? 0;
   const replacementOrderedCount = replacementStatusSummary.find((item) => item.status === "ordered")?.count ?? 0;
@@ -2348,6 +2550,11 @@ const StockInkToner = () => {
         return "default";
       case "in_progress":
         return "secondary";
+      case "pending_disposal":
+        return "secondary";
+      case "not_worth_repair":
+      case "disposed":
+        return "destructive";
       case "planned":
       default:
         return "outline";
@@ -3413,6 +3620,12 @@ const StockInkToner = () => {
       .map((part) => part.trim())
       .filter(Boolean);
 
+    const selectedDepartmentRecord = maintenanceForm.departmentId
+      ? departmentById.get(maintenanceForm.departmentId) ?? null
+      : null;
+    const departmentId = maintenanceForm.departmentId ? maintenanceForm.departmentId : null;
+    const departmentName = selectedDepartmentRecord?.name ?? (maintenanceForm.departmentName.trim() || null);
+
     if (maintenanceDialogMode === "edit" && !maintenanceChangeReason.trim()) {
       toast({
         title: "ต้องระบุเหตุผล",
@@ -3455,7 +3668,8 @@ const StockInkToner = () => {
             document_no: documentNo,
             equipment_id: maintenanceForm.equipmentId,
             supplier_id: maintenanceForm.supplierId || null,
-            department: maintenanceForm.department.trim() || null,
+            department: departmentName,
+            department_id: departmentId,
             technician: maintenanceForm.technician.trim() || null,
             issue_summary: maintenanceForm.issueSummary.trim() || null,
             work_done: maintenanceForm.workDone.trim() || null,
@@ -3478,7 +3692,8 @@ const StockInkToner = () => {
           documentNo,
           equipmentId: maintenanceForm.equipmentId,
           supplierId: maintenanceForm.supplierId || null,
-          department: maintenanceForm.department.trim() || null,
+          departmentId,
+          department: departmentName,
           technician: maintenanceForm.technician.trim() || null,
           issueSummary: maintenanceForm.issueSummary.trim() || null,
           workDone: maintenanceForm.workDone.trim() || null,
@@ -3529,7 +3744,8 @@ const StockInkToner = () => {
             document_no: documentNo,
             equipment_id: maintenanceForm.equipmentId,
             supplier_id: maintenanceForm.supplierId || null,
-            department: maintenanceForm.department.trim() || null,
+            department: departmentName,
+            department_id: departmentId,
             technician: maintenanceForm.technician.trim() || null,
             issue_summary: maintenanceForm.issueSummary.trim() || null,
             work_done: maintenanceForm.workDone.trim() || null,
@@ -3556,7 +3772,8 @@ const StockInkToner = () => {
           documentNo,
           equipmentId: maintenanceForm.equipmentId,
           supplierId: maintenanceForm.supplierId || null,
-          department: maintenanceForm.department.trim() || null,
+          departmentId,
+          department: departmentName,
           technician: maintenanceForm.technician.trim() || null,
           issueSummary: maintenanceForm.issueSummary.trim() || null,
           workDone: maintenanceForm.workDone.trim() || null,
@@ -3630,6 +3847,13 @@ const StockInkToner = () => {
       return;
     }
 
+    const selectedReplacementDepartmentRecord = replacementForm.departmentId
+      ? departmentById.get(replacementForm.departmentId) ?? null
+      : null;
+    const replacementDepartmentId = replacementForm.departmentId ? replacementForm.departmentId : null;
+    const replacementDepartmentName =
+      selectedReplacementDepartmentRecord?.name ?? (replacementForm.departmentName.trim() || null);
+
     if (replacementDialogMode === "edit" && !replacementChangeReason.trim()) {
       toast({
         title: "ต้องระบุเหตุผล",
@@ -3672,7 +3896,8 @@ const StockInkToner = () => {
             document_no: documentNo,
             equipment_id: replacementForm.equipmentId || null,
             supplier_id: replacementForm.supplierId || null,
-            department: replacementForm.department.trim() || null,
+            department: replacementDepartmentName,
+            department_id: replacementDepartmentId,
             requested_by: replacementForm.requestedBy.trim() || null,
             approved_by: replacementForm.approvedBy.trim() || null,
             justification: replacementForm.justification.trim() || null,
@@ -3694,7 +3919,8 @@ const StockInkToner = () => {
           documentNo,
           equipmentId: replacementForm.equipmentId || null,
           supplierId: replacementForm.supplierId || null,
-          department: replacementForm.department.trim() || null,
+          departmentId: replacementDepartmentId,
+          department: replacementDepartmentName,
           requestedBy: replacementForm.requestedBy.trim() || null,
           approvedBy: replacementForm.approvedBy.trim() || null,
           justification: replacementForm.justification.trim() || null,
@@ -3744,7 +3970,8 @@ const StockInkToner = () => {
             document_no: documentNo,
             equipment_id: replacementForm.equipmentId || null,
             supplier_id: replacementForm.supplierId || null,
-            department: replacementForm.department.trim() || null,
+            department: replacementDepartmentName,
+            department_id: replacementDepartmentId,
             requested_by: replacementForm.requestedBy.trim() || null,
             approved_by: replacementForm.approvedBy.trim() || null,
             justification: replacementForm.justification.trim() || null,
@@ -3769,7 +3996,8 @@ const StockInkToner = () => {
           documentNo,
           equipmentId: replacementForm.equipmentId || null,
           supplierId: replacementForm.supplierId || null,
-          department: replacementForm.department.trim() || null,
+          departmentId: replacementDepartmentId,
+          department: replacementDepartmentName,
           requestedBy: replacementForm.requestedBy.trim() || null,
           approvedBy: replacementForm.approvedBy.trim() || null,
           justification: replacementForm.justification.trim() || null,
@@ -4405,26 +4633,57 @@ const StockInkToner = () => {
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label>เลือกครุภัณฑ์ *</Label>
-                    <Select
-                      value={maintenanceForm.equipmentId}
-                      onValueChange={(value) =>
-                        setMaintenanceForm((prev) => ({ ...prev, equipmentId: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="เลือกครุภัณฑ์" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {equipments.map((equipment) => (
-                          <SelectItem key={equipment.id} value={equipment.id}>
-                            {equipment.name}
-                            {equipment.assetNumber ? ` • ${equipment.assetNumber}` : ""}
-                            {equipment.model ? ` • ${equipment.model}` : ""}
-                            {equipment.location ? ` (${equipment.location})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={isMaintenanceEquipmentOpen} onOpenChange={setMaintenanceEquipmentOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={isMaintenanceEquipmentOpen}
+                          className="w-full justify-between"
+                        >
+                          {selectedMaintenanceEquipment
+                            ? getEquipmentDisplayLabel(selectedMaintenanceEquipment)
+                            : "เลือกครุภัณฑ์"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[min(480px,90vw)] max-h-80 overflow-hidden p-0">
+                        <Command>
+                          <CommandInput placeholder="พิมพ์ชื่อหรือเลขครุภัณฑ์..." />
+                          <CommandList>
+                            <CommandEmpty>ไม่พบครุภัณฑ์</CommandEmpty>
+                            <CommandGroup>
+                              {equipments.map((equipment) => {
+                                const meta = getEquipmentMeta(equipment);
+                                return (
+                                  <CommandItem
+                                    key={equipment.id}
+                                    value={getEquipmentSearchValue(equipment)}
+                                    className="flex items-start justify-between gap-3"
+                                    onSelect={() => {
+                                      setMaintenanceForm((prev) => ({ ...prev, equipmentId: equipment.id }));
+                                      setMaintenanceEquipmentOpen(false);
+                                    }}
+                                  >
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-medium">{equipment.name}</span>
+                                      {meta && <span className="text-xs text-muted-foreground">{meta}</span>}
+                                    </div>
+                                    <Check
+                                      className={cn(
+                                        "h-4 w-4 shrink-0 text-primary",
+                                        maintenanceForm.equipmentId === equipment.id ? "opacity-100" : "opacity-0",
+                                      )}
+                                    />
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-2">
                     <Label>ผู้ให้บริการ</Label>
@@ -4451,15 +4710,83 @@ const StockInkToner = () => {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="maintenance-department">แผนก/หน่วยงาน</Label>
-                    <Input
-                      id="maintenance-department"
-                      value={maintenanceForm.department}
-                      onChange={(event) =>
-                        setMaintenanceForm((prev) => ({ ...prev, department: event.target.value }))
-                      }
-                      placeholder="เช่น แผนกไอที"
-                    />
+                    <Label>แผนก/หน่วยงาน</Label>
+                    <Popover open={isMaintenanceDepartmentOpen} onOpenChange={setMaintenanceDepartmentOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={isMaintenanceDepartmentOpen}
+                          className="w-full justify-between"
+                        >
+                          {selectedMaintenanceDepartment
+                            ? getDepartmentDisplayLabel(selectedMaintenanceDepartment)
+                            : maintenanceForm.departmentName
+                              ? maintenanceForm.departmentName
+                              : "เลือกหน่วยงาน"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[min(420px,90vw)] max-h-72 overflow-hidden p-0">
+                        <Command>
+                          <CommandInput placeholder="ค้นหาด้วยชื่อหรือรหัสหน่วยงาน..." />
+                          <CommandList>
+                            <CommandEmpty>ไม่พบหน่วยงาน</CommandEmpty>
+                            <CommandGroup>
+                              <CommandItem
+                                value="__none__"
+                                onSelect={() => {
+                                  setMaintenanceForm((prev) => ({
+                                    ...prev,
+                                    departmentId: "",
+                                    departmentName: "",
+                                  }));
+                                  setMaintenanceDepartmentOpen(false);
+                                }}
+                              >
+                                ไม่ระบุ
+                              </CommandItem>
+                              {activeDepartments.map((department) => (
+                                <CommandItem
+                                  key={department.id}
+                                  value={getDepartmentSearchValue(department)}
+                                  className="flex items-start justify-between gap-3"
+                                  onSelect={() => {
+                                    setMaintenanceForm((prev) => ({
+                                      ...prev,
+                                      departmentId: department.id,
+                                      departmentName: department.name,
+                                    }));
+                                    setMaintenanceDepartmentOpen(false);
+                                  }}
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">
+                                      {getDepartmentDisplayLabel(department)}
+                                    </span>
+                                    {department.code && (
+                                      <span className="text-xs text-muted-foreground">รหัส {department.code}</span>
+                                    )}
+                                  </div>
+                                  <Check
+                                    className={cn(
+                                      "h-4 w-4 shrink-0 text-primary",
+                                      maintenanceForm.departmentId === department.id ? "opacity-100" : "opacity-0",
+                                    )}
+                                  />
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    {maintenanceForm.departmentName && !selectedMaintenanceDepartment && (
+                      <p className="text-xs text-muted-foreground">
+                        หน่วยงานเดิม: {maintenanceForm.departmentName} (ยังไม่เชื่อมกับข้อมูลปัจจุบัน)
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="maintenance-technician">ผู้ประสาน/ช่าง</Label>
@@ -4672,26 +4999,57 @@ const StockInkToner = () => {
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label>ครุภัณฑ์ที่เกี่ยวข้อง *</Label>
-                    <Select
-                      value={replacementForm.equipmentId}
-                      onValueChange={(value) =>
-                        setReplacementForm((prev) => ({ ...prev, equipmentId: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="เลือกครุภัณฑ์" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {equipments.map((equipment) => (
-                          <SelectItem key={equipment.id} value={equipment.id}>
-                            {equipment.name}
-                            {equipment.assetNumber ? ` • ${equipment.assetNumber}` : ""}
-                            {equipment.model ? ` • ${equipment.model}` : ""}
-                            {equipment.location ? ` (${equipment.location})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={isReplacementEquipmentOpen} onOpenChange={setReplacementEquipmentOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={isReplacementEquipmentOpen}
+                          className="w-full justify-between"
+                        >
+                          {selectedReplacementEquipment
+                            ? getEquipmentDisplayLabel(selectedReplacementEquipment)
+                            : "เลือกครุภัณฑ์"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[min(480px,90vw)] max-h-80 overflow-hidden p-0">
+                        <Command>
+                          <CommandInput placeholder="พิมพ์ชื่อหรือเลขครุภัณฑ์..." />
+                          <CommandList>
+                            <CommandEmpty>ไม่พบครุภัณฑ์</CommandEmpty>
+                            <CommandGroup>
+                              {equipments.map((equipment) => {
+                                const meta = getEquipmentMeta(equipment);
+                                return (
+                                  <CommandItem
+                                    key={equipment.id}
+                                    value={getEquipmentSearchValue(equipment)}
+                                    className="flex items-start justify-between gap-3"
+                                    onSelect={() => {
+                                      setReplacementForm((prev) => ({ ...prev, equipmentId: equipment.id }));
+                                      setReplacementEquipmentOpen(false);
+                                    }}
+                                  >
+                                    <div className="flex flex-col">
+                                      <span className="text-sm font-medium">{equipment.name}</span>
+                                      {meta && <span className="text-xs text-muted-foreground">{meta}</span>}
+                                    </div>
+                                    <Check
+                                      className={cn(
+                                        "h-4 w-4 shrink-0 text-primary",
+                                        replacementForm.equipmentId === equipment.id ? "opacity-100" : "opacity-0",
+                                      )}
+                                    />
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div className="space-y-2">
                     <Label>ผู้ขาย/บริษัท</Label>
@@ -4718,15 +5076,83 @@ const StockInkToner = () => {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="replacement-department">แผนกที่ร้องขอ</Label>
-                    <Input
-                      id="replacement-department"
-                      value={replacementForm.department}
-                      onChange={(event) =>
-                        setReplacementForm((prev) => ({ ...prev, department: event.target.value }))
-                      }
-                      placeholder="เช่น แผนกบัญชี"
-                    />
+                    <Label>แผนกที่ร้องขอ</Label>
+                    <Popover open={isReplacementDepartmentOpen} onOpenChange={setReplacementDepartmentOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={isReplacementDepartmentOpen}
+                          className="w-full justify-between"
+                        >
+                          {selectedReplacementDepartment
+                            ? getDepartmentDisplayLabel(selectedReplacementDepartment)
+                            : replacementForm.departmentName
+                              ? replacementForm.departmentName
+                              : "เลือกหน่วยงาน"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[min(420px,90vw)] max-h-72 overflow-hidden p-0">
+                        <Command>
+                          <CommandInput placeholder="ค้นหาด้วยชื่อหรือรหัสหน่วยงาน..." />
+                          <CommandList>
+                            <CommandEmpty>ไม่พบหน่วยงาน</CommandEmpty>
+                            <CommandGroup>
+                              <CommandItem
+                                value="__none__"
+                                onSelect={() => {
+                                  setReplacementForm((prev) => ({
+                                    ...prev,
+                                    departmentId: "",
+                                    departmentName: "",
+                                  }));
+                                  setReplacementDepartmentOpen(false);
+                                }}
+                              >
+                                ไม่ระบุ
+                              </CommandItem>
+                              {activeDepartments.map((department) => (
+                                <CommandItem
+                                  key={department.id}
+                                  value={getDepartmentSearchValue(department)}
+                                  className="flex items-start justify-between gap-3"
+                                  onSelect={() => {
+                                    setReplacementForm((prev) => ({
+                                      ...prev,
+                                      departmentId: department.id,
+                                      departmentName: department.name,
+                                    }));
+                                    setReplacementDepartmentOpen(false);
+                                  }}
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-medium">
+                                      {getDepartmentDisplayLabel(department)}
+                                    </span>
+                                    {department.code && (
+                                      <span className="text-xs text-muted-foreground">รหัส {department.code}</span>
+                                    )}
+                                  </div>
+                                  <Check
+                                    className={cn(
+                                      "h-4 w-4 shrink-0 text-primary",
+                                      replacementForm.departmentId === department.id ? "opacity-100" : "opacity-0",
+                                    )}
+                                  />
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    {replacementForm.departmentName && !selectedReplacementDepartment && (
+                      <p className="text-xs text-muted-foreground">
+                        หน่วยงานเดิม: {replacementForm.departmentName} (ยังไม่เชื่อมกับข้อมูลปัจจุบัน)
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="replacement-requester">ผู้ร้องขอ</Label>
@@ -5812,6 +6238,19 @@ const StockInkToner = () => {
             </Card>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">สถานะอื่น ๆ :</span>
+            <Badge variant={getMaintenanceStatusVariant("not_worth_repair")}>
+              ไม่คุ้มค่าซ่อม {maintenanceNotWorthRepairCount}
+            </Badge>
+            <Badge variant={getMaintenanceStatusVariant("disposed")}>
+              จำหน่าย {maintenanceDisposedCount}
+            </Badge>
+            <Badge variant={getMaintenanceStatusVariant("pending_disposal")}>
+              รอจำหน่าย {maintenancePendingDisposalCount}
+            </Badge>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Card className="col-span-1">
               <CardHeader>
@@ -5896,6 +6335,44 @@ const StockInkToner = () => {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>หน่วยงานที่มีงานซ่อมบำรุง</CardTitle>
+              <CardDescription>จำนวนงานและค่าใช้จ่ายจำแนกตามหน่วยงาน</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {maintenanceDepartmentSummary.length === 0 ? (
+                <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                  ยังไม่มีข้อมูลหน่วยงานที่บันทึกการซ่อม
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 text-xs font-medium uppercase text-muted-foreground">
+                    <span>หน่วยงาน</span>
+                    <span className="text-center">จำนวนงาน</span>
+                    <span className="text-right">ค่าใช้จ่าย</span>
+                  </div>
+                  <div className="space-y-2">
+                    {maintenanceDepartmentSummary.slice(0, 8).map((item) => (
+                      <div
+                        key={item.department}
+                        className="grid grid-cols-3 items-center rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm"
+                      >
+                        <span className="truncate font-medium text-foreground" title={item.department}>
+                          {item.department}
+                        </span>
+                        <span className="text-center text-muted-foreground">{item.count.toLocaleString()}</span>
+                        <span className="text-right font-semibold text-primary">
+                          {formatCurrency(item.totalCost)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="space-y-4">
             {maintenanceRecords.length === 0 ? (
@@ -5993,7 +6470,9 @@ const StockInkToner = () => {
                         </div>
                         <div className="space-y-1 text-sm">
                           <p className="font-medium text-muted-foreground">แผนกที่เกี่ยวข้อง</p>
-                          <p className="text-foreground">{record.department || "-"}</p>
+                          <p className="text-foreground">
+                            {record.departmentName ?? record.department ?? "-"}
+                          </p>
                         </div>
                         {record.warrantyUntil && (
                           <div className="space-y-1 text-sm">
@@ -6181,6 +6660,44 @@ const StockInkToner = () => {
             </Card>
           </div>
 
+          <Card>
+            <CardHeader>
+              <CardTitle>หน่วยงานที่มีการซื้อใหม่/ทดแทน</CardTitle>
+              <CardDescription>จำนวนการขอซื้อและงบประมาณตามหน่วยงาน</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {replacementDepartmentSummary.length === 0 ? (
+                <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                  ยังไม่มีข้อมูลหน่วยงานที่ขอซื้อใหม่/ทดแทน
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 text-xs font-medium uppercase text-muted-foreground">
+                    <span>หน่วยงาน</span>
+                    <span className="text-center">จำนวนคำขอ</span>
+                    <span className="text-right">งบประมาณ</span>
+                  </div>
+                  <div className="space-y-2">
+                    {replacementDepartmentSummary.slice(0, 8).map((item) => (
+                      <div
+                        key={item.department}
+                        className="grid grid-cols-3 items-center rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm"
+                      >
+                        <span className="truncate font-medium text-foreground" title={item.department}>
+                          {item.department}
+                        </span>
+                        <span className="text-center text-muted-foreground">{item.count.toLocaleString()}</span>
+                        <span className="text-right font-semibold text-primary">
+                          {formatCurrency(item.totalCost)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="space-y-4">
             {replacementRecords.length === 0 ? (
               <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
@@ -6261,7 +6778,9 @@ const StockInkToner = () => {
                         </div>
                         <div className="space-y-1 text-sm">
                           <p className="font-medium text-muted-foreground">แผนกที่ร้องขอ</p>
-                          <p className="text-foreground">{record.department || "-"}</p>
+                          <p className="text-foreground">
+                            {record.departmentName ?? record.department ?? "-"}
+                          </p>
                         </div>
                         <div className="space-y-1 text-sm">
                           <p className="font-medium text-muted-foreground">ผู้ร้องขอ</p>

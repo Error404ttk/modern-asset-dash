@@ -1,0 +1,367 @@
+{
+  "version": 1,
+  "locales": ["th", "en"],
+  "categories": [
+    {
+      "id": "safety-security",
+      "title": {
+        "th": "ความปลอดภัยและการรักษาความปลอดภัย",
+        "en": "Safety & Security"
+      },
+      "description": {
+        "th": "ตรวจสอบการเข้าออกและสภาพอุปกรณ์รักษาความปลอดภัย",
+        "en": "Verify access controls and physical security conditions."
+      },
+      "items": [
+        {
+          "id": "access-control",
+          "type": "status",
+          "label": {
+            "th": "ระบบควบคุมการเข้าออกทำงานปกติ",
+            "en": "Access control system operational"
+          },
+          "description": {
+            "th": "ตรวจสอบเครื่องอ่านบัตร ประตู และบันทึกการเข้าใช้งาน",
+            "en": "Check reader devices, doors, and access logs."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "พบอาการผิดปกติเล็กน้อย โปรดติดตาม",
+              "en": "Minor anomaly detected, please monitor."
+            },
+            "fail": {
+              "th": "ระบบควบคุมการเข้าออกใช้การไม่ได้ ต้องซ่อมด่วน",
+              "en": "Access control system is unavailable; requires urgent fix."
+            }
+          }
+        },
+        {
+          "id": "cctv-health",
+          "type": "status",
+          "label": {
+            "th": "กล้องวงจรปิด/บันทึกทำงาน",
+            "en": "CCTV & recording online"
+          },
+          "description": {
+            "th": "ตรวจสอบภาพเรียลไทม์และสถานะการบันทึกย้อนหลัง",
+            "en": "Confirm live feeds and recording retention."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "กล้องบางตัวมีสัญญาณไม่เสถียร",
+              "en": "Some cameras show unstable feeds."
+            },
+            "fail": {
+              "th": "กล้อง/อุปกรณ์บันทึกไม่ทำงาน",
+              "en": "Cameras or recorder are offline."
+            }
+          }
+        },
+        {
+          "id": "door-and-cabinet",
+          "type": "status",
+          "label": {
+            "th": "ประตู/ตู้แร็คล็อกเรียบร้อย",
+            "en": "Doors and racks locked"
+          },
+          "description": {
+            "th": "ตรวจสอบกุญแจและสภาพล็อกประตู ตู้แร็ค",
+            "en": "Check door locks and rack lock conditions."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "พบการล็อกไม่แน่น โปรดตรวจสอบตอนถัดไป",
+              "en": "Lock not fully secured; re-check soon."
+            },
+            "fail": {
+              "th": "ลืมล็อก/กุญแจหาย ต้องแก้ไขทันที",
+              "en": "Door or rack left unlocked; fix immediately."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "environment",
+      "title": {
+        "th": "สภาพแวดล้อม",
+        "en": "Environment"
+      },
+      "description": {
+        "th": "บันทึกอุณหภูมิและความชื้นในห้องเซิร์ฟเวอร์",
+        "en": "Record server room ambient temperature and humidity."
+      },
+      "items": [
+        {
+          "id": "temperature",
+          "type": "measurement",
+          "unit": "celsius",
+          "expectedRange": {
+            "min": 20,
+            "max": 25
+          },
+          "label": {
+            "th": "อุณหภูมิ (°C)",
+            "en": "Temperature (°C)"
+          }
+        },
+        {
+          "id": "humidity",
+          "type": "measurement",
+          "unit": "percent",
+          "expectedRange": {
+            "min": 45,
+            "max": 60
+          },
+          "label": {
+            "th": "ความชื้นสัมพัทธ์ (%)",
+            "en": "Relative humidity (%)"
+          }
+        },
+        {
+          "id": "environment-note",
+          "type": "status",
+          "label": {
+            "th": "ระบบปรับอากาศและแจ้งเตือนสิ่งแวดล้อม",
+            "en": "Cooling & environment alerts"
+          },
+          "description": {
+            "th": "ตรวจสอบการทำงานของแอร์ ระบบแจ้งเตือน และเสียงเตือน",
+            "en": "Verify cooling units and any active environment alarms."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "มีสัญญาณเตือนอุณหภูมิ/ความชื้น โปรดเฝ้าระวัง",
+              "en": "Environment alarm triggered; monitor closely."
+            },
+            "fail": {
+              "th": "ระบบปรับอากาศขัดข้อง ต้องดำเนินการทันที",
+              "en": "Cooling failure observed; requires immediate action."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "power",
+      "title": {
+        "th": "ระบบไฟฟ้าและ UPS",
+        "en": "Power & UPS"
+      },
+      "description": {
+        "th": "ตรวจสอบโหลดไฟ UPS หม้อแปลง และระบบสำรองไฟ",
+        "en": "Review UPS load, power feeds, and redundancy."
+      },
+      "items": [
+        {
+          "id": "ups-status",
+          "type": "status",
+          "label": {
+            "th": "UPS หลักทำงานเป็นปกติ",
+            "en": "Primary UPS operational"
+          },
+          "description": {
+            "th": "ตรวจสอบแรงดัน ไฟฟ้าขาออก และโหมดการทำงาน",
+            "en": "Check voltage, output, and operating mode."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "พบการแจ้งเตือนเล็กน้อย (เช่น แบตเริ่มเสื่อม)",
+              "en": "Minor UPS warning (e.g., battery degradation)."
+            },
+            "fail": {
+              "th": "UPS ขัดข้องหรือใช้พลังงานสำรองอยู่",
+              "en": "UPS fault or running on backup power."
+            }
+          }
+        },
+        {
+          "id": "generator-ready",
+          "type": "status",
+          "label": {
+            "th": "เครื่องกำเนิดไฟฟ้าพร้อมใช้งาน",
+            "en": "Generator ready"
+          },
+          "description": {
+            "th": "ตรวจสอบน้ำมัน แบตเตอรี่ และการทดสอบล่าสุด",
+            "en": "Verify fuel, starter battery, and last test run."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "ควรกำหนดการทดสอบ/บำรุงรักษาเร็ว ๆ นี้",
+              "en": "Schedule maintenance/test soon."
+            },
+            "fail": {
+              "th": "เครื่องกำเนิดไฟฟ้าพร้อมใช้งานไม่ได้",
+              "en": "Generator cannot start or is unsafe."
+            }
+          }
+        },
+        {
+          "id": "power-anomaly",
+          "type": "status",
+          "label": {
+            "th": "ไม่มีสัญญาณไฟผิดปกติ",
+            "en": "No abnormal power events"
+          },
+          "description": {
+            "th": "ตรวจสอบระบบแจ้งเตือนไฟตก ไฟกระชาก หรือเบรกเกอร์",
+            "en": "Check logs for brownouts, surges, breaker trips."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "พบเหตุการณ์ผิดปกติเล็กน้อยในรอบ 24 ชม.",
+              "en": "Minor anomaly detected in last 24h."
+            },
+            "fail": {
+              "th": "เกิดไฟดับ/ไฟตก จำเป็นต้องสืบสวน",
+              "en": "Outage detected; investigate immediately."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "server-network",
+      "title": {
+        "th": "Server / Network",
+        "en": "Server / Network"
+      },
+      "description": {
+        "th": "ตรวจสอบทรัพยากรและบริการสำคัญ",
+        "en": "Inspect core services, resource usage, and monitoring."
+      },
+      "items": [
+        {
+          "id": "system-health",
+          "type": "status",
+          "label": {
+            "th": "ทรัพยากร CPU/Memory/Disk อยู่ในเกณฑ์",
+            "en": "CPU/Memory/Disk within threshold"
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "ค่าใช้งานสูงกว่าปกติ โปรดติดตามใกล้ชิด",
+              "en": "Resource usage elevated; monitor closely."
+            },
+            "fail": {
+              "th": "ทรัพยากรเต็มหรือระบบล่ม",
+              "en": "Resource exhaustion or system failure."
+            }
+          }
+        },
+        {
+          "id": "services-status",
+          "type": "status",
+          "label": {
+            "th": "บริการสำคัญทำงานครบ",
+            "en": "Critical services operational"
+          },
+          "description": {
+            "th": "ตรวจสอบ DB, Directory, Backup, Monitoring",
+            "en": "Check DB, directory, backup, monitoring endpoints."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "มีบริการบางส่วนขัดข้องชั่วคราว",
+              "en": "Partial outage detected."
+            },
+            "fail": {
+              "th": "บริการสำคัญล่ม ต้องแก้ไขทันที",
+              "en": "Critical service outage; immediate action required."
+            }
+          }
+        },
+        {
+          "id": "backup-status",
+          "type": "status",
+          "label": {
+            "th": "งานสำรองข้อมูลล่าสุดสำเร็จ",
+            "en": "Latest backup succeeded"
+          },
+          "description": {
+            "th": "ตรวจสอบเวลาและผลลัพธ์การสำรองข้อมูล",
+            "en": "Review last backup timestamp and result."
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "สำรองล่าสุดเสร็จล่าช้ากว่าปกติ",
+              "en": "Backup completed but later than expected."
+            },
+            "fail": {
+              "th": "การสำรองข้อมูลล้มเหลว",
+              "en": "Backup job failed."
+            }
+          }
+        },
+        {
+          "id": "monitoring-alerts",
+          "type": "status",
+          "label": {
+            "th": "ระบบ Monitoring ไม่มี Alert ค้าง",
+            "en": "Monitoring alert queue clear"
+          },
+          "noteTemplates": {
+            "warn": {
+              "th": "มี Alert ระดับ Medium ที่ยังไม่ปิด",
+              "en": "Unresolved medium alerts present."
+            },
+            "fail": {
+              "th": "มี Alert ระดับ Critical ที่ยังไม่ปิด",
+              "en": "Critical alerts unresolved."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "documentation",
+      "title": {
+        "th": "เอกสารและบันทึก",
+        "en": "Documentation & Records"
+      },
+      "description": {
+        "th": "ข้อมูลผู้ตรวจ วันที่/เวลา และหลักฐาน",
+        "en": "Inspector details, timestamp, and evidence."
+      },
+      "items": [
+        {
+          "id": "inspector-name",
+          "type": "text",
+          "label": {
+            "th": "ผู้ตรวจสอบ",
+            "en": "Inspector"
+          }
+        },
+        {
+          "id": "inspection-time",
+          "type": "datetime",
+          "label": {
+            "th": "วันที่และเวลา",
+            "en": "Date & time"
+          }
+        },
+        {
+          "id": "overall-note",
+          "type": "longtext",
+          "label": {
+            "th": "หมายเหตุเพิ่มเติม",
+            "en": "Additional notes"
+          }
+        },
+        {
+          "id": "evidence-photos",
+          "type": "photo",
+          "label": {
+            "th": "แนบรูปหลักฐาน",
+            "en": "Attach evidence photos"
+          },
+          "config": {
+            "min": 0,
+            "max": 5
+          }
+        }
+      ]
+    }
+  ]
+}

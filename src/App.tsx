@@ -18,8 +18,8 @@ import Scan from "./pages/Scan";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
+import ITRounds from "./pages/ITRounds";
 import NotFound from "./pages/NotFound";
-import StickerPrint from "./pages/StickerPrint";
 import StockInkToner from "./pages/StockInkToner";
 import { OrganizationSettingsProvider } from "@/hooks/useOrganizationSettings";
 
@@ -115,6 +115,16 @@ const App = () => (
                 }
               />
               <Route
+                path="/it-rounds"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <ITRounds />
+                    </AppLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/reports"
                 element={
                   <ProtectedRoute>
@@ -150,16 +160,6 @@ const App = () => (
                   <ProtectedRoute>
                     <AppLayout>
                       <Scan />
-                    </AppLayout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/sticker-print"
-                element={
-                  <ProtectedRoute>
-                    <AppLayout>
-                      <StickerPrint />
                     </AppLayout>
                   </ProtectedRoute>
                 }
