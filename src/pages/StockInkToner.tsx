@@ -77,6 +77,7 @@ import {
   Check,
   ChevronsUpDown,
   ExternalLink,
+  Search,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -566,6 +567,24 @@ const MAINTENANCE_STATUSES: MaintenanceStatus[] = [
   "pending_disposal",
 ];
 
+const MAINTENANCE_STATUS_CARD_STYLES: Record<MaintenanceStatus, string> = {
+  planned: "border-slate-200 bg-slate-50/80",
+  in_progress: "border-blue-200 bg-blue-50/80",
+  completed: "border-emerald-200 bg-emerald-50/80",
+  not_worth_repair: "border-orange-200 bg-orange-50/80",
+  disposed: "border-red-200 bg-red-50/80",
+  pending_disposal: "border-amber-200 bg-amber-50/80",
+};
+
+const MAINTENANCE_STATUS_TEXT_CLASSES: Record<MaintenanceStatus, string> = {
+  planned: "text-slate-600",
+  in_progress: "text-blue-600",
+  completed: "text-emerald-600",
+  not_worth_repair: "text-orange-600",
+  disposed: "text-red-600",
+  pending_disposal: "text-amber-600",
+};
+
 const REPLACEMENT_STATUS_LABELS: Record<ReplacementStatus, string> = {
   planned: "วางแผน",
   ordered: "สั่งซื้อแล้ว",
@@ -693,9 +712,9 @@ const StockInkToner = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [equipments, setEquipments] = useState<EquipmentSummary[]>([]);
-  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
-  const [replacementRecords, setReplacementRecords] = useState<ReplacementRecord[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
+const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
+const [replacementRecords, setReplacementRecords] = useState<ReplacementRecord[]>([]);
+const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
 
   const [productDialogMode, setProductDialogMode] = useState<"create" | "edit">("create");
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -863,22 +882,25 @@ const StockInkToner = () => {
     attachment: AttachmentMeta;
     receiptTitle: string;
   } | null>(null);
-  const [attachmentDeleteTarget, setAttachmentDeleteTarget] = useState<{
-    entityType: EntityType;
-    recordId: string;
-    recordTitle: string;
-    attachment: AttachmentMeta;
-  } | null>(null);
-  const [isDeletingAttachment, setDeletingAttachment] = useState(false);
-  const [attachmentViewer, setAttachmentViewer] = useState<{
-    entityType: EntityType;
-    recordId: string;
-    recordTitle: string;
-    attachments: AttachmentMeta[];
-  } | null>(null);
-  const [viewerAttachments, setViewerAttachments] = useState<AttachmentMeta[]>([]);
-  const [isAttachmentViewerLoading, setAttachmentViewerLoading] = useState(false);
-  const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+const [attachmentDeleteTarget, setAttachmentDeleteTarget] = useState<{
+  entityType: EntityType;
+  recordId: string;
+  recordTitle: string;
+  attachment: AttachmentMeta;
+} | null>(null);
+const [isDeletingAttachment, setDeletingAttachment] = useState(false);
+const [attachmentViewer, setAttachmentViewer] = useState<{
+  entityType: EntityType;
+  recordId: string;
+  recordTitle: string;
+  attachments: AttachmentMeta[];
+} | null>(null);
+const [viewerAttachments, setViewerAttachments] = useState<AttachmentMeta[]>([]);
+const [isAttachmentViewerLoading, setAttachmentViewerLoading] = useState(false);
+const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+const [maintenanceSearchTerm, setMaintenanceSearchTerm] = useState("");
+const [replacementSearchTerm, setReplacementSearchTerm] = useState("");
+const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<string | null>(null);
 
   const resetProductForm = useCallback(() => {
     setProductForm({ ...DEFAULT_PRODUCT_FORM });
@@ -2600,6 +2622,26 @@ const StockInkToner = () => {
     return usage;
   }, [products]);
 
+  const filteredMaintenanceRecords = useMemo(() => {
+    const keyword = maintenanceSearchTerm.trim().toLowerCase();
+    if (!keyword) return maintenanceRecords;
+    return maintenanceRecords.filter((record) => {
+      const document = record.documentNo?.toLowerCase() ?? "";
+      const dept = (record.departmentName ?? record.department ?? "").toLowerCase();
+      return document.includes(keyword) || dept.includes(keyword);
+    });
+  }, [maintenanceRecords, maintenanceSearchTerm]);
+
+  const filteredReplacementRecords = useMemo(() => {
+    const keyword = replacementSearchTerm.trim().toLowerCase();
+    if (!keyword) return replacementRecords;
+    return replacementRecords.filter((record) => {
+      const document = record.documentNo?.toLowerCase() ?? "";
+      const dept = (record.departmentName ?? record.department ?? "").toLowerCase();
+      return document.includes(keyword) || dept.includes(keyword);
+    });
+  }, [replacementRecords, replacementSearchTerm]);
+
   const filteredReceipts = useMemo(() => {
     return receipts.filter((receipt) => {
       if (filterSupplier !== "all" && receipt.supplierId !== filterSupplier) {
@@ -3620,6 +3662,52 @@ const StockInkToner = () => {
     if (!url) return;
     window.open(url, "_blank", "noopener,noreferrer");
   }, []);
+
+  const handleUpdateMaintenanceStatus = useCallback(
+    async (record: MaintenanceRecord, newStatus: MaintenanceStatus) => {
+      if (newStatus === record.status) {
+        toast({
+          title: "สถานะเดิมอยู่แล้ว",
+          description: `เอกสาร ${record.documentNo} อยู่ในสถานะ ${MAINTENANCE_STATUS_LABELS[newStatus]} อยู่แล้ว`,
+        });
+        return;
+      }
+
+      try {
+        setUpdatingMaintenanceStatusId(record.id);
+        const { error } = await inkDb
+          .from("equipment_maintenance")
+          .update({ status: newStatus })
+          .eq("id", record.id);
+        if (error) throw error;
+
+        const updatedDraft = convertMaintenanceToDraft({ ...record, status: newStatus });
+        await logMaintenanceChanges({
+          maintenanceId: record.id,
+          action: "UPDATE",
+          reason: `อัปเดตสถานะผ่านหน้าแดชบอร์ด`,
+          before: record,
+          after: updatedDraft,
+        });
+
+        toast({
+          title: "อัปเดตสถานะแล้ว",
+          description: `เอกสาร ${record.documentNo} เปลี่ยนเป็นสถานะ ${MAINTENANCE_STATUS_LABELS[newStatus]}`,
+        });
+
+        await fetchMaintenanceRecords();
+      } catch (error) {
+        toast({
+          title: "อัปเดตสถานะไม่สำเร็จ",
+          description: getErrorMessage(error),
+          variant: "destructive",
+        });
+      } finally {
+        setUpdatingMaintenanceStatusId(null);
+      }
+    },
+    [convertMaintenanceToDraft, fetchMaintenanceRecords, logMaintenanceChanges, toast],
+  );
 
   const transformFilesToAttachmentMeta = useCallback(async (files: File[]) => {
     const attachments = await Promise.all(
@@ -7389,16 +7477,43 @@ const StockInkToner = () => {
             </CardContent>
           </Card>
 
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="ค้นหาเลขที่เอกสารหรือหน่วยงาน"
+                value={maintenanceSearchTerm}
+                onChange={(event) => setMaintenanceSearchTerm(event.target.value)}
+              />
+            </div>
+            {maintenanceSearchTerm && (
+              <Button variant="ghost" size="sm" onClick={() => setMaintenanceSearchTerm("")}>
+                ล้างการค้นหา
+              </Button>
+            )}
+          </div>
+
           <div className="space-y-4">
             {maintenanceRecords.length === 0 ? (
               <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
                 ยังไม่มีการบันทึกการซ่อมบำรุง
               </div>
+            ) : filteredMaintenanceRecords.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                ไม่พบข้อมูลการซ่อมที่ตรงกับการค้นหา
+              </div>
             ) : (
-              maintenanceRecords.map((record) => {
+              filteredMaintenanceRecords.map((record) => {
                 const equipment = equipmentById.get(record.equipmentId);
                 return (
-                  <Card key={record.id}>
+                  <Card
+                    key={record.id}
+                    className={cn(
+                      "transition-shadow hover:shadow-md",
+                      MAINTENANCE_STATUS_CARD_STYLES[record.status],
+                    )}
+                  >
                     <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                       <div>
                         <CardTitle className="text-lg font-semibold text-foreground">
@@ -7432,6 +7547,52 @@ const StockInkToner = () => {
                         <Badge variant={getMaintenanceStatusVariant(record.status)}>
                           {MAINTENANCE_STATUS_LABELS[record.status]}
                         </Badge>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">อัปเดตสถานะ</span>
+                          <Select
+                            value={record.status}
+                            disabled={updatingMaintenanceStatusId === record.id}
+                            onValueChange={(value) =>
+                              handleUpdateMaintenanceStatus(record, value as MaintenanceStatus)
+                            }
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                "h-8 w-[12.5rem] justify-between text-sm font-medium",
+                                MAINTENANCE_STATUS_TEXT_CLASSES[record.status],
+                              )}
+                            >
+                              <SelectValue placeholder="เลือกสถานะ" />
+                              {updatingMaintenanceStatusId === record.id && (
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {MAINTENANCE_STATUSES.map((status) => (
+                                <SelectItem key={status} value={status}>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant={getMaintenanceStatusVariant(status)}>
+                                      {MAINTENANCE_STATUS_LABELS[status]}
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground">
+                                      {status === "planned"
+                                        ? "เริ่มต้นการซ่อม"
+                                        : status === "in_progress"
+                                          ? "กำลังดำเนินงาน"
+                                          : status === "completed"
+                                            ? "เสร็จสิ้นแล้ว"
+                                            : status === "not_worth_repair"
+                                              ? "ไม่คุ้มค่าซ่อม"
+                                              : status === "disposed"
+                                                ? "จำหน่ายแล้ว"
+                                                : "รอจำหน่าย"}
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <div className="text-xs text-muted-foreground">ค่าใช้จ่าย</div>
                         <div className="text-lg font-semibold text-primary">{formatCurrency(record.cost)}</div>
                         <div className="flex flex-wrap justify-end gap-2">
@@ -7732,13 +7893,34 @@ const StockInkToner = () => {
             </CardContent>
           </Card>
 
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="ค้นหาเลขที่เอกสารหรือหน่วยงาน"
+                value={replacementSearchTerm}
+                onChange={(event) => setReplacementSearchTerm(event.target.value)}
+              />
+            </div>
+            {replacementSearchTerm && (
+              <Button variant="ghost" size="sm" onClick={() => setReplacementSearchTerm("")}>
+                ล้างการค้นหา
+              </Button>
+            )}
+          </div>
+
           <div className="space-y-4">
             {replacementRecords.length === 0 ? (
               <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
                 ยังไม่มีการบันทึกซื้อใหม่/ทดแทน
               </div>
+            ) : filteredReplacementRecords.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                ไม่พบข้อมูลการซื้อใหม่/ทดแทนที่ตรงกับการค้นหา
+              </div>
             ) : (
-              replacementRecords.map((record) => {
+              filteredReplacementRecords.map((record) => {
                 const equipment = record.equipmentId ? equipmentById.get(record.equipmentId) : null;
                 return (
                   <Card key={record.id}>
