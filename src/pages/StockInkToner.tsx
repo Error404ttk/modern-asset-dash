@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -65,6 +65,7 @@ import {
   Package,
   Store,
   FileText,
+  Image as ImageIcon,
   Pencil,
   Trash2,
   Loader2,
@@ -341,6 +342,48 @@ const getDepartmentDisplayLabel = (department: DepartmentOption): string =>
 const getDepartmentSearchValue = (department: DepartmentOption): string =>
   [department.name, department.code].filter(Boolean).join(" ");
 
+const getAttachmentCacheKey = (attachment: AttachmentMeta): string =>
+  attachment.storagePath ?? `${attachment.name}-${attachment.size}`;
+
+const isImageAttachment = (attachment: AttachmentMeta): boolean =>
+  (attachment.type ?? "").toLowerCase().startsWith("image/");
+
+const MAX_IMAGE_ATTACHMENTS = 3;
+
+const isImageFile = (file: File): boolean => {
+  const mimeType = (file.type ?? "").toLowerCase();
+  if (mimeType.startsWith("image/")) {
+    return true;
+  }
+  return /\.(jpe?g|png|gif|bmp|webp|heic|heif)$/i.test(file.name);
+};
+
+const normalizeStoragePath = (rawPath: string | null | undefined, bucket: string): string | undefined => {
+  if (!rawPath) return undefined;
+  const value = rawPath.trim();
+  if (!value) return undefined;
+
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    try {
+      const url = new URL(value);
+      const parts = url.pathname.split("/").filter(Boolean);
+      const bucketIndex = parts.findIndex((part) => part === bucket);
+      if (bucketIndex !== -1 && bucketIndex + 1 < parts.length) {
+        return parts.slice(bucketIndex + 1).join("/");
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
+
+  if (value.startsWith(`${bucket}/`)) {
+    return value.slice(bucket.length + 1);
+  }
+
+  return value;
+};
+
 type MaintenanceDraft = {
   documentNo: string;
   equipmentId: string;
@@ -615,6 +658,11 @@ const StockInkToner = () => {
   const [isMaintenanceDepartmentOpen, setMaintenanceDepartmentOpen] = useState(false);
   const [isReplacementEquipmentOpen, setReplacementEquipmentOpen] = useState(false);
   const [isReplacementDepartmentOpen, setReplacementDepartmentOpen] = useState(false);
+  const [attachmentPreviewCache, setAttachmentPreviewCache] = useState<Record<string, string>>({});
+  const attachmentPreviewCacheRef = useRef(attachmentPreviewCache);
+  useEffect(() => {
+    attachmentPreviewCacheRef.current = attachmentPreviewCache;
+  }, [attachmentPreviewCache]);
 
   const [isAttachmentPreviewOpen, setAttachmentPreviewOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{
@@ -1128,6 +1176,39 @@ const StockInkToner = () => {
     [departments],
   );
   const equipmentById = useMemo(() => new Map(equipments.map((item) => [item.id, item])), [equipments]);
+
+  const ensureAttachmentPreview = useCallback(
+    async (attachment: AttachmentMeta): Promise<string | null> => {
+      if (attachment.previewUrl) {
+        return attachment.previewUrl;
+      }
+
+      const key = getAttachmentCacheKey(attachment);
+      const cached = attachmentPreviewCacheRef.current[key];
+      if (cached) {
+        return cached;
+      }
+
+      const bucket = attachment.storageBucket ?? RECEIPT_STORAGE_BUCKET;
+      const storagePath = normalizeStoragePath(attachment.storagePath, bucket);
+      if (!storagePath) {
+        return null;
+      }
+
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(storagePath, 300);
+      if (error) throw error;
+
+      const signedUrl = data?.signedUrl ?? null;
+      if (signedUrl) {
+        setAttachmentPreviewCache((prev) => ({ ...prev, [key]: signedUrl }));
+      }
+      return signedUrl;
+    },
+    [setAttachmentPreviewCache],
+  );
+
 
   const selectedMaintenanceEquipment = useMemo(
     () => equipments.find((equipment) => equipment.id === maintenanceForm.equipmentId) ?? null,
@@ -1746,15 +1827,15 @@ const StockInkToner = () => {
           inkType: (item.inventory?.model?.material_type ?? "ink") as InkType,
           sku: item.inventory?.sku ?? "",
         })),
-        attachments: (receipt.attachments ?? []).map((attachment: any) => ({
-          id: attachment.id,
-          name: attachment.file_name,
-          type: attachment.file_type ?? "",
-          size: Number(attachment.file_size ?? 0),
-          storagePath: attachment.storage_path ?? undefined,
-          storageBucket: RECEIPT_STORAGE_BUCKET,
-          uploadedAt: attachment.uploaded_at ?? undefined,
-        })),
+      attachments: (receipt.attachments ?? []).map((attachment: any) => ({
+        id: attachment.id,
+        name: attachment.file_name,
+        type: attachment.file_type ?? "",
+        size: Number(attachment.file_size ?? 0),
+        storagePath: normalizeStoragePath(attachment.storage_path, RECEIPT_STORAGE_BUCKET),
+        storageBucket: RECEIPT_STORAGE_BUCKET,
+        uploadedAt: attachment.uploaded_at ?? undefined,
+      })),
       }));
 
       setReceipts(mapped);
@@ -1796,7 +1877,7 @@ const StockInkToner = () => {
 
   const fetchMaintenanceRecords = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await inkDb
         .from("equipment_maintenance")
         .select(
           `
@@ -1878,7 +1959,7 @@ const StockInkToner = () => {
           name: attachment.file_name,
           type: attachment.file_type ?? "",
           size: Number(attachment.file_size ?? 0),
-          storagePath: attachment.storage_path ?? undefined,
+          storagePath: normalizeStoragePath(attachment.storage_path, MAINTENANCE_STORAGE_BUCKET),
           storageBucket: MAINTENANCE_STORAGE_BUCKET,
           uploadedAt: attachment.uploaded_at ?? undefined,
         })),
@@ -1896,7 +1977,7 @@ const StockInkToner = () => {
 
   const fetchReplacementRecords = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await inkDb
         .from("equipment_replacements")
         .select(
           `
@@ -1975,7 +2056,7 @@ const StockInkToner = () => {
           name: attachment.file_name,
           type: attachment.file_type ?? "",
           size: Number(attachment.file_size ?? 0),
-          storagePath: attachment.storage_path ?? undefined,
+          storagePath: normalizeStoragePath(attachment.storage_path, REPLACEMENT_STORAGE_BUCKET),
           storageBucket: REPLACEMENT_STORAGE_BUCKET,
           uploadedAt: attachment.uploaded_at ?? undefined,
         })),
@@ -2042,7 +2123,7 @@ const StockInkToner = () => {
           });
         if (uploadError) throw uploadError;
 
-        const { error: insertError } = await supabase.from("equipment_maintenance_attachments").insert({
+        const { error: insertError } = await inkDb.from("equipment_maintenance_attachments").insert({
           maintenance_id: maintenanceId,
           file_name: attachment.name,
           file_type: attachment.type,
@@ -2071,7 +2152,7 @@ const StockInkToner = () => {
           });
         if (uploadError) throw uploadError;
 
-        const { error: insertError } = await supabase.from("equipment_replacement_attachments").insert({
+        const { error: insertError } = await inkDb.from("equipment_replacement_attachments").insert({
           replacement_id: replacementId,
           file_name: attachment.name,
           file_type: attachment.type,
@@ -2135,7 +2216,7 @@ const StockInkToner = () => {
   const handleDeleteMaintenance = useCallback(
     async (record: MaintenanceRecord, reason: string) => {
       try {
-        const { error } = await supabase.from("equipment_maintenance").delete().eq("id", record.id);
+        const { error } = await inkDb.from("equipment_maintenance").delete().eq("id", record.id);
         if (error) throw error;
 
         await logMaintenanceChanges({
@@ -2166,7 +2247,7 @@ const StockInkToner = () => {
   const handleDeleteReplacement = useCallback(
     async (record: ReplacementRecord, reason: string) => {
       try {
-        const { error } = await supabase.from("equipment_replacements").delete().eq("id", record.id);
+        const { error } = await inkDb.from("equipment_replacements").delete().eq("id", record.id);
         if (error) throw error;
 
         await logReplacementChanges({
@@ -2995,7 +3076,33 @@ const StockInkToner = () => {
   };
 
   const handleMaintenanceAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
+    const selectedFiles = Array.from(event.target.files ?? []);
+    const imageFiles = selectedFiles.filter(isImageFile);
+    const limitedFiles = imageFiles.slice(0, MAX_IMAGE_ATTACHMENTS);
+
+    if (selectedFiles.length > 0 && imageFiles.length === 0) {
+      toast({
+        title: "ไม่สามารถแนบไฟล์ได้",
+        description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+        variant: "destructive",
+      });
+    } else {
+      if (imageFiles.length < selectedFiles.length) {
+        toast({
+          title: "ไฟล์บางรายการไม่ได้ถูกแนบ",
+          description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+          variant: "destructive",
+        });
+      }
+
+      if (imageFiles.length > MAX_IMAGE_ATTACHMENTS) {
+        toast({
+          title: `แนบรูปภาพได้สูงสุด ${MAX_IMAGE_ATTACHMENTS} ไฟล์`,
+          description: `ระบบจะเก็บเฉพาะ ${MAX_IMAGE_ATTACHMENTS} รูปภาพแรก`,
+        });
+      }
+    }
+
     setMaintenanceForm((prev) => {
       if (prev.attachments.length > 0) {
         releaseAttachmentCollection(prev.attachments);
@@ -3003,7 +3110,7 @@ const StockInkToner = () => {
 
       return {
         ...prev,
-        attachments: files.map((file) => ({
+        attachments: limitedFiles.map((file) => ({
           name: file.name,
           size: file.size,
           type: file.type,
@@ -3015,7 +3122,33 @@ const StockInkToner = () => {
   };
 
   const handleReplacementAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
+    const selectedFiles = Array.from(event.target.files ?? []);
+    const imageFiles = selectedFiles.filter(isImageFile);
+    const limitedFiles = imageFiles.slice(0, MAX_IMAGE_ATTACHMENTS);
+
+    if (selectedFiles.length > 0 && imageFiles.length === 0) {
+      toast({
+        title: "ไม่สามารถแนบไฟล์ได้",
+        description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+        variant: "destructive",
+      });
+    } else {
+      if (imageFiles.length < selectedFiles.length) {
+        toast({
+          title: "ไฟล์บางรายการไม่ได้ถูกแนบ",
+          description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+          variant: "destructive",
+        });
+      }
+
+      if (imageFiles.length > MAX_IMAGE_ATTACHMENTS) {
+        toast({
+          title: `แนบรูปภาพได้สูงสุด ${MAX_IMAGE_ATTACHMENTS} ไฟล์`,
+          description: `ระบบจะเก็บเฉพาะ ${MAX_IMAGE_ATTACHMENTS} รูปภาพแรก`,
+        });
+      }
+    }
+
     setReplacementForm((prev) => {
       if (prev.attachments.length > 0) {
         releaseAttachmentCollection(prev.attachments);
@@ -3023,7 +3156,7 @@ const StockInkToner = () => {
 
       return {
         ...prev,
-        attachments: files.map((file) => ({
+        attachments: limitedFiles.map((file) => ({
           name: file.name,
           size: file.size,
           type: file.type,
@@ -3644,7 +3777,7 @@ const StockInkToner = () => {
         }
 
         if (documentNo !== editingMaintenanceOriginal.documentNo) {
-          const { data: duplicate, error: duplicateError } = await supabase
+          const { data: duplicate, error: duplicateError } = await inkDb
             .from("equipment_maintenance")
             .select("id")
             .eq("document_no", documentNo)
@@ -3662,7 +3795,7 @@ const StockInkToner = () => {
           }
         }
 
-        const { error: updateError } = await supabase
+        const { error: updateError } = await inkDb
           .from("equipment_maintenance")
           .update({
             document_no: documentNo,
@@ -3722,7 +3855,7 @@ const StockInkToner = () => {
           description: `แก้ไขเอกสาร ${documentNo} เรียบร้อยแล้ว`,
         });
       } else {
-        const { data: existing, error: existingError } = await supabase
+        const { data: existing, error: existingError } = await inkDb
           .from("equipment_maintenance")
           .select("id")
           .eq("document_no", documentNo)
@@ -3738,7 +3871,7 @@ const StockInkToner = () => {
           return;
         }
 
-        const { data: inserted, error: insertError } = await supabase
+        const { data: inserted, error: insertError } = await inkDb
           .from("equipment_maintenance")
           .insert({
             document_no: documentNo,
@@ -3872,7 +4005,7 @@ const StockInkToner = () => {
         }
 
         if (documentNo !== editingReplacementOriginal.documentNo) {
-          const { data: duplicate, error: duplicateError } = await supabase
+          const { data: duplicate, error: duplicateError } = await inkDb
             .from("equipment_replacements")
             .select("id")
             .eq("document_no", documentNo)
@@ -3890,7 +4023,7 @@ const StockInkToner = () => {
           }
         }
 
-        const { error: updateError } = await supabase
+        const { error: updateError } = await inkDb
           .from("equipment_replacements")
           .update({
             document_no: documentNo,
@@ -3948,7 +4081,7 @@ const StockInkToner = () => {
           description: `แก้ไขเอกสาร ${documentNo} เรียบร้อยแล้ว`,
         });
       } else {
-        const { data: existing, error: existingError } = await supabase
+        const { data: existing, error: existingError } = await inkDb
           .from("equipment_replacements")
           .select("id")
           .eq("document_no", documentNo)
@@ -3964,7 +4097,7 @@ const StockInkToner = () => {
           return;
         }
 
-        const { data: inserted, error: insertError } = await supabase
+        const { data: inserted, error: insertError } = await inkDb
           .from("equipment_replacements")
           .insert({
             document_no: documentNo,
@@ -4258,35 +4391,21 @@ const StockInkToner = () => {
 
   const handlePreviewAttachment = async (receiptTitle: string, attachment: AttachmentMeta) => {
     try {
-      if (attachment.previewUrl) {
-        setPreviewAttachment({ attachment, receiptTitle });
-        setAttachmentPreviewOpen(true);
-        return;
-      }
-
-      if (attachment.storagePath) {
-        const bucket = attachment.storageBucket ?? RECEIPT_STORAGE_BUCKET;
-        const { data, error } = await supabase.storage
-          .from(bucket)
-          .createSignedUrl(attachment.storagePath, 120);
-        if (error) throw error;
-        const signedUrl = data?.signedUrl;
-        if (!signedUrl) {
-          throw new Error("ไม่สามารถสร้างลิงก์สำหรับไฟล์แนบได้");
-        }
-        setPreviewAttachment({
-          attachment: { ...attachment, previewUrl: signedUrl },
-          receiptTitle,
+      const previewUrl = await ensureAttachmentPreview(attachment);
+      if (!previewUrl) {
+        toast({
+          title: "ไม่พบไฟล์แนบ",
+          description: "ไฟล์นี้ยังไม่มีข้อมูลในระบบ กรุณาตรวจสอบอีกครั้ง",
+          variant: "destructive",
         });
-        setAttachmentPreviewOpen(true);
         return;
       }
 
-      toast({
-        title: "ไม่พบไฟล์แนบ",
-        description: "ไฟล์นี้ยังไม่มีข้อมูลในระบบ กรุณาตรวจสอบอีกครั้ง",
-        variant: "destructive",
+      setPreviewAttachment({
+        attachment: { ...attachment, previewUrl },
+        receiptTitle,
       });
+      setAttachmentPreviewOpen(true);
     } catch (error) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -4295,6 +4414,104 @@ const StockInkToner = () => {
       });
     }
   };
+
+  const renderAttachmentTabs = useCallback(
+    (recordTitle: string, attachments: AttachmentMeta[]): JSX.Element | null => {
+      if (!attachments.length) return null;
+
+      const imageAttachments = attachments.filter(isImageAttachment);
+      const documentAttachments = attachments.filter((attachment) => !isImageAttachment(attachment));
+      const defaultTab = imageAttachments.length ? "images" : "documents";
+      const hasImages = imageAttachments.length > 0;
+      const hasDocuments = documentAttachments.length > 0;
+
+      return (
+        <details className="rounded-lg border border-dashed bg-muted/30" open>
+          <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm font-semibold text-foreground">
+            <span>ไฟล์แนบ</span>
+            <span className="text-xs text-muted-foreground">
+              {attachments.length.toLocaleString()} รายการ
+            </span>
+          </summary>
+          <div className="space-y-3 px-3 pb-3 pt-1">
+            <Tabs defaultValue={defaultTab} className="w-full">
+              <TabsList
+                className={`grid w-full ${hasImages && hasDocuments ? "grid-cols-2" : "grid-cols-1"}`}
+              >
+                <TabsTrigger value="images" disabled={!hasImages}>
+                  รูปภาพ ({imageAttachments.length})
+                </TabsTrigger>
+                <TabsTrigger value="documents" disabled={!hasDocuments}>
+                  เอกสาร ({documentAttachments.length})
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="images" className="mt-3 space-y-2">
+                {hasImages ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {imageAttachments.map((attachment) => {
+                      const cacheKey = getAttachmentCacheKey(attachment);
+                      const previewUrl =
+                        attachment.previewUrl ?? attachmentPreviewCache[cacheKey] ?? undefined;
+                      return (
+                        <button
+                          key={attachment.id ?? `${recordTitle}-${attachment.name}`}
+                          type="button"
+                          className="group relative aspect-video w-full overflow-hidden rounded-md border border-border bg-muted/40 text-left shadow-sm transition hover:border-primary"
+                          onClick={() => handlePreviewAttachment(recordTitle, attachment)}
+                          onMouseEnter={() => {
+                            ensureAttachmentPreview(attachment).catch(() => undefined);
+                          }}
+                        >
+                          {previewUrl ? (
+                            <img
+                              src={previewUrl}
+                              alt={attachment.name}
+                              loading="lazy"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
+                              <ImageIcon className="h-6 w-6" />
+                            </div>
+                          )}
+                          <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-[11px] text-white line-clamp-2">
+                            {attachment.name}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">ไม่มีรูปภาพแนบ</p>
+                )}
+              </TabsContent>
+              <TabsContent value="documents" className="mt-3 space-y-2">
+                {hasDocuments ? (
+                  documentAttachments.map((attachment) => (
+                    <Button
+                      key={attachment.id ?? `${recordTitle}-${attachment.name}`}
+                      variant="outline"
+                      className="flex w-full items-center justify-between gap-2"
+                      onClick={() => handlePreviewAttachment(recordTitle, attachment)}
+                    >
+                      <span className="flex items-center gap-2 truncate text-sm font-medium">
+                        <FileText className="h-4 w-4" />
+                        <span className="truncate">{attachment.name}</span>
+                      </span>
+                      <span className="text-xs text-muted-foreground">{formatFileSize(attachment.size)}</span>
+                    </Button>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">ไม่มีเอกสารแนบ</p>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        </details>
+      );
+    },
+    [attachmentPreviewCache, ensureAttachmentPreview, handlePreviewAttachment],
+  );
 
   const sensitiveRequiresReason = sensitiveActionType === "edit" || sensitiveActionType === "delete";
   const sensitiveTitle =
@@ -4893,11 +5110,11 @@ const StockInkToner = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="maintenance-attachments">แนบไฟล์ (ใบเสนอราคา รูปภาพ ฯลฯ)</Label>
+                  <Label htmlFor="maintenance-attachments">แนบรูปภาพ (สูงสุด 3 ไฟล์)</Label>
                   <Input
                     id="maintenance-attachments"
                     type="file"
-                    accept="image/*,application/pdf"
+                    accept="image/*"
                     multiple
                     onChange={handleMaintenanceAttachments}
                   />
@@ -5248,11 +5465,11 @@ const StockInkToner = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="replacement-attachments">แนบไฟล์ (ใบเสนอราคา ใบอนุมัติ ฯลฯ)</Label>
+                  <Label htmlFor="replacement-attachments">แนบรูปภาพ (สูงสุด 3 ไฟล์)</Label>
                   <Input
                     id="replacement-attachments"
                     type="file"
-                    accept="image/*,application/pdf"
+                    accept="image/*"
                     multiple
                     onChange={handleReplacementAttachments}
                   />
@@ -6150,35 +6367,7 @@ const StockInkToner = () => {
                         </Table>
                       </div>
 
-                      {selectedReceipt.attachments.length > 0 && (
-                        <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm">
-                          <div className="font-medium text-foreground">ไฟล์แนบ</div>
-                          <ul className="mt-2 space-y-3">
-                            {selectedReceipt.attachments.map((attachment, index) => (
-                              <li
-                                key={`${selectedReceipt.id}-attachment-${index}`}
-                                className="flex flex-col gap-2 rounded-md border border-dashed bg-background/80 p-3 sm:flex-row sm:items-center sm:justify-between"
-                              >
-                                <div>
-                                  <p className="font-medium text-foreground">{attachment.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {attachment.type || "ไม่ระบุประเภท"} • {formatFileSize(attachment.size)}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handlePreviewAttachment(selectedReceipt.documentNo, attachment)}
-                                  >
-                                    ดูไฟล์
-                                  </Button>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                      {renderAttachmentTabs(selectedReceipt.documentNo, selectedReceipt.attachments)}
 
                       {selectedReceipt.note && (
                         <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
@@ -6500,33 +6689,7 @@ const StockInkToner = () => {
                         </div>
                       )}
 
-                      {record.attachments.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-foreground">ไฟล์แนบ</h4>
-                          <ul className="mt-2 space-y-2 text-sm">
-                            {record.attachments.map((attachment) => (
-                              <li
-                                key={attachment.id ?? `${record.id}-${attachment.name}`}
-                                className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3"
-                              >
-                                <div>
-                                  <p className="font-medium text-foreground">{attachment.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {attachment.type || "ไม่ทราบประเภท"} • {formatFileSize(attachment.size)}
-                                  </p>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handlePreviewAttachment(record.documentNo, attachment)}
-                                >
-                                  ดูไฟล์
-                                </Button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                      {renderAttachmentTabs(record.documentNo, record.attachments)}
                     </CardContent>
                   </Card>
                 );
@@ -6812,33 +6975,7 @@ const StockInkToner = () => {
                         </div>
                       )}
 
-                      {record.attachments.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold text-foreground">ไฟล์แนบ</h4>
-                          <ul className="mt-2 space-y-2 text-sm">
-                            {record.attachments.map((attachment) => (
-                              <li
-                                key={attachment.id ?? `${record.id}-${attachment.name}`}
-                                className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3"
-                              >
-                                <div>
-                                  <p className="font-medium text-foreground">{attachment.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {attachment.type || "ไม่ทราบประเภท"} • {formatFileSize(attachment.size)}
-                                  </p>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handlePreviewAttachment(record.documentNo, attachment)}
-                                >
-                                  ดูไฟล์
-                                </Button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                      {renderAttachmentTabs(record.documentNo, record.attachments)}
                     </CardContent>
                   </Card>
                 );
