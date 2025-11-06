@@ -679,18 +679,21 @@ export default function ITRounds() {
       return;
     }
 
-    if (!sensitivePassword.trim()) {
-      toast({
-        title: "ต้องยืนยันรหัสผ่าน",
-        description: "กรุณากรอกรหัสผ่านเพื่อยืนยันสิทธิ์",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
       setSensitiveLoading(true);
-      await verifySensitivePassword(sensitivePassword.trim());
+      const requiresPassword = action === "delete";
+      if (requiresPassword) {
+        if (!sensitivePassword.trim()) {
+          toast({
+            title: "ต้องยืนยันรหัสผ่าน",
+            description: "กรุณากรอกรหัสผ่านเพื่อยืนยันสิทธิ์",
+            variant: "destructive",
+          });
+          setSensitiveLoading(false);
+          return;
+        }
+        await verifySensitivePassword(sensitivePassword.trim());
+      }
 
       const trimmedReason =
         action === "history" ? "" : sensitiveReason.trim();
@@ -1155,10 +1158,10 @@ export default function ITRounds() {
             <DialogTitle>ยืนยันการดำเนินการ</DialogTitle>
             <DialogDescription>
               {sensitiveAction === "edit"
-                ? "กรุณายืนยันรหัสผ่านก่อนแก้ไขข้อมูล IT Round"
+                ? "กรุณาระบุเหตุผลประกอบการแก้ไข ระบบจะบันทึกไว้ในประวัติ"
                 : sensitiveAction === "delete"
                   ? "กรุณายืนยันรหัสผ่านก่อนลบข้อมูล IT Round"
-                  : "กรุณายืนยันรหัสผ่านก่อนดูประวัติการแก้ไข"}
+                  : "ระบุเหตุผลเพิ่มเติมได้หากต้องการ ระบบจะบันทึกไว้ในประวัติ"}
             </DialogDescription>
           </DialogHeader>
           {selectedRound && (
@@ -1182,20 +1185,22 @@ export default function ITRounds() {
             </div>
           )}
           <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password" className="text-sm">
-                รหัสผ่าน
-              </Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                autoComplete="current-password"
-                value={sensitivePassword}
-                onChange={(event) => setSensitivePassword(event.target.value)}
-                placeholder="กรอกรหัสผ่านของคุณ"
-                disabled={sensitiveLoading}
-              />
-            </div>
+            {sensitiveAction === "delete" && (
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password" className="text-sm">
+                  รหัสผ่าน
+                </Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={sensitivePassword}
+                  onChange={(event) => setSensitivePassword(event.target.value)}
+                  placeholder="กรอกรหัสผ่านของคุณ"
+                  disabled={sensitiveLoading}
+                />
+              </div>
+            )}
             {sensitiveAction !== "history" && (
               <div className="space-y-2">
                 <Label htmlFor="confirm-reason" className="text-sm">

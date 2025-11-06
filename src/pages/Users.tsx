@@ -190,11 +190,24 @@ const Users = () => {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const runQuery = (columns: string) =>
-        supabase
+      const runQuery = async (columns: string) => {
+        const ordered = await supabase
           .from("profiles")
           .select(columns)
           .order("created_at", { ascending: false });
+
+        if (ordered.error && ordered.error.code === "42703") {
+          // Column missing in ORDER BY, fall back to natural order
+          return supabase.from("profiles").select(columns);
+        }
+
+        if (ordered.error && ordered.error.code === "PGRST302") {
+          // PostgREST can't apply order without select alias; retry without ordering
+          return supabase.from("profiles").select(columns);
+        }
+
+        return ordered;
+      };
 
       const { data, error } = await runQuery("user_id, email, full_name, department, role, created_at");
 

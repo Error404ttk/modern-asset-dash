@@ -272,8 +272,19 @@ export default function Scan() {
                 </div>
               )}
               {permissionDenied && (
-                <div className="mt-3 flex items-center gap-2 text-destructive">
-                  <AlertTriangle className="h-4 w-4" /> ไม่ได้รับสิทธิ์ใช้งานกล้อง โปรดให้สิทธิ์แล้วกดรีเฟรช
+                <div className="mt-3 flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                  <div className="flex items-center gap-2 font-medium">
+                    <AlertTriangle className="h-4 w-4" />
+                    ไม่ได้รับสิทธิ์ใช้งานกล้อง
+                  </div>
+                  <p className="leading-relaxed text-destructive-foreground/90">
+                    กรุณาอนุญาตการใช้กล้องในหน้าต่างแจ้งเตือนของเบราว์เซอร์ หรือไปที่การตั้งค่าเว็บไซต์ &gt; อนุญาตกล้อง จากนั้นกด “รีเฟรช” เพื่อเริ่มสแกนอีกครั้ง
+                  </p>
+                  <div>
+                    <Button variant="outline" size="sm" onClick={startCamera}>
+                      ลองเปิดกล้องอีกครั้ง
+                    </Button>
+                  </div>
                 </div>
               )}
               {error && (

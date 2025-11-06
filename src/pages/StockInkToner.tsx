@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -65,6 +65,7 @@ import {
   Package,
   Store,
   FileText,
+  FilePlus,
   Image as ImageIcon,
   Pencil,
   Trash2,
@@ -75,6 +76,7 @@ import {
   ShoppingBag,
   Check,
   ChevronsUpDown,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -349,6 +351,123 @@ const isImageAttachment = (attachment: AttachmentMeta): boolean =>
   (attachment.type ?? "").toLowerCase().startsWith("image/");
 
 const MAX_IMAGE_ATTACHMENTS = 3;
+const PREFETCH_RECORD_LIMIT = 8;
+const PREFETCH_PREVIEW_PER_RECORD = 2;
+const MAX_ATTACHMENT_CACHE_ENTRIES = 60;
+const DEFAULT_FETCH_LIMIT = 120;
+const ATTACHMENT_FETCH_LIMIT = 6;
+const IMAGE_COMPRESSION_THRESHOLD = 350 * 1024;
+const MAX_IMAGE_DIMENSION = 1600;
+const TARGET_IMAGE_QUALITY = 0.82;
+
+const renameFileExtension = (name: string, newExtension: string): string => {
+  const sanitizedExtension = newExtension.startsWith(".") ? newExtension : `.${newExtension}`;
+  const lastDotIndex = name.lastIndexOf(".");
+  if (lastDotIndex === -1) {
+    return `${name}${sanitizedExtension}`;
+  }
+  return `${name.slice(0, lastDotIndex)}${sanitizedExtension}`;
+};
+
+const loadImageElement = (file: File): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = (event) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(event);
+    };
+    image.src = objectUrl;
+  });
+
+const shouldCompressImageFile = (file: File): boolean => {
+  if (!isImageFile(file)) return false;
+  if (file.type === "image/gif" || file.type === "image/svg+xml") return false;
+  return file.size >= IMAGE_COMPRESSION_THRESHOLD;
+};
+
+const compressImageFile = async (file: File): Promise<File> => {
+  if (!shouldCompressImageFile(file)) {
+    return file;
+  }
+
+  try {
+    let imageWidth = 0;
+    let imageHeight = 0;
+    let bitmap: ImageBitmap | null = null;
+    let imageElement: HTMLImageElement | null = null;
+
+    if ("createImageBitmap" in window) {
+      try {
+        bitmap = await createImageBitmap(file);
+        imageWidth = bitmap.width;
+        imageHeight = bitmap.height;
+      } catch {
+        bitmap = null;
+      }
+    }
+
+    if (!bitmap) {
+      imageElement = await loadImageElement(file);
+      imageWidth = imageElement.naturalWidth || imageElement.width;
+      imageHeight = imageElement.naturalHeight || imageElement.height;
+    }
+
+    if (!imageWidth || !imageHeight) {
+      if (bitmap) bitmap.close();
+      return file;
+    }
+
+    const largestSide = Math.max(imageWidth, imageHeight);
+    const scale = largestSide > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / largestSide : 1;
+    const targetWidth = Math.max(1, Math.round(imageWidth * scale));
+    const targetHeight = Math.max(1, Math.round(imageHeight * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      if (bitmap) bitmap.close();
+      return file;
+    }
+
+    if (bitmap) {
+      context.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+      bitmap.close();
+    } else if (imageElement) {
+      context.drawImage(imageElement, 0, 0, targetWidth, targetHeight);
+    }
+
+    const targetType = "image/webp";
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((result) => resolve(result), targetType, TARGET_IMAGE_QUALITY),
+    );
+
+    if (!blob) {
+      return file;
+    }
+
+    if (blob.size >= file.size * 0.95) {
+      return file;
+    }
+
+    const compressedFile = new File([blob], renameFileExtension(file.name, ".webp"), {
+      type: targetType,
+      lastModified: Date.now(),
+    });
+
+    return compressedFile;
+  } catch (error) {
+    console.warn("compressImageFile failed", error);
+    return file;
+  }
+};
 
 const isImageFile = (file: File): boolean => {
   const mimeType = (file.type ?? "").toLowerCase();
@@ -654,6 +773,16 @@ const StockInkToner = () => {
   const [editingReplacementId, setEditingReplacementId] = useState<string | null>(null);
   const [editingReplacementOriginal, setEditingReplacementOriginal] = useState<ReplacementRecord | null>(null);
   const [replacementChangeReason, setReplacementChangeReason] = useState("");
+  const [isMaintenanceDocumentDialogOpen, setMaintenanceDocumentDialogOpen] = useState(false);
+  const [maintenanceDocumentTarget, setMaintenanceDocumentTarget] = useState<MaintenanceRecord | null>(null);
+  const [maintenanceDocumentFile, setMaintenanceDocumentFile] = useState<AttachmentMeta | null>(null);
+  const [maintenanceDocumentImages, setMaintenanceDocumentImages] = useState<AttachmentMeta[]>([]);
+  const [isUploadingMaintenanceDocument, setUploadingMaintenanceDocument] = useState(false);
+  const [isReplacementDocumentDialogOpen, setReplacementDocumentDialogOpen] = useState(false);
+  const [replacementDocumentTarget, setReplacementDocumentTarget] = useState<ReplacementRecord | null>(null);
+  const [replacementDocumentFile, setReplacementDocumentFile] = useState<AttachmentMeta | null>(null);
+  const [replacementDocumentImages, setReplacementDocumentImages] = useState<AttachmentMeta[]>([]);
+  const [isUploadingReplacementDocument, setUploadingReplacementDocument] = useState(false);
   const [isMaintenanceEquipmentOpen, setMaintenanceEquipmentOpen] = useState(false);
   const [isMaintenanceDepartmentOpen, setMaintenanceDepartmentOpen] = useState(false);
   const [isReplacementEquipmentOpen, setReplacementEquipmentOpen] = useState(false);
@@ -664,11 +793,92 @@ const StockInkToner = () => {
     attachmentPreviewCacheRef.current = attachmentPreviewCache;
   }, [attachmentPreviewCache]);
 
+  const attachmentCacheOrderRef = useRef<string[]>([]);
+
+  const storeAttachmentPreview = useCallback((key: string, signedUrl: string) => {
+    setAttachmentPreviewCache((prev) => {
+      if (prev[key] === signedUrl) {
+        return prev;
+      }
+
+      const next = { ...prev, [key]: signedUrl };
+      const order = attachmentCacheOrderRef.current.filter((entry) => entry !== key);
+      order.push(key);
+      attachmentCacheOrderRef.current = order;
+
+      while (attachmentCacheOrderRef.current.length > MAX_ATTACHMENT_CACHE_ENTRIES) {
+        const removedKey = attachmentCacheOrderRef.current.shift();
+        if (removedKey) {
+          delete next[removedKey];
+        }
+      }
+
+      return next;
+    });
+  }, []);
+
+  const prefetchAttachmentPreviews = useCallback(
+    async (attachments: AttachmentMeta[]) => {
+      if (!attachments.length) return;
+
+      const uniqueTargets: AttachmentMeta[] = [];
+      const seenKeys = new Set<string>();
+
+      for (const attachment of attachments) {
+        if (!isImageAttachment(attachment)) continue;
+        const bucket = attachment.storageBucket ?? RECEIPT_STORAGE_BUCKET;
+        const path = normalizeStoragePath(attachment.storagePath, bucket);
+        if (!path) continue;
+
+        const key = getAttachmentCacheKey(attachment);
+        if (attachmentPreviewCacheRef.current[key] || seenKeys.has(key)) continue;
+
+        seenKeys.add(key);
+        uniqueTargets.push(attachment);
+      }
+
+      await Promise.all(
+        uniqueTargets.map(async (attachment) => {
+          try {
+            const bucket = attachment.storageBucket ?? RECEIPT_STORAGE_BUCKET;
+            const path = normalizeStoragePath(attachment.storagePath, bucket);
+            if (!path) return;
+
+            const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 1800);
+            if (!error && data?.signedUrl) {
+              const key = getAttachmentCacheKey(attachment);
+              storeAttachmentPreview(key, data.signedUrl);
+            }
+          } catch {
+            // Ignore prefetch errors; user can still fetch on demand.
+          }
+        }),
+      );
+    },
+    [storeAttachmentPreview, supabase],
+  );
+
   const [isAttachmentPreviewOpen, setAttachmentPreviewOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<{
     attachment: AttachmentMeta;
     receiptTitle: string;
   } | null>(null);
+  const [attachmentDeleteTarget, setAttachmentDeleteTarget] = useState<{
+    entityType: EntityType;
+    recordId: string;
+    recordTitle: string;
+    attachment: AttachmentMeta;
+  } | null>(null);
+  const [isDeletingAttachment, setDeletingAttachment] = useState(false);
+  const [attachmentViewer, setAttachmentViewer] = useState<{
+    entityType: EntityType;
+    recordId: string;
+    recordTitle: string;
+    attachments: AttachmentMeta[];
+  } | null>(null);
+  const [viewerAttachments, setViewerAttachments] = useState<AttachmentMeta[]>([]);
+  const [isAttachmentViewerLoading, setAttachmentViewerLoading] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
 
   const resetProductForm = useCallback(() => {
     setProductForm({ ...DEFAULT_PRODUCT_FORM });
@@ -1195,18 +1405,16 @@ const StockInkToner = () => {
         return null;
       }
 
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(storagePath, 300);
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 1800);
       if (error) throw error;
 
       const signedUrl = data?.signedUrl ?? null;
       if (signedUrl) {
-        setAttachmentPreviewCache((prev) => ({ ...prev, [key]: signedUrl }));
+        storeAttachmentPreview(key, signedUrl);
       }
       return signedUrl;
     },
-    [setAttachmentPreviewCache],
+    [storeAttachmentPreview, supabase],
   );
 
 
@@ -1801,7 +2009,9 @@ const StockInkToner = () => {
             )
           `,
         )
-        .order("received_at", { ascending: false });
+        .order("received_at", { ascending: false })
+        .limit(DEFAULT_FETCH_LIMIT)
+        .limit(ATTACHMENT_FETCH_LIMIT, { foreignTable: "ink_attachments" });
       if (error) throw error;
 
       const rows = (data ?? []) as any[];
@@ -1839,6 +2049,13 @@ const StockInkToner = () => {
       }));
 
       setReceipts(mapped);
+      startTransition(() => {
+        prefetchAttachmentPreviews(
+          mapped
+            .slice(0, PREFETCH_RECORD_LIMIT)
+            .flatMap((receipt) => receipt.attachments.slice(0, PREFETCH_PREVIEW_PER_RECORD)),
+        );
+      });
     } catch (error) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -1846,7 +2063,7 @@ const StockInkToner = () => {
         variant: "destructive",
       });
     }
-  }, []);
+  }, [prefetchAttachmentPreviews, toast]);
 
   const fetchEquipments = useCallback(async () => {
     try {
@@ -1927,7 +2144,9 @@ const StockInkToner = () => {
           `,
         )
         .order("sent_at", { ascending: false })
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(DEFAULT_FETCH_LIMIT)
+        .limit(ATTACHMENT_FETCH_LIMIT, { foreignTable: "equipment_maintenance_attachments" });
       if (error) throw error;
 
       const rows = (data ?? []) as any[];
@@ -1966,6 +2185,13 @@ const StockInkToner = () => {
       }));
 
       setMaintenanceRecords(mapped);
+      startTransition(() => {
+        prefetchAttachmentPreviews(
+          mapped
+            .slice(0, PREFETCH_RECORD_LIMIT)
+            .flatMap((record) => record.attachments.slice(0, PREFETCH_PREVIEW_PER_RECORD)),
+        );
+      });
     } catch (error) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -1973,7 +2199,7 @@ const StockInkToner = () => {
         variant: "destructive",
       });
     }
-  }, []);
+  }, [prefetchAttachmentPreviews, toast]);
 
   const fetchReplacementRecords = useCallback(async () => {
     try {
@@ -2026,7 +2252,9 @@ const StockInkToner = () => {
           `,
         )
         .order("order_date", { ascending: false })
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(DEFAULT_FETCH_LIMIT)
+        .limit(ATTACHMENT_FETCH_LIMIT, { foreignTable: "equipment_replacement_attachments" });
       if (error) throw error;
 
       const rows = (data ?? []) as any[];
@@ -2063,6 +2291,13 @@ const StockInkToner = () => {
       }));
 
       setReplacementRecords(mapped);
+      startTransition(() => {
+        prefetchAttachmentPreviews(
+          mapped
+            .slice(0, PREFETCH_RECORD_LIMIT)
+            .flatMap((record) => record.attachments.slice(0, PREFETCH_PREVIEW_PER_RECORD)),
+        );
+      });
     } catch (error) {
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -2070,10 +2305,12 @@ const StockInkToner = () => {
         variant: "destructive",
       });
     }
-  }, []);
+  }, [prefetchAttachmentPreviews, toast]);
 
   const uploadReceiptAttachments = useCallback(
     async (receiptId: string, attachments: AttachmentMeta[]) => {
+      const uploadedAttachments: AttachmentMeta[] = [];
+
       for (const attachment of attachments) {
         if (!attachment.file) {
           continue;
@@ -2102,13 +2339,27 @@ const StockInkToner = () => {
         if (insertError) {
           throw insertError;
         }
+
+        uploadedAttachments.push({
+          ...attachment,
+          storagePath: objectKey,
+          storageBucket: RECEIPT_STORAGE_BUCKET,
+        });
+      }
+
+      if (uploadedAttachments.length > 0) {
+        startTransition(() => {
+          prefetchAttachmentPreviews(uploadedAttachments);
+        });
       }
     },
-    [],
+    [prefetchAttachmentPreviews],
   );
 
   const uploadMaintenanceAttachments = useCallback(
     async (maintenanceId: string, attachments: AttachmentMeta[]) => {
+      const uploadedAttachments: AttachmentMeta[] = [];
+
       for (const attachment of attachments) {
         if (!attachment.file) continue;
 
@@ -2131,13 +2382,27 @@ const StockInkToner = () => {
           storage_path: objectKey,
         });
         if (insertError) throw insertError;
+
+        uploadedAttachments.push({
+          ...attachment,
+          storagePath: objectKey,
+          storageBucket: MAINTENANCE_STORAGE_BUCKET,
+        });
+      }
+
+      if (uploadedAttachments.length > 0) {
+        startTransition(() => {
+          prefetchAttachmentPreviews(uploadedAttachments);
+        });
       }
     },
-    [],
+    [prefetchAttachmentPreviews],
   );
 
   const uploadReplacementAttachments = useCallback(
     async (replacementId: string, attachments: AttachmentMeta[]) => {
+      const uploadedAttachments: AttachmentMeta[] = [];
+
       for (const attachment of attachments) {
         if (!attachment.file) continue;
 
@@ -2160,9 +2425,21 @@ const StockInkToner = () => {
           storage_path: objectKey,
         });
         if (insertError) throw insertError;
+
+        uploadedAttachments.push({
+          ...attachment,
+          storagePath: objectKey,
+          storageBucket: REPLACEMENT_STORAGE_BUCKET,
+        });
+      }
+
+      if (uploadedAttachments.length > 0) {
+        startTransition(() => {
+          prefetchAttachmentPreviews(uploadedAttachments);
+        });
       }
     },
-    [],
+    [prefetchAttachmentPreviews],
   );
 
   const handleDeleteReceipt = useCallback(
@@ -2278,27 +2555,28 @@ const StockInkToner = () => {
   useEffect(() => {
     let isMounted = true;
 
-    const loadData = async () => {
+    const loadInitial = async () => {
       setIsLoadingData(true);
       try {
-        await Promise.all([
-          fetchBrands(),
-          fetchSuppliers(),
-          fetchDepartments(),
+        await Promise.all([fetchBrands(), fetchSuppliers(), fetchDepartments()]);
+      } finally {
+        if (isMounted) {
+          setIsLoadingData(false);
+        }
+      }
+
+      startTransition(() => {
+        Promise.allSettled([
           fetchProducts(),
           fetchReceipts(),
           fetchEquipments(),
           fetchMaintenanceRecords(),
           fetchReplacementRecords(),
         ]);
-      } finally {
-        if (isMounted) {
-          setIsLoadingData(false);
-        }
-      }
+      });
     };
 
-    loadData();
+    loadInitial();
 
     return () => {
       isMounted = false;
@@ -3055,28 +3333,34 @@ const StockInkToner = () => {
     }));
   };
 
-  const handleReceiptAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReceiptAttachments = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
-    setReceiptForm((prev) => {
-      if (prev.attachments.length > 0) {
-        releaseAttachmentCollection(prev.attachments);
-      }
+    event.target.value = "";
 
-      return {
-        ...prev,
-        attachments: files.map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          file,
-          previewUrl: URL.createObjectURL(file),
-        })),
-      };
-    });
+    try {
+      const attachments = await transformFilesToAttachmentMeta(files);
+      setReceiptForm((prev) => {
+        if (prev.attachments.length > 0) {
+          releaseAttachmentCollection(prev.attachments);
+        }
+
+        return {
+          ...prev,
+          attachments,
+        };
+      });
+    } catch (error) {
+      toast({
+        title: "ประมวลผลไฟล์ไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleMaintenanceAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMaintenanceAttachments = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = "";
     const imageFiles = selectedFiles.filter(isImageFile);
     const limitedFiles = imageFiles.slice(0, MAX_IMAGE_ATTACHMENTS);
 
@@ -3103,26 +3387,30 @@ const StockInkToner = () => {
       }
     }
 
-    setMaintenanceForm((prev) => {
-      if (prev.attachments.length > 0) {
-        releaseAttachmentCollection(prev.attachments);
-      }
+    try {
+      const attachments = await transformFilesToAttachmentMeta(limitedFiles);
+      setMaintenanceForm((prev) => {
+        if (prev.attachments.length > 0) {
+          releaseAttachmentCollection(prev.attachments);
+        }
 
-      return {
-        ...prev,
-        attachments: limitedFiles.map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          file,
-          previewUrl: URL.createObjectURL(file),
-        })),
-      };
-    });
+        return {
+          ...prev,
+          attachments,
+        };
+      });
+    } catch (error) {
+      toast({
+        title: "ประมวลผลไฟล์ไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleReplacementAttachments = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReplacementAttachments = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = "";
     const imageFiles = selectedFiles.filter(isImageFile);
     const limitedFiles = imageFiles.slice(0, MAX_IMAGE_ATTACHMENTS);
 
@@ -3149,22 +3437,25 @@ const StockInkToner = () => {
       }
     }
 
-    setReplacementForm((prev) => {
-      if (prev.attachments.length > 0) {
-        releaseAttachmentCollection(prev.attachments);
-      }
+    try {
+      const attachments = await transformFilesToAttachmentMeta(limitedFiles);
+      setReplacementForm((prev) => {
+        if (prev.attachments.length > 0) {
+          releaseAttachmentCollection(prev.attachments);
+        }
 
-      return {
-        ...prev,
-        attachments: limitedFiles.map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          file,
-          previewUrl: URL.createObjectURL(file),
-        })),
-      };
-    });
+        return {
+          ...prev,
+          attachments,
+        };
+      });
+    } catch (error) {
+      toast({
+        title: "ประมวลผลไฟล์ไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
   };
 
   const handleEditProduct = (product: Product) => {
@@ -3325,6 +3616,31 @@ const StockInkToner = () => {
     setReceiptDialogOpen(true);
   };
 
+  const handleOpenAttachmentInNewTab = useCallback((url: string | undefined) => {
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const transformFilesToAttachmentMeta = useCallback(async (files: File[]) => {
+    const attachments = await Promise.all(
+      files.map(async (originalFile) => {
+        let processedFile = originalFile;
+        if (isImageFile(originalFile)) {
+          processedFile = await compressImageFile(originalFile);
+        }
+        return {
+          name: processedFile.name,
+          size: processedFile.size,
+          type: processedFile.type,
+          file: processedFile,
+          previewUrl: URL.createObjectURL(processedFile),
+        };
+      }),
+    );
+
+    return attachments;
+  }, []);
+
   const closeSensitiveDialog = useCallback(() => {
     setSensitiveDialogOpen(false);
     setSensitivePassword("");
@@ -3333,6 +3649,15 @@ const StockInkToner = () => {
     setSensitiveEntityType(null);
     setSensitiveEntityId(null);
   }, []);
+
+  const imageViewerAttachments = useMemo(
+    () => viewerAttachments.filter((attachment) => isImageAttachment(attachment)),
+    [viewerAttachments],
+  );
+  const documentViewerAttachments = useMemo(
+    () => viewerAttachments.filter((attachment) => !isImageAttachment(attachment)),
+    [viewerAttachments],
+  );
 
   const openSensitiveAction = useCallback(
     (entityType: EntityType, type: SensitiveActionType, id: string) => {
@@ -3345,6 +3670,336 @@ const StockInkToner = () => {
     },
     [],
   );
+
+  const resetMaintenanceDocumentSelection = useCallback(() => {
+    setMaintenanceDocumentFile((prev) => {
+      if (prev) {
+        releaseAttachmentPreview(prev);
+      }
+      return null;
+    });
+    setMaintenanceDocumentImages((prev) => {
+      if (prev.length > 0) {
+        releaseAttachmentCollection(prev);
+      }
+      return [];
+    });
+  }, []);
+
+  const openMaintenanceDocumentDialog = useCallback(
+    (record: MaintenanceRecord) => {
+      resetMaintenanceDocumentSelection();
+      setMaintenanceDocumentTarget(record);
+      setUploadingMaintenanceDocument(false);
+      setMaintenanceDocumentDialogOpen(true);
+    },
+    [resetMaintenanceDocumentSelection],
+  );
+
+  const closeMaintenanceDocumentDialog = useCallback(() => {
+    setMaintenanceDocumentDialogOpen(false);
+    setMaintenanceDocumentTarget(null);
+    setUploadingMaintenanceDocument(false);
+    resetMaintenanceDocumentSelection();
+  }, [resetMaintenanceDocumentSelection]);
+
+  const resetReplacementDocumentSelection = useCallback(() => {
+    setReplacementDocumentFile((prev) => {
+      if (prev) {
+        releaseAttachmentPreview(prev);
+      }
+      return null;
+    });
+    setReplacementDocumentImages((prev) => {
+      if (prev.length > 0) {
+        releaseAttachmentCollection(prev);
+      }
+      return [];
+    });
+  }, []);
+
+  const openReplacementDocumentDialog = useCallback(
+    (record: ReplacementRecord) => {
+      resetReplacementDocumentSelection();
+      setReplacementDocumentTarget(record);
+      setUploadingReplacementDocument(false);
+      setReplacementDocumentDialogOpen(true);
+    },
+    [resetReplacementDocumentSelection],
+  );
+
+  const closeReplacementDocumentDialog = useCallback(() => {
+    setReplacementDocumentDialogOpen(false);
+    setReplacementDocumentTarget(null);
+    setUploadingReplacementDocument(false);
+    resetReplacementDocumentSelection();
+  }, [resetReplacementDocumentSelection]);
+
+  const handleMaintenanceDocumentFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setMaintenanceDocumentFile((prev) => {
+      if (prev) {
+        releaseAttachmentPreview(prev);
+      }
+      return null;
+    });
+
+    if (!file) {
+      event.target.value = "";
+      return;
+    }
+
+    const lowerName = file.name.toLowerCase();
+    const isPdf = file.type === "application/pdf" || lowerName.endsWith(".pdf");
+    if (!isPdf) {
+      toast({
+        title: "รูปแบบไฟล์ไม่ถูกต้อง",
+        description: "รองรับเฉพาะไฟล์ PDF สำหรับเอกสาร",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    setMaintenanceDocumentFile({
+      name: file.name,
+      size: file.size,
+      type: file.type || "application/pdf",
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+    event.target.value = "";
+  };
+
+  const handleMaintenanceDocumentImagesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    setMaintenanceDocumentImages((prev) => {
+      if (prev.length > 0) {
+        releaseAttachmentCollection(prev);
+      }
+      return [];
+    });
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    const imageFiles = selectedFiles.filter(isImageFile);
+    if (selectedFiles.length > 0 && imageFiles.length === 0) {
+      toast({
+        title: "ไม่สามารถแนบไฟล์ได้",
+        description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (imageFiles.length < selectedFiles.length) {
+      toast({
+        title: "ไฟล์บางรายการไม่ได้ถูกแนบ",
+        description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+        variant: "destructive",
+      });
+    }
+
+    if (imageFiles.length > MAX_IMAGE_ATTACHMENTS) {
+      toast({
+        title: `แนบรูปภาพได้สูงสุด ${MAX_IMAGE_ATTACHMENTS} ไฟล์`,
+        description: `ระบบจะเก็บเฉพาะ ${MAX_IMAGE_ATTACHMENTS} รูปภาพแรก`,
+      });
+    }
+
+    const limitedFiles = imageFiles.slice(0, MAX_IMAGE_ATTACHMENTS);
+    try {
+      const attachments = await transformFilesToAttachmentMeta(limitedFiles);
+      setMaintenanceDocumentImages(attachments);
+    } catch (error) {
+      toast({
+        title: "ประมวลผลรูปภาพไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSubmitMaintenanceDocument = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!maintenanceDocumentTarget) {
+      toast({
+        title: "ไม่พบเอกสารซ่อม",
+        description: "กรุณาลองใหม่อีกครั้ง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const attachmentsToUpload: AttachmentMeta[] = [
+      ...(maintenanceDocumentFile ? [maintenanceDocumentFile] : []),
+      ...maintenanceDocumentImages,
+    ];
+
+    if (attachmentsToUpload.length === 0) {
+      toast({
+        title: "ยังไม่ได้เลือกไฟล์",
+        description: "กรุณาเลือกไฟล์เอกสาร PDF หรือรูปภาพอย่างน้อย 1 ไฟล์",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadingMaintenanceDocument(true);
+      await uploadMaintenanceAttachments(maintenanceDocumentTarget.id, attachmentsToUpload);
+      toast({
+        title: "เพิ่มเอกสารสำเร็จ",
+        description: `แนบไฟล์ให้เอกสาร ${maintenanceDocumentTarget.documentNo} เรียบร้อยแล้ว`,
+      });
+      await fetchMaintenanceRecords();
+      closeMaintenanceDocumentDialog();
+    } catch (error) {
+      toast({
+        title: "เพิ่มเอกสารไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingMaintenanceDocument(false);
+    }
+  };
+
+  const handleReplacementDocumentFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setReplacementDocumentFile((prev) => {
+      if (prev) {
+        releaseAttachmentPreview(prev);
+      }
+      return null;
+    });
+
+    if (!file) {
+      event.target.value = "";
+      return;
+    }
+
+    const lowerName = file.name.toLowerCase();
+    const isPdf = file.type === "application/pdf" || lowerName.endsWith(".pdf");
+    if (!isPdf) {
+      toast({
+        title: "รูปแบบไฟล์ไม่ถูกต้อง",
+        description: "รองรับเฉพาะไฟล์ PDF สำหรับเอกสาร",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    setReplacementDocumentFile({
+      name: file.name,
+      size: file.size,
+      type: file.type || "application/pdf",
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+    event.target.value = "";
+  };
+
+  const handleReplacementDocumentImagesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    setReplacementDocumentImages((prev) => {
+      if (prev.length > 0) {
+        releaseAttachmentCollection(prev);
+      }
+      return [];
+    });
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    const imageFiles = selectedFiles.filter(isImageFile);
+    if (selectedFiles.length > 0 && imageFiles.length === 0) {
+      toast({
+        title: "ไม่สามารถแนบไฟล์ได้",
+        description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (imageFiles.length < selectedFiles.length) {
+      toast({
+        title: "ไฟล์บางรายการไม่ได้ถูกแนบ",
+        description: "รองรับเฉพาะไฟล์รูปภาพเท่านั้น",
+        variant: "destructive",
+      });
+    }
+
+    if (imageFiles.length > MAX_IMAGE_ATTACHMENTS) {
+      toast({
+        title: `แนบรูปภาพได้สูงสุด ${MAX_IMAGE_ATTACHMENTS} ไฟล์`,
+        description: `ระบบจะเก็บเฉพาะ ${MAX_IMAGE_ATTACHMENTS} รูปภาพแรก`,
+      });
+    }
+
+    const limitedFiles = imageFiles.slice(0, MAX_IMAGE_ATTACHMENTS);
+    try {
+      const attachments = await transformFilesToAttachmentMeta(limitedFiles);
+      setReplacementDocumentImages(attachments);
+    } catch (error) {
+      toast({
+        title: "ประมวลผลรูปภาพไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSubmitReplacementDocument = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!replacementDocumentTarget) {
+      toast({
+        title: "ไม่พบเอกสารซื้อใหม่/ทดแทน",
+        description: "กรุณาลองใหม่อีกครั้ง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const attachmentsToUpload: AttachmentMeta[] = [
+      ...(replacementDocumentFile ? [replacementDocumentFile] : []),
+      ...replacementDocumentImages,
+    ];
+
+    if (attachmentsToUpload.length === 0) {
+      toast({
+        title: "ยังไม่ได้เลือกไฟล์",
+        description: "กรุณาเลือกไฟล์เอกสาร PDF หรือรูปภาพอย่างน้อย 1 ไฟล์",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadingReplacementDocument(true);
+      await uploadReplacementAttachments(replacementDocumentTarget.id, attachmentsToUpload);
+      toast({
+        title: "เพิ่มเอกสารสำเร็จ",
+        description: `แนบไฟล์ให้เอกสาร ${replacementDocumentTarget.documentNo} เรียบร้อยแล้ว`,
+      });
+      await fetchReplacementRecords();
+      closeReplacementDocumentDialog();
+    } catch (error) {
+      toast({
+        title: "เพิ่มเอกสารไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingReplacementDocument(false);
+    }
+  };
 
   const handleSensitiveActionSubmit = useCallback(async () => {
     if (!sensitiveActionType || !sensitiveEntityId || !sensitiveEntityType) {
@@ -3363,18 +4018,21 @@ const StockInkToner = () => {
       return;
     }
 
-    if (!sensitivePassword.trim()) {
-      toast({
-        title: "ต้องยืนยันรหัสผ่าน",
-        description: "กรุณากรอกรหัสผ่านเพื่อยืนยันสิทธิ์",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
       setSensitiveLoading(true);
-      await verifySensitivePassword(sensitivePassword);
+    const requiresPassword = sensitiveActionType === "delete";
+      if (requiresPassword) {
+        if (!sensitivePassword.trim()) {
+          toast({
+            title: "ต้องยืนยันรหัสผ่าน",
+            description: "กรุณากรอกรหัสผ่านเพื่อยืนยันสิทธิ์",
+            variant: "destructive",
+          });
+          setSensitiveLoading(false);
+          return;
+        }
+        await verifySensitivePassword(sensitivePassword);
+      }
 
       if (sensitiveEntityType === "receipt") {
         const target = receipts.find((item) => item.id === sensitiveEntityId);
@@ -4415,8 +5073,171 @@ const StockInkToner = () => {
     }
   };
 
+  const handleAttachmentManageClick = useCallback(
+    (entityType: EntityType, recordId: string, recordTitle: string, attachment: AttachmentMeta) => {
+      if (!attachment.id) {
+        toast({
+          title: "ไม่พบข้อมูลไฟล์",
+          description: "ไฟล์นี้ไม่สามารถจัดการได้ กรุณาลองใหม่อีกครั้ง",
+          variant: "destructive",
+        });
+        return;
+      }
+      setAttachmentDeleteTarget({ entityType, recordId, recordTitle, attachment });
+    },
+    [toast],
+  );
+
+  const openAttachmentViewer = useCallback(
+    (entityType: EntityType, recordId: string, recordTitle: string, attachments: AttachmentMeta[]) => {
+      if (!attachments.length) return;
+      setAttachmentViewer({ entityType, recordId, recordTitle, attachments });
+      setActiveImageIndex(null);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!attachmentViewer) {
+      setViewerAttachments([]);
+      setAttachmentViewerLoading(false);
+      setActiveImageIndex(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPreviews = async () => {
+      setAttachmentViewerLoading(true);
+      try {
+        const resolved = await Promise.all(
+          attachmentViewer.attachments.map(async (attachment) => {
+            try {
+              const previewUrl = await ensureAttachmentPreview(attachment);
+              if (previewUrl) {
+                return { ...attachment, previewUrl };
+              }
+            } catch (error) {
+              // If preview generation fails, fall back to existing data.
+              console.warn("Failed to preload attachment preview", error);
+            }
+            return attachment;
+          }),
+        );
+        if (!cancelled) {
+          setViewerAttachments(resolved);
+          const firstImageIndex = resolved.findIndex((attachment) => isImageAttachment(attachment));
+          setActiveImageIndex(firstImageIndex >= 0 ? firstImageIndex : null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast({
+            title: "ไม่สามารถแสดงไฟล์แนบได้",
+            description: getErrorMessage(error),
+            variant: "destructive",
+          });
+          setViewerAttachments(attachmentViewer.attachments);
+          const firstImageIndex = attachmentViewer.attachments.findIndex((attachment) =>
+            isImageAttachment(attachment),
+          );
+          setActiveImageIndex(firstImageIndex >= 0 ? firstImageIndex : null);
+        }
+      } finally {
+        if (!cancelled) {
+          setAttachmentViewerLoading(false);
+        }
+      }
+    };
+
+    loadPreviews();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentViewer, ensureAttachmentPreview, toast]);
+
+  const handleConfirmDeleteAttachment = useCallback(async () => {
+    if (!attachmentDeleteTarget) return;
+
+    const { entityType, attachment, recordTitle } = attachmentDeleteTarget;
+    if (!attachment.id) {
+      toast({
+        title: "ไม่พบข้อมูลไฟล์",
+        description: "ไฟล์นี้ไม่สามารถจัดการได้ กรุณาลองใหม่อีกครั้ง",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const tableName =
+      entityType === "receipt"
+        ? "ink_attachments"
+        : entityType === "maintenance"
+          ? "equipment_maintenance_attachments"
+          : "equipment_replacement_attachments";
+    const bucket =
+      attachment.storageBucket ??
+      (entityType === "receipt"
+        ? RECEIPT_STORAGE_BUCKET
+        : entityType === "maintenance"
+          ? MAINTENANCE_STORAGE_BUCKET
+          : REPLACEMENT_STORAGE_BUCKET);
+
+    try {
+      setDeletingAttachment(true);
+
+      if (attachment.storagePath) {
+        const { error: storageError } = await supabase.storage.from(bucket).remove([attachment.storagePath]);
+        if (storageError) throw storageError;
+      }
+
+      const { error: deleteRowError } = await inkDb.from(tableName).delete().eq("id", attachment.id);
+      if (deleteRowError) throw deleteRowError;
+
+      const cacheKey = getAttachmentCacheKey(attachment);
+      setAttachmentPreviewCache((prev) => {
+        if (!prev[cacheKey]) return prev;
+        const next = { ...prev };
+        delete next[cacheKey];
+        attachmentCacheOrderRef.current = attachmentCacheOrderRef.current.filter((key) => key !== cacheKey);
+        return next;
+      });
+      releaseAttachmentPreview(attachment);
+
+      if (entityType === "receipt") {
+        await Promise.all([fetchReceipts(), fetchProducts()]);
+      } else if (entityType === "maintenance") {
+        await fetchMaintenanceRecords();
+      } else {
+        await fetchReplacementRecords();
+      }
+
+      toast({
+        title: "ลบไฟล์แนบสำเร็จ",
+        description: `นำไฟล์ ${attachment.name} ออกจาก ${recordTitle} เรียบร้อยแล้ว`,
+      });
+      setAttachmentDeleteTarget(null);
+    } catch (error) {
+      toast({
+        title: "ลบไฟล์แนบไม่สำเร็จ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingAttachment(false);
+    }
+  }, [
+    attachmentDeleteTarget,
+    fetchMaintenanceRecords,
+    fetchReceipts,
+    fetchReplacementRecords,
+    fetchProducts,
+    inkDb,
+    supabase,
+    toast,
+  ]);
+
   const renderAttachmentTabs = useCallback(
-    (recordTitle: string, attachments: AttachmentMeta[]): JSX.Element | null => {
+    (entityType: EntityType, recordId: string, recordTitle: string, attachments: AttachmentMeta[]): JSX.Element | null => {
       if (!attachments.length) return null;
 
       const imageAttachments = attachments.filter(isImageAttachment);
@@ -4434,6 +5255,7 @@ const StockInkToner = () => {
             </span>
           </summary>
           <div className="space-y-3 px-3 pb-3 pt-1">
+            <p className="text-xs text-muted-foreground">คลิกไฟล์เพื่อดูหรือลบออกจากเอกสาร</p>
             <Tabs defaultValue={defaultTab} className="w-full">
               <TabsList
                 className={`grid w-full ${hasImages && hasDocuments ? "grid-cols-2" : "grid-cols-1"}`}
@@ -4457,7 +5279,7 @@ const StockInkToner = () => {
                           key={attachment.id ?? `${recordTitle}-${attachment.name}`}
                           type="button"
                           className="group relative aspect-video w-full overflow-hidden rounded-md border border-border bg-muted/40 text-left shadow-sm transition hover:border-primary"
-                          onClick={() => handlePreviewAttachment(recordTitle, attachment)}
+                          onClick={() => handleAttachmentManageClick(entityType, recordId, recordTitle, attachment)}
                           onMouseEnter={() => {
                             ensureAttachmentPreview(attachment).catch(() => undefined);
                           }}
@@ -4490,9 +5312,10 @@ const StockInkToner = () => {
                   documentAttachments.map((attachment) => (
                     <Button
                       key={attachment.id ?? `${recordTitle}-${attachment.name}`}
+                      type="button"
                       variant="outline"
                       className="flex w-full items-center justify-between gap-2"
-                      onClick={() => handlePreviewAttachment(recordTitle, attachment)}
+                      onClick={() => handleAttachmentManageClick(entityType, recordId, recordTitle, attachment)}
                     >
                       <span className="flex items-center gap-2 truncate text-sm font-medium">
                         <FileText className="h-4 w-4" />
@@ -4510,10 +5333,11 @@ const StockInkToner = () => {
         </details>
       );
     },
-    [attachmentPreviewCache, ensureAttachmentPreview, handlePreviewAttachment],
+    [attachmentPreviewCache, ensureAttachmentPreview, handleAttachmentManageClick],
   );
 
   const sensitiveRequiresReason = sensitiveActionType === "edit" || sensitiveActionType === "delete";
+  const sensitiveRequiresPassword = sensitiveActionType === "delete";
   const sensitiveTitle =
     sensitiveActionType === "edit"
       ? "ยืนยันการแก้ไขใบลงรับ"
@@ -4523,11 +5347,13 @@ const StockInkToner = () => {
           ? "ยืนยันการดูประวัติใบลงรับ"
           : "ยืนยันการดำเนินการสำคัญ";
   const sensitiveDescription =
-    sensitiveActionType === "history"
-      ? "เพื่อความปลอดภัย กรุณายืนยันรหัสผ่านก่อนดูประวัติการแก้ไข"
-      : sensitiveRequiresReason
-        ? "เพื่อความปลอดภัย กรุณายืนยันรหัสผ่านและระบุเหตุผลในการดำเนินการ"
-        : "กรุณายืนยันรหัสผ่านก่อนดำเนินการต่อ";
+    sensitiveActionType === "edit"
+      ? "กรุณาระบุเหตุผลประกอบการแก้ไข ระบบจะบันทึกไว้ในประวัติ"
+      : sensitiveActionType === "history"
+        ? "ระบุเหตุผลเพิ่มเติมได้หากต้องการ ระบบจะบันทึกไว้ในประวัติ"
+        : sensitiveRequiresReason
+          ? "เพื่อความปลอดภัย กรุณายืนยันรหัสผ่านและระบุเหตุผลในการดำเนินการ"
+          : "กรุณายืนยันรหัสผ่านก่อนดำเนินการต่อ";
   const sensitiveButtonLabel =
     sensitiveActionType === "edit"
       ? "ยืนยันการแก้ไข"
@@ -6367,7 +7193,7 @@ const StockInkToner = () => {
                         </Table>
                       </div>
 
-                      {renderAttachmentTabs(selectedReceipt.documentNo, selectedReceipt.attachments)}
+                      {renderAttachmentTabs("receipt", selectedReceipt.id, selectedReceipt.documentNo, selectedReceipt.attachments)}
 
                       {selectedReceipt.note && (
                         <div className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
@@ -6610,6 +7436,14 @@ const StockInkToner = () => {
                         <div className="text-lg font-semibold text-primary">{formatCurrency(record.cost)}</div>
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openMaintenanceDocumentDialog(record)}
+                          >
+                            <FilePlus className="mr-2 h-4 w-4" />
+                            เพิ่มเอกสาร
+                          </Button>
+                          <Button
                             variant="secondary"
                             size="sm"
                             onClick={() => openSensitiveAction("maintenance", "edit", record.id)}
@@ -6689,7 +7523,44 @@ const StockInkToner = () => {
                         </div>
                       )}
 
-                      {renderAttachmentTabs(record.documentNo, record.attachments)}
+                      {record.attachments.length > 0 && (
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {record.attachments.some((attachment) => !isImageAttachment(attachment)) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                openAttachmentViewer(
+                                  "maintenance",
+                                  record.id,
+                                  record.documentNo,
+                                  record.attachments.filter((attachment) => !isImageAttachment(attachment)),
+                                )
+                              }
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              ดูเอกสาร
+                            </Button>
+                          )}
+                          {record.attachments.some(isImageAttachment) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                openAttachmentViewer(
+                                  "maintenance",
+                                  record.id,
+                                  record.documentNo,
+                                  record.attachments.filter(isImageAttachment),
+                                )
+                              }
+                            >
+                              <ImageIcon className="mr-2 h-4 w-4" />
+                              ดูรูปภาพ
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
@@ -6907,6 +7778,14 @@ const StockInkToner = () => {
                         <div className="text-lg font-semibold text-primary">{formatCurrency(record.cost)}</div>
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openReplacementDocumentDialog(record)}
+                          >
+                            <FilePlus className="mr-2 h-4 w-4" />
+                            เพิ่มเอกสาร
+                          </Button>
+                          <Button
                             variant="secondary"
                             size="sm"
                             onClick={() => openSensitiveAction("replacement", "edit", record.id)}
@@ -6975,7 +7854,44 @@ const StockInkToner = () => {
                         </div>
                       )}
 
-                      {renderAttachmentTabs(record.documentNo, record.attachments)}
+                      {record.attachments.length > 0 && (
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {record.attachments.some((attachment) => !isImageAttachment(attachment)) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                openAttachmentViewer(
+                                  "replacement",
+                                  record.id,
+                                  record.documentNo,
+                                  record.attachments.filter((attachment) => !isImageAttachment(attachment)),
+                                )
+                              }
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              ดูเอกสาร
+                            </Button>
+                          )}
+                          {record.attachments.some(isImageAttachment) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                openAttachmentViewer(
+                                  "replacement",
+                                  record.id,
+                                  record.documentNo,
+                                  record.attachments.filter(isImageAttachment),
+                                )
+                              }
+                            >
+                              <ImageIcon className="mr-2 h-4 w-4" />
+                              ดูรูปภาพ
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
@@ -6985,6 +7901,460 @@ const StockInkToner = () => {
         </TabsContent>
 
       </Tabs>
+
+      <Dialog
+        open={isMaintenanceDocumentDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeMaintenanceDocumentDialog();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>เพิ่มเอกสารงานซ่อม</DialogTitle>
+            <DialogDescription>
+              {maintenanceDocumentTarget
+                ? `แนบไฟล์เพิ่มเติมให้เอกสาร ${maintenanceDocumentTarget.documentNo}`
+                : "เลือกเอกสารงานซ่อมที่ต้องการเพิ่มไฟล์แนบ"}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleSubmitMaintenanceDocument}>
+            <div className="space-y-2">
+              <Label htmlFor="maintenance-document-file">ไฟล์เอกสาร (PDF) (ไม่บังคับ)</Label>
+              <Input
+                id="maintenance-document-file"
+                type="file"
+                accept="application/pdf"
+                onChange={handleMaintenanceDocumentFileChange}
+                disabled={isUploadingMaintenanceDocument}
+              />
+              {maintenanceDocumentFile && (
+                <p className="text-xs text-muted-foreground">ไฟล์: {maintenanceDocumentFile.name}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maintenance-document-images">แนบรูปภาพ (สูงสุด 3 ไฟล์)</Label>
+              <Input
+                id="maintenance-document-images"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleMaintenanceDocumentImagesChange}
+                disabled={isUploadingMaintenanceDocument}
+              />
+              {maintenanceDocumentImages.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  รูปภาพ:
+                  {maintenanceDocumentImages.map((file) => ` ${file.name}`).join(", ")}
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              สามารถแนบไฟล์เอกสาร PDF 1 ไฟล์ รูปภาพไม่เกิน {MAX_IMAGE_ATTACHMENTS} รูป หรือเลือกเฉพาะประเภทใดประเภทหนึ่งได้
+            </p>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeMaintenanceDocumentDialog}
+                disabled={isUploadingMaintenanceDocument}
+              >
+                ยกเลิก
+              </Button>
+              <Button type="submit" disabled={isUploadingMaintenanceDocument}>
+                {isUploadingMaintenanceDocument ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    กำลังบันทึก...
+                  </>
+                ) : (
+                  "บันทึกเอกสาร"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isReplacementDocumentDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeReplacementDocumentDialog();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>เพิ่มเอกสารซื้อใหม่/ทดแทน</DialogTitle>
+            <DialogDescription>
+              {replacementDocumentTarget
+                ? `แนบไฟล์เพิ่มเติมให้เอกสาร ${replacementDocumentTarget.documentNo}`
+                : "เลือกเอกสารซื้อใหม่/ทดแทนที่ต้องการเพิ่มไฟล์แนบ"}
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleSubmitReplacementDocument}>
+            <div className="space-y-2">
+              <Label htmlFor="replacement-document-file">ไฟล์เอกสาร (PDF) (ไม่บังคับ)</Label>
+              <Input
+                id="replacement-document-file"
+                type="file"
+                accept="application/pdf"
+                onChange={handleReplacementDocumentFileChange}
+                disabled={isUploadingReplacementDocument}
+              />
+              {replacementDocumentFile && (
+                <p className="text-xs text-muted-foreground">ไฟล์: {replacementDocumentFile.name}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="replacement-document-images">แนบรูปภาพ (สูงสุด 3 ไฟล์)</Label>
+              <Input
+                id="replacement-document-images"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleReplacementDocumentImagesChange}
+                disabled={isUploadingReplacementDocument}
+              />
+              {replacementDocumentImages.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  รูปภาพ:
+                  {replacementDocumentImages.map((file) => ` ${file.name}`).join(", ")}
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              สามารถแนบไฟล์เอกสาร PDF 1 ไฟล์ รูปภาพไม่เกิน {MAX_IMAGE_ATTACHMENTS} รูป หรือเลือกเฉพาะประเภทใดประเภทหนึ่งได้
+            </p>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeReplacementDocumentDialog}
+                disabled={isUploadingReplacementDocument}
+              >
+                ยกเลิก
+              </Button>
+              <Button type="submit" disabled={isUploadingReplacementDocument}>
+                {isUploadingReplacementDocument ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    กำลังบันทึก...
+                  </>
+                ) : (
+                  "บันทึกเอกสาร"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(attachmentViewer)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAttachmentViewer(null);
+            setViewerAttachments([]);
+            setActiveImageIndex(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[85vh] w-full max-w-4xl overflow-hidden bg-background p-0 sm:rounded-xl">
+          {attachmentViewer && (
+            <div className="grid gap-6 p-6 sm:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {attachmentViewer.recordTitle} • ไฟล์แนบ
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {imageViewerAttachments.length > 0 && documentViewerAttachments.length === 0
+                      ? "รูปภาพที่แนบไว้ทั้งหมด"
+                      : documentViewerAttachments.length > 0 && imageViewerAttachments.length === 0
+                        ? "เอกสารที่แนบไว้ทั้งหมด"
+                        : "รายการไฟล์แนบทั้งหมด"}
+                  </p>
+                </div>
+
+                <div className="relative flex min-h-[360px] items-center justify-center rounded-lg border bg-muted/10">
+                  {isAttachmentViewerLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      กำลังโหลดไฟล์แนบ...
+                    </div>
+                  ) : imageViewerAttachments.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">ไม่มีรูปภาพที่เลือก</div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="group absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/80 p-2 shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
+                        onClick={() => setActiveImageIndex((index) => (index === null ? null : Math.max(0, index - 1)))}
+                        disabled={activeImageIndex === null || activeImageIndex <= 0}
+                      >
+                        <span className="sr-only">ภาพก่อนหน้า</span>
+                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path d="M15 18l-6-6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="group absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/80 p-2 shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
+                        onClick={() =>
+                          setActiveImageIndex((index) =>
+                            index === null
+                              ? null
+                              : Math.min(imageViewerAttachments.length - 1, index + 1),
+                          )
+                        }
+                        disabled={
+                          activeImageIndex === null || activeImageIndex >= imageViewerAttachments.length - 1
+                        }
+                      >
+                        <span className="sr-only">ภาพถัดไป</span>
+                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path d="M9 18l6-6-6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+
+                      {activeImageIndex !== null && imageViewerAttachments[activeImageIndex] ? (
+                        <div className="flex flex-col items-center gap-3">
+                          <img
+                            src={imageViewerAttachments[activeImageIndex].previewUrl}
+                            alt={imageViewerAttachments[activeImageIndex].name}
+                            className="max-h-[60vh] w-auto max-w-full rounded-lg object-contain"
+                          />
+                          <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                            <span>{imageViewerAttachments[activeImageIndex].name}</span>
+                            <span>{formatFileSize(imageViewerAttachments[activeImageIndex].size)}</span>
+                            {imageViewerAttachments[activeImageIndex].uploadedAt && (
+                              <span>
+                                {new Date(imageViewerAttachments[activeImageIndex].uploadedAt!).toLocaleDateString(
+                                  "th-TH",
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">เลือกภาพจากแถบด้านขวาเพื่อแสดง</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <ScrollArea className="h-[70vh] pr-2">
+                <div className="space-y-4">
+                  {imageViewerAttachments.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">
+                        รูปภาพ ({imageViewerAttachments.length})
+                      </p>
+                      <div className="space-y-2">
+                        {imageViewerAttachments.map((attachment, index) => (
+                          <button
+                            key={attachment.id ?? `${attachmentViewer.recordId}-image-${index}`}
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-3 rounded-lg border bg-muted/10 p-2 text-left transition hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary",
+                              activeImageIndex === index && "border-primary bg-primary/5",
+                            )}
+                            onClick={() => setActiveImageIndex(index)}
+                          >
+                            <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border bg-background">
+                              {attachment.previewUrl ? (
+                                <img
+                                  src={attachment.previewUrl}
+                                  alt={attachment.name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                                  <ImageIcon className="h-4 w-4" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-foreground">{attachment.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatFileSize(attachment.size)}
+                                {attachment.uploadedAt
+                                  ? ` • ${new Date(attachment.uploadedAt).toLocaleDateString("th-TH")}`
+                                  : ""}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                disabled={!attachment.previewUrl}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleOpenAttachmentInNewTab(attachment.previewUrl);
+                                }}
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleAttachmentManageClick(
+                                    attachmentViewer.entityType,
+                                    attachmentViewer.recordId,
+                                    attachmentViewer.recordTitle,
+                                    attachment,
+                                  );
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {documentViewerAttachments.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">
+                        เอกสาร ({documentViewerAttachments.length})
+                      </p>
+                      <div className="space-y-2">
+                        {documentViewerAttachments.map((attachment) => (
+                          <div
+                            key={attachment.id ?? `${attachmentViewer.recordId}-${attachment.name}`}
+                            className="flex flex-col gap-3 rounded-lg border bg-muted/15 p-3 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                                <FileText className="h-4 w-4" />
+                                <span className="truncate">{attachment.name}</span>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatFileSize(attachment.size)}
+                                {attachment.uploadedAt
+                                  ? ` • ${new Date(attachment.uploadedAt).toLocaleDateString("th-TH")}`
+                                  : ""}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!attachment.previewUrl}
+                                onClick={() => handleOpenAttachmentInNewTab(attachment.previewUrl)}
+                              >
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                เปิดเอกสาร
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() =>
+                                  handleAttachmentManageClick(
+                                    attachmentViewer.entityType,
+                                    attachmentViewer.recordId,
+                                    attachmentViewer.recordTitle,
+                                    attachment,
+                                  )
+                                }
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                ลบไฟล์
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(attachmentDeleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingAttachment) {
+            setAttachmentDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {attachmentDeleteTarget ? `ไฟล์แนบ • ${attachmentDeleteTarget.recordTitle}` : "ไฟล์แนบ"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              เลือก "ดูไฟล์" เพื่อเปิด หรือ "ลบไฟล์" เพื่อเอาออกจากเอกสาร
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {attachmentDeleteTarget && (
+            <div className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+              <div className="font-medium text-foreground">{attachmentDeleteTarget.attachment.name}</div>
+              <div>ขนาดไฟล์: {formatFileSize(attachmentDeleteTarget.attachment.size)}</div>
+              <div>
+                ประเภทไฟล์:{" "}
+                {attachmentDeleteTarget.attachment.type
+                  ? attachmentDeleteTarget.attachment.type.toUpperCase()
+                  : "ไม่ทราบ"}
+              </div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!attachmentDeleteTarget) return;
+                handlePreviewAttachment(
+                  attachmentDeleteTarget.recordTitle,
+                  attachmentDeleteTarget.attachment,
+                );
+              }}
+              disabled={!attachmentDeleteTarget || isDeletingAttachment}
+            >
+              ดูไฟล์
+            </Button>
+            <AlertDialogCancel
+              onClick={() => {
+                if (!isDeletingAttachment) {
+                  setAttachmentDeleteTarget(null);
+                }
+              }}
+              disabled={isDeletingAttachment}
+            >
+              ยกเลิก
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteAttachment}
+              disabled={isDeletingAttachment}
+            >
+              {isDeletingAttachment ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังลบ...
+                </>
+              ) : (
+                "ลบไฟล์"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={sensitiveDialogOpen}
@@ -7002,18 +8372,20 @@ const StockInkToner = () => {
             <DialogDescription>{sensitiveDescription}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="sensitive-password">รหัสผ่าน *</Label>
-              <Input
-                id="sensitive-password"
-                type="password"
-                autoComplete="current-password"
-                value={sensitivePassword}
-                onChange={(event) => setSensitivePassword(event.target.value)}
-                placeholder="กรอกรหัสผ่านเพื่อยืนยัน"
-                required
-              />
-            </div>
+            {sensitiveRequiresPassword && (
+              <div className="space-y-2">
+                <Label htmlFor="sensitive-password">รหัสผ่าน *</Label>
+                <Input
+                  id="sensitive-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={sensitivePassword}
+                  onChange={(event) => setSensitivePassword(event.target.value)}
+                  placeholder="กรอกรหัสผ่านเพื่อยืนยัน"
+                  required
+                />
+              </div>
+            )}
             {sensitiveRequiresReason && (
               <div className="space-y-2">
                 <Label htmlFor="sensitive-reason">เหตุผล *</Label>
