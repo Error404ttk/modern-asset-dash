@@ -8064,7 +8064,14 @@ const StockInkToner = () => {
       >
         <DialogContent className="max-h-[85vh] w-full max-w-4xl overflow-hidden bg-background p-0 sm:rounded-xl">
           {attachmentViewer && (
-            <div className="grid gap-6 p-6 sm:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
+            <div
+              className={cn(
+                "p-6",
+                imageViewerAttachments.length > 0
+                  ? "grid gap-6 sm:grid-cols-[minmax(0,2fr),minmax(0,1fr)]"
+                  : "space-y-6",
+              )}
+            >
               <div className="space-y-4">
                 <div className="space-y-2">
                   <h3 className="text-lg font-semibold text-foreground">
@@ -8079,76 +8086,82 @@ const StockInkToner = () => {
                   </p>
                 </div>
 
-                <div className="relative flex min-h-[360px] items-center justify-center rounded-lg border bg-muted/10">
-                  {isAttachmentViewerLoading ? (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      กำลังโหลดไฟล์แนบ...
-                    </div>
-                  ) : imageViewerAttachments.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">ไม่มีรูปภาพที่เลือก</div>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="group absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/80 p-2 shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
-                        onClick={() => setActiveImageIndex((index) => (index === null ? null : Math.max(0, index - 1)))}
-                        disabled={activeImageIndex === null || activeImageIndex <= 0}
-                      >
-                        <span className="sr-only">ภาพก่อนหน้า</span>
-                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <path d="M15 18l-6-6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
+                {imageViewerAttachments.length > 0 && (
+                  <div className="relative flex min-h-[360px] items-center justify-center rounded-lg border bg-muted/10">
+                    {isAttachmentViewerLoading ? (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        กำลังโหลดไฟล์แนบ...
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="group absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/80 p-2 shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
+                          onClick={() =>
+                            setActiveImageIndex((index) => (index === null ? null : Math.max(0, index - 1)))
+                          }
+                          disabled={activeImageIndex === null || activeImageIndex <= 0}
+                        >
+                          <span className="sr-only">ภาพก่อนหน้า</span>
+                          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M15 18l-6-6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
 
-                      <button
-                        type="button"
-                        className="group absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/80 p-2 shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
-                        onClick={() =>
-                          setActiveImageIndex((index) =>
-                            index === null
-                              ? null
-                              : Math.min(imageViewerAttachments.length - 1, index + 1),
-                          )
-                        }
-                        disabled={
-                          activeImageIndex === null || activeImageIndex >= imageViewerAttachments.length - 1
-                        }
-                      >
-                        <span className="sr-only">ภาพถัดไป</span>
-                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <path d="M9 18l6-6-6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
+                        <button
+                          type="button"
+                          className="group absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-border bg-background/80 p-2 shadow-sm transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
+                          onClick={() =>
+                            setActiveImageIndex((index) =>
+                              index === null ? null : Math.min(imageViewerAttachments.length - 1, index + 1),
+                            )
+                          }
+                          disabled={
+                            activeImageIndex === null || activeImageIndex >= imageViewerAttachments.length - 1
+                          }
+                        >
+                          <span className="sr-only">ภาพถัดไป</span>
+                          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M9 18l6-6-6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
 
-                      {activeImageIndex !== null && imageViewerAttachments[activeImageIndex] ? (
-                        <div className="flex flex-col items-center gap-3">
-                          <img
-                            src={imageViewerAttachments[activeImageIndex].previewUrl}
-                            alt={imageViewerAttachments[activeImageIndex].name}
-                            className="max-h-[60vh] w-auto max-w-full rounded-lg object-contain"
-                          />
-                          <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                            <span>{imageViewerAttachments[activeImageIndex].name}</span>
-                            <span>{formatFileSize(imageViewerAttachments[activeImageIndex].size)}</span>
-                            {imageViewerAttachments[activeImageIndex].uploadedAt && (
-                              <span>
-                                {new Date(imageViewerAttachments[activeImageIndex].uploadedAt!).toLocaleDateString(
-                                  "th-TH",
-                                )}
-                              </span>
-                            )}
+                        {activeImageIndex !== null && imageViewerAttachments[activeImageIndex] ? (
+                          <div className="flex flex-col items-center gap-3">
+                            <img
+                              src={imageViewerAttachments[activeImageIndex].previewUrl}
+                              alt={imageViewerAttachments[activeImageIndex].name}
+                              className="max-h-[60vh] w-auto max-w-full rounded-lg object-contain"
+                            />
+                            <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                              <span>{imageViewerAttachments[activeImageIndex].name}</span>
+                              <span>{formatFileSize(imageViewerAttachments[activeImageIndex].size)}</span>
+                              {imageViewerAttachments[activeImageIndex].uploadedAt && (
+                                <span>
+                                  {new Date(imageViewerAttachments[activeImageIndex].uploadedAt!).toLocaleDateString(
+                                    "th-TH",
+                                  )}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="text-sm text-muted-foreground">เลือกภาพจากแถบด้านขวาเพื่อแสดง</div>
-                      )}
-                    </>
-                  )}
-                </div>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">เลือกภาพจากแถบด้านขวาเพื่อแสดง</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {imageViewerAttachments.length === 0 && documentViewerAttachments.length === 0 && !isAttachmentViewerLoading && (
+                  <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                    ไม่พบไฟล์แนบในกลุ่มนี้
+                  </div>
+                )}
               </div>
 
-              <ScrollArea className="h-[70vh] pr-2">
+              <ScrollArea className={cn("h-[70vh] pr-2", imageViewerAttachments.length === 0 && "h-auto")}>
                 <div className="space-y-4">
                   {imageViewerAttachments.length > 0 && (
                     <div className="space-y-2">
