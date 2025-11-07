@@ -87,7 +87,7 @@ import { cn } from "@/lib/utils";
 
 const inkDb = supabase as SupabaseClient<any>;
 
-type InkType = "ink" | "toner" | "drum" | "ribbon";
+type InkType = "ink" | "toner" | "drum" | "ribbon" | "mouse" | "keyboard";
 
 type Brand = {
   id: string;
@@ -544,6 +544,8 @@ const INK_TYPE_LABELS: Record<InkType, string> = {
   toner: "Toner",
   drum: "Drum",
   ribbon: "ผ้าหมึก",
+  mouse: "Mouse",
+  keyboard: "Keyboard",
 };
 
 const RECEIPT_STORAGE_BUCKET = "ink-receipts";
@@ -1873,7 +1875,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
     } catch (error) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: `ไม่สามารถโหลดยี่ห้อหมึกได้: ${getErrorMessage(error)}`,
+        description: `ไม่สามารถโหลดยี่ห้อสินค้าได้: ${getErrorMessage(error)}`,
         variant: "destructive",
       });
     }
@@ -1976,7 +1978,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
     } catch (error) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: `ไม่สามารถโหลดข้อมูลหมึกพิมพ์ได้: ${getErrorMessage(error)}`,
+        description: `ไม่สามารถโหลดข้อมูลสินค้าได้: ${getErrorMessage(error)}`,
         variant: "destructive",
       });
     }
@@ -2999,12 +3001,12 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
       ).length;
 
       return {
-        title: product ? `ลบหมึกพิมพ์ ${product.modelCode}` : "ลบหมึกพิมพ์",
+        title: product ? `ลบสินค้า ${product.modelCode}` : "ลบสินค้า",
         description:
           receiptCount > 0
-            ? `การลบจะนำหมึกนี้ออกจากใบลงรับจำนวน ${receiptCount} รายการด้วย คุณต้องการดำเนินการต่อหรือไม่?`
-            : "การลบจะนำหมึกนี้ออกจากระบบ คุณต้องการดำเนินการต่อหรือไม่?",
-        confirmLabel: "ลบหมึกพิมพ์",
+            ? `การลบจะนำสินค้านี้ออกจากใบลงรับจำนวน ${receiptCount} รายการด้วย คุณต้องการดำเนินการต่อหรือไม่?`
+            : "การลบจะนำสินค้านี้ออกจากระบบ คุณต้องการดำเนินการต่อหรือไม่?",
+        confirmLabel: "ลบสินค้า",
       } satisfies DeleteDialogDetails;
     }
 
@@ -3032,7 +3034,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
       title: brand ? `ลบยี่ห้อ ${brand.name}` : "ลบยี่ห้อ",
       description:
         relatedProducts.length > 0 || receiptCount > 0
-          ? `การลบยี่ห้อนี้จะนำหมึกที่เกี่ยวข้องจำนวน ${relatedProducts.length} รายการ และลบออกจากใบลงรับ ${receiptCount} รายการด้วย คุณต้องการดำเนินการต่อหรือไม่?`
+          ? `การลบยี่ห้อนี้จะนำสินค้าที่เกี่ยวข้องจำนวน ${relatedProducts.length} รายการ และลบออกจากใบลงรับ ${receiptCount} รายการด้วย คุณต้องการดำเนินการต่อหรือไม่?`
           : "การลบจะนำยี่ห้อนี้ออกจากระบบ คุณต้องการดำเนินการต่อหรือไม่?",
       confirmLabel: "ลบยี่ห้อ",
     } satisfies DeleteDialogDetails;
@@ -3068,7 +3070,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
     if (!trimmed) {
       toast({
         title: "ข้อมูลไม่ครบถ้วน",
-        description: "กรุณาระบุชื่อยี่ห้อหมึก",
+        description: "กรุณาระบุชื่อยี่ห้อสินค้า",
         variant: "destructive",
       });
       return;
@@ -3227,7 +3229,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
         }
 
         if (!targetModelId) {
-          throw new Error("ไม่พบข้อมูลรุ่นหมึกสำหรับรายการนี้");
+          throw new Error("ไม่พบข้อมูลรุ่นสินค้าสำหรับรายการนี้");
         }
 
         const { error: updateModelError } = await inkDb
@@ -3296,7 +3298,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
 
         toast({
           title: "บันทึกสำเร็จ",
-          description: "เพิ่มข้อมูลหมึกพิมพ์เรียบร้อยแล้ว",
+          description: "เพิ่มข้อมูลเรียบร้อยแล้ว",
         });
       }
 
@@ -3306,7 +3308,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
     } catch (error) {
       toast({
         title: "เกิดข้อผิดพลาด",
-        description: `บันทึกข้อมูลหมึกพิมพ์ไม่สำเร็จ: ${getErrorMessage(error)}`,
+        description: `บันทึกข้อมูลสินค้าไม่สำเร็จ: ${getErrorMessage(error)}`,
         variant: "destructive",
       });
     }
@@ -3561,7 +3563,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
           if (error.code === "23503") {
             toast({
               title: "ไม่สามารถลบได้",
-              description: "ไม่สามารถลบหมึกที่ถูกใช้งานในใบลงรับได้",
+              description: "ไม่สามารถลบสินค้าที่ถูกใช้งานในใบลงรับได้",
               variant: "destructive",
             });
           } else {
@@ -3570,14 +3572,14 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
         } else {
           toast({
             title: "ลบสำเร็จ",
-            description: "นำหมึกออกจากระบบแล้ว",
+            description: "นำสินค้าออกจากระบบแล้ว",
           });
           await Promise.all([fetchProducts(), fetchReceipts()]);
         }
       } catch (error) {
         toast({
           title: "เกิดข้อผิดพลาด",
-          description: `ลบข้อมูลหมึกไม่สำเร็จ: ${getErrorMessage(error)}`,
+          description: `ลบข้อมูลสินค้าไม่สำเร็จ: ${getErrorMessage(error)}`,
           variant: "destructive",
         });
       }
@@ -3625,7 +3627,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
         if (error.code === "23503") {
           toast({
             title: "ไม่สามารถลบได้",
-            description: "ยังมีหมึกพิมพ์ที่ใช้ยี่ห้อนี้อยู่",
+            description: "ยังมีสินค้าที่ใช้ยี่ห้อนี้อยู่",
             variant: "destructive",
           });
         } else {
@@ -5455,7 +5457,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
     return (
       <div className="flex h-[60vh] items-center justify-center text-muted-foreground">
         <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-        กำลังโหลดข้อมูลสต็อกหมึก...
+        กำลังโหลดข้อมูลสต็อกสินค้า...
       </div>
     );
   }
@@ -5466,7 +5468,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
         <div>
           <h1 className="text-3xl font-bold text-foreground">Maintenance/Stock</h1>
           <p className="text-muted-foreground mt-2">
-            จัดการหมึกพิมพ์ทุกประเภท ตั้งแต่ข้อมูลสินค้า ผู้ขาย ไปจนถึงใบลงรับและสถิติภาพรวม
+            จัดการสินค้า IT หลายประเภท ตั้งแต่ข้อมูลสินค้า ผู้ขาย ไปจนถึงใบลงรับและสถิติภาพรวม
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -6422,18 +6424,18 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
             <DialogTrigger asChild>
               <Button variant="outline" onClick={() => resetProductForm()}>
                 <Package className="mr-2 h-4 w-4" />
-                เพิ่มหมึกพิมพ์
+                เพิ่มสินค้า
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-xl">
               <DialogHeader>
                 <DialogTitle>
-                  {productDialogMode === "create" ? "เพิ่มข้อมูลหมึกพิมพ์" : "แก้ไขข้อมูลหมึกพิมพ์"}
+                  {productDialogMode === "create" ? "เพิ่มข้อมูล" : "แก้ไขข้อมูลสินค้า"}
                 </DialogTitle>
                 <DialogDescription>
                   {productDialogMode === "create"
-                    ? "รองรับหมึกหลายประเภท ทั้ง Ink, Toner, Drum และผ้าหมึก"
-                    : "ปรับปรุงข้อมูลหมึกพิมพ์ที่เลือกให้ถูกต้องและเป็นปัจจุบัน"}
+                    ? "รองรับสินค้า IT หลายประเภท เช่น Ink, Toner, Drum, ผ้าหมึก, Mouse และ Keyboard"
+                    : "ปรับปรุงข้อมูลสินค้าที่เลือกให้ถูกต้องและเป็นปัจจุบัน"}
                 </DialogDescription>
               </DialogHeader>
               <form className="space-y-4" onSubmit={handleSubmitProduct}>
@@ -6456,7 +6458,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="inkType">ประเภทหมึก *</Label>
+                  <Label htmlFor="inkType">ประเภทสินค้า *</Label>
                   <Select
                     value={productForm.inkType}
                     onValueChange={(value: InkType) =>
@@ -6464,7 +6466,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
                     }
                   >
                     <SelectTrigger id="inkType">
-                      <SelectValue placeholder="เลือกประเภทหมึก" />
+                      <SelectValue placeholder="เลือกประเภทสินค้า" />
                     </SelectTrigger>
                     <SelectContent>
                       {(Object.keys(INK_TYPE_LABELS) as InkType[]).map((type) => (
@@ -6552,7 +6554,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
                 </div>
                 <DialogFooter>
                   <Button type="submit" className="bg-primary hover:bg-primary/90">
-                    {productDialogMode === "create" ? "บันทึกข้อมูลหมึกพิมพ์" : "บันทึกการแก้ไข"}
+                    {productDialogMode === "create" ? "บันทึกข้อมูลสินค้า" : "บันทึกการแก้ไข"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -6660,12 +6662,12 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>
-                  {brandDialogMode === "create" ? "เพิ่มยี่ห้อหมึก" : "แก้ไขยี่ห้อหมึก"}
+                  {brandDialogMode === "create" ? "เพิ่มยี่ห้อสินค้า" : "แก้ไขยี่ห้อสินค้า"}
                 </DialogTitle>
                 <DialogDescription>
                   {brandDialogMode === "create"
-                    ? "กรอกชื่อยี่ห้อหมึกพิมพ์ที่ต้องการเพิ่มในระบบ"
-                    : "แก้ไขชื่อยี่ห้อหมึกพิมพ์ที่เลือก"}
+                    ? "กรอกชื่อยี่ห้อสินค้าที่ต้องการเพิ่มในระบบ"
+                    : "แก้ไขชื่อยี่ห้อสินค้าที่เลือก"}
                 </DialogDescription>
               </DialogHeader>
           <div className="space-y-4">
@@ -6691,7 +6693,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
               <ScrollArea className="h-40 rounded-md border bg-muted/20 p-3">
                 {brands.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    ยังไม่มียี่ห้อหมึกในระบบ
+                    ยังไม่มียี่ห้อสินค้าในระบบ
                   </p>
                 ) : (
                   <ul className="space-y-1 text-sm">
@@ -6716,7 +6718,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList className="grid w-full grid-cols-1 gap-2 sm:grid-cols-6">
           <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
-          <TabsTrigger value="products">ข้อมูลหมึก</TabsTrigger>
+          <TabsTrigger value="products">ข้อมูลสินค้า</TabsTrigger>
           <TabsTrigger value="suppliers">ผู้ขาย</TabsTrigger>
           <TabsTrigger value="receipts">ใบลงรับ</TabsTrigger>
           <TabsTrigger value="maintenance">การซ่อมบำรุง</TabsTrigger>
@@ -6736,8 +6738,8 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-muted-foreground">จำนวนรุ่นหมึก</CardTitle>
-                <CardDescription>หมึกทั้งหมดในคลัง</CardDescription>
+                <CardTitle className="text-sm text-muted-foreground">จำนวนรุ่นสินค้า</CardTitle>
+                <CardDescription>สินค้าทั้งหมดในคลัง</CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-semibold text-primary">{products.length}</p>
@@ -6769,7 +6771,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
             <CardHeader>
               <CardTitle>ตัวกรองข้อมูลสถิติ</CardTitle>
               <CardDescription>
-                กรองข้อมูลสถิติได้ตามยี่ห้อ ประเภทหมึก ผู้ขาย และปีที่ต้องการ
+                กรองข้อมูลสถิติได้ตามยี่ห้อ ประเภทสินค้า ผู้ขาย และปีที่ต้องการ
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -6791,7 +6793,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>ประเภทหมึก</Label>
+                  <Label>ประเภทสินค้า</Label>
                   <Select value={filterInkType} onValueChange={(value: InkType | "all") => setFilterInkType(value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="เลือกประเภท" />
@@ -6846,7 +6848,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
             <Card>
               <CardHeader>
                 <CardTitle>สัดส่วนมูลค่าตามยี่ห้อ</CardTitle>
-                <CardDescription>ดูภาพรวมของมูลค่าใบลงรับที่แบ่งตามยี่ห้อหมึก</CardDescription>
+                <CardDescription>ดูภาพรวมของมูลค่าใบลงรับที่แบ่งตามยี่ห้อสินค้า</CardDescription>
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -6889,7 +6891,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
           <Card>
             <CardHeader>
               <CardTitle>แนวโน้มการลงรับตามช่วงเวลา</CardTitle>
-              <CardDescription>ดูภาพรวมการลงรับหมึกในแต่ละเดือน</CardDescription>
+              <CardDescription>ดูภาพรวมการลงรับสินค้าในแต่ละเดือน</CardDescription>
             </CardHeader>
             <CardContent className="h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -6908,9 +6910,9 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
         <TabsContent value="products" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>รายการหมึกพิมพ์ทั้งหมด</CardTitle>
+              <CardTitle>รายการสินค้าทั้งหมด</CardTitle>
               <CardDescription>
-                แสดงข้อมูลรุ่นหมึก ประเภท ยี่ห้อ จำนวนคงเหลือ และสถานะสต็อก
+                แสดงข้อมูลรุ่นสินค้า ประเภท ยี่ห้อ จำนวนคงเหลือ และสถานะสต็อก
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -6931,7 +6933,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
                   {productSummary.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-muted-foreground">
-                        ยังไม่มีข้อมูลหมึก
+                        ยังไม่มีข้อมูลสินค้า
                       </TableCell>
                     </TableRow>
                   )}
@@ -6961,7 +6963,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
                           variant="ghost"
                           size="icon"
                           onClick={() => handleEditProduct(product)}
-                          aria-label={`แก้ไขหมึก ${product.modelCode}`}
+                          aria-label={`แก้ไขสินค้า ${product.modelCode}`}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -6970,7 +6972,7 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
                           size="icon"
                           className="text-destructive hover:text-destructive"
                           onClick={() => openDeleteDialog("product", product.id)}
-                          aria-label={`ลบหมึก ${product.modelCode}`}
+                          aria-label={`ลบสินค้า ${product.modelCode}`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -6985,9 +6987,9 @@ const [updatingMaintenanceStatusId, setUpdatingMaintenanceStatusId] = useState<s
 
         <Card>
           <CardHeader>
-            <CardTitle>ยี่ห้อหมึก</CardTitle>
+            <CardTitle>ยี่ห้อสินค้า</CardTitle>
             <CardDescription>
-              จัดการรายการยี่ห้อหมึกและตรวจสอบจำนวนรุ่นที่ใช้งานในระบบ
+              จัดการรายการยี่ห้อสินค้าและตรวจสอบจำนวนรุ่นที่ใช้งานในระบบ
             </CardDescription>
           </CardHeader>
           <CardContent>
