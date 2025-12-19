@@ -142,7 +142,7 @@ const parseBorrowNoteDetails = (raw: string | null): BorrowNoteDetails => {
         extras,
       };
     }
-  } catch {}
+  } catch { }
 
   const [firstLine = '', ...rest] = raw.split('\n');
   const trimmedFirst = firstLine.trim();
@@ -443,7 +443,11 @@ const BorrowReturn = () => {
         `)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("DEBUG: Borrow fetch error:", error);
+        throw error;
+      }
+      console.log("DEBUG: Borrow fetch data:", data);
 
       const mappedRecords: BorrowTransactionRecord[] = (data || []).map((record) => {
         const borrowDateRaw = record.borrowed_at ?? null;
@@ -648,10 +652,10 @@ const BorrowReturn = () => {
     const hasNotesContent = Boolean(purpose) || Boolean(extraNotes);
     const combinedNotes = hasNotesContent
       ? JSON.stringify({
-          purpose: purpose || null,
-          notes: extraNotes || null,
-          extensions: [] as BorrowExtensionRecord[],
-        })
+        purpose: purpose || null,
+        notes: extraNotes || null,
+        extensions: [] as BorrowExtensionRecord[],
+      })
       : null;
 
     if (!user?.id) {
@@ -732,7 +736,7 @@ const BorrowReturn = () => {
 
       const { error: updateError } = await supabase
         .from('equipment')
-        .update({ 
+        .update({
           assigned_to: borrowerName,
           status: 'borrowed'
         })
@@ -765,12 +769,12 @@ const BorrowReturn = () => {
         } else {
           console.error('Borrow insert failed (unknown):', errObj);
         }
-      } catch {}
+      } catch { }
       const errObj = error as PostgrestError | Error | unknown;
       const extra = (errObj as PostgrestError)?.message
         ? `\nรายละเอียด: ${(errObj as PostgrestError).message}` +
-          ((errObj as PostgrestError).details ? `\n${(errObj as PostgrestError).details}` : '') +
-          ((errObj as PostgrestError).hint ? `\nHint: ${(errObj as PostgrestError).hint}` : '')
+        ((errObj as PostgrestError).details ? `\n${(errObj as PostgrestError).details}` : '') +
+        ((errObj as PostgrestError).hint ? `\nHint: ${(errObj as PostgrestError).hint}` : '')
         : '';
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -856,7 +860,7 @@ const BorrowReturn = () => {
 
       const { error: equipmentError } = await supabase
         .from('equipment')
-        .update({ 
+        .update({
           assigned_to: assignedTo,
           status: newStatus
         })
@@ -888,15 +892,15 @@ const BorrowReturn = () => {
         } else {
           console.error('Return update failed (unknown):', errObj);
         }
-      } catch {}
+      } catch { }
       const errObj = error as PostgrestError | Error | unknown;
       const extra = (errObj as PostgrestError)?.message
         ? `\nรายละเอียด: ${(errObj as PostgrestError).message}` +
-          ((errObj as PostgrestError).details ? `\n${(errObj as PostgrestError).details}` : '') +
-          ((errObj as PostgrestError).hint ? `\nHint: ${(errObj as PostgrestError).hint}` : '')
+        ((errObj as PostgrestError).details ? `\n${(errObj as PostgrestError).details}` : '') +
+        ((errObj as PostgrestError).hint ? `\nHint: ${(errObj as PostgrestError).hint}` : '')
         : '';
       toast({
-        title: "เกิดข้อผิดพลาด", 
+        title: "เกิดข้อผิดพลาด",
         description: "ไม่สามารถบันทึกการคืนได้: " + getErrorMessage(error) + extra,
         variant: "destructive",
       });
@@ -1036,7 +1040,7 @@ const BorrowReturn = () => {
 
       const { error: updateError } = await supabase
         .from('borrow_transactions')
-        .update({ 
+        .update({
           returned_at: nowIso,
           status: 'returned',
           return_condition: borrowRecord.returnCondition || 'normal',
@@ -1073,7 +1077,7 @@ const BorrowReturn = () => {
 
       const { error: equipmentError } = await supabase
         .from('equipment')
-        .update({ 
+        .update({
           assigned_to: null,
           status: 'available'
         })
@@ -1082,7 +1086,7 @@ const BorrowReturn = () => {
       if (equipmentError) throw equipmentError;
 
       toast({
-        title: "คืนครุภัณฑ์สำเร็จ", 
+        title: "คืนครุภัณฑ์สำเร็จ",
         description: compatibilityNotice
           ? `คืนครุภัณฑ์ ${borrowRecord.id} เรียบร้อยแล้ว\n${compatibilityNotice}`
           : `คืนครุภัณฑ์ ${borrowRecord.id} เรียบร้อยแล้ว`,
@@ -1103,12 +1107,12 @@ const BorrowReturn = () => {
         } else {
           console.error('Quick return failed (unknown):', errObj);
         }
-      } catch {}
+      } catch { }
       const errObj = error as PostgrestError | Error | unknown;
       const extra = (errObj as PostgrestError)?.message
         ? `\nรายละเอียด: ${(errObj as PostgrestError).message}` +
-          ((errObj as PostgrestError).details ? `\n${(errObj as PostgrestError).details}` : '') +
-          ((errObj as PostgrestError).hint ? `\nHint: ${(errObj as PostgrestError).hint}` : '')
+        ((errObj as PostgrestError).details ? `\n${(errObj as PostgrestError).details}` : '') +
+        ((errObj as PostgrestError).hint ? `\nHint: ${(errObj as PostgrestError).hint}` : '')
         : '';
       toast({
         title: "เกิดข้อผิดพลาด",
@@ -1251,11 +1255,10 @@ const BorrowReturn = () => {
                     />
                     {borrowDurationMessage && (
                       <p
-                        className={`text-sm ${
-                          borrowDurationMessage.tone === 'error'
+                        className={`text-sm ${borrowDurationMessage.tone === 'error'
                             ? 'text-red-500'
                             : 'text-green-600'
-                        }`}
+                          }`}
                       >
                         {borrowDurationMessage.text}
                       </p>
@@ -1273,8 +1276,8 @@ const BorrowReturn = () => {
                   <Textarea name="notes" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)" />
                 </div>
 
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={isSubmitting || availableEquipment.length === 0}
                   className="w-full bg-primary hover:bg-primary/90"
                 >
@@ -1358,11 +1361,10 @@ const BorrowReturn = () => {
                     />
                     {returnTimingMessage && (
                       <p
-                        className={`text-sm ${
-                          returnTimingMessage.tone === 'onTime'
+                        className={`text-sm ${returnTimingMessage.tone === 'onTime'
                             ? 'text-green-600'
                             : 'text-orange-500'
-                        }`}
+                          }`}
                       >
                         {returnTimingMessage.text}
                       </p>
@@ -1394,8 +1396,8 @@ const BorrowReturn = () => {
                   <Textarea name="returnNotes" placeholder="หมายเหตุเกี่ยวกับสภาพครุภัณฑ์หรือข้อมูลเพิ่มเติม" />
                 </div>
 
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={isSubmitting}
                   className="w-full bg-primary hover:bg-primary/90"
                 >
@@ -1458,8 +1460,8 @@ const BorrowReturn = () => {
                   <p className="text-muted-foreground text-center py-8">ไม่มีรายการยืม-คืน</p>
                 ) : (
                   activeBorrowed
-                    .filter(item => 
-                      searchTerm === "" || 
+                    .filter(item =>
+                      searchTerm === "" ||
                       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                       item.borrower.toLowerCase().includes(searchTerm.toLowerCase()) ||
                       item.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1490,65 +1492,65 @@ const BorrowReturn = () => {
                               <div className="flex items-center space-x-3">
                                 <Monitor className="h-5 w-5 text-muted-foreground" />
                                 <div>
-                                <h3 className="font-medium text-foreground">{item.name}</h3>
-                                <p className="text-sm text-muted-foreground">รหัส: {item.id} | S/N: {item.serialNumber}</p>
+                                  <h3 className="font-medium text-foreground">{item.name}</h3>
+                                  <p className="text-sm text-muted-foreground">รหัส: {item.id} | S/N: {item.serialNumber}</p>
+                                </div>
+                              </div>
+                              <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground">ผู้ยืม:</span>
+                                  <p className="font-medium">{item.borrower}</p>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">หน่วยงาน:</span>
+                                  <p className="font-medium">{item.department}</p>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">วันที่ยืม:</span>
+                                  <p className="font-medium">{item.borrowDateFormatted}</p>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">กำหนดคืน:</span>
+                                  <p className="font-medium">{item.expectedReturnDateFormatted || '-'}</p>
+                                  {item.extensions.length > 0 ? (
+                                    <p className="text-xs text-muted-foreground">
+                                      ยืมต่อ {item.extensions.length} ครั้ง (ล่าสุด {formatThaiDate(item.extensions[item.extensions.length - 1].extendedAt) || '-'})
+                                    </p>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
-                            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                              <div>
-                                <span className="text-muted-foreground">ผู้ยืม:</span>
-                                <p className="font-medium">{item.borrower}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">หน่วยงาน:</span>
-                                <p className="font-medium">{item.department}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">วันที่ยืม:</span>
-                                <p className="font-medium">{item.borrowDateFormatted}</p>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">กำหนดคืน:</span>
-                                <p className="font-medium">{item.expectedReturnDateFormatted || '-'}</p>
-                                {item.extensions.length > 0 ? (
-                                  <p className="text-xs text-muted-foreground">
-                                    ยืมต่อ {item.extensions.length} ครั้ง (ล่าสุด {formatThaiDate(item.extensions[item.extensions.length - 1].extendedAt) || '-'})
-                                  </p>
-                                ) : null}
-                              </div>
+                            <div className="flex items-center space-x-2 ml-4">
+                              <Badge className={badgeClass}>
+                                {badgeText}
+                              </Badge>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setDetailRecordId(item.recordId);
+                                  setIsDetailOpen(true);
+                                }}
+                              >
+                                ดูรายละเอียด
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => openExtendDialog(item)}
+                              >
+                                ยืมต่อ
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleReturn(item.recordId)}
+                                className="bg-primary hover:bg-primary/90"
+                              >
+                                บันทึกการคืน
+                              </Button>
                             </div>
-                          </div>
-                          <div className="flex items-center space-x-2 ml-4">
-                            <Badge className={badgeClass}>
-                              {badgeText}
-                            </Badge>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setDetailRecordId(item.recordId);
-                                setIsDetailOpen(true);
-                              }}
-                            >
-                              ดูรายละเอียด
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => openExtendDialog(item)}
-                            >
-                              ยืมต่อ
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              onClick={() => handleReturn(item.recordId)}
-                              className="bg-primary hover:bg-primary/90"
-                            >
-                              บันทึกการคืน
-                            </Button>
                           </div>
                         </div>
-                      </div>
                       );
                     })
                 )}
@@ -1645,7 +1647,7 @@ const BorrowReturn = () => {
                           statusText = `คืนแล้ว (ชำรุด)`;
                           statusColor = 'text-orange-500';
                         } else if (record.returnCondition === 'lost') {
-                          statusText = `สูญหาย`; 
+                          statusText = `สูญหาย`;
                           statusColor = 'text-red-500';
                         }
 
@@ -1815,8 +1817,8 @@ const BorrowReturn = () => {
               </p>
             </div>
             {detailRecord?.borrowNotes &&
-            detailRecord.borrowNotes.trim() &&
-            detailRecord.borrowNotes.trim() !== (detailRecord.borrowPurpose ?? "").trim() ? (
+              detailRecord.borrowNotes.trim() &&
+              detailRecord.borrowNotes.trim() !== (detailRecord.borrowPurpose ?? "").trim() ? (
               <div>
                 <p className="text-sm text-muted-foreground">หมายเหตุ</p>
                 <p className="text-sm font-medium text-foreground whitespace-pre-wrap">
